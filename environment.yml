@@ -1,0 +1,54 @@
+# Conda environment for hpg-esm-tools development
+# Create with: conda env create -f environment.yml
+# Update with: conda env update -f environment.yml --prune
+name: esm-tools
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Python - pinned to match HiPerGator module version used for CTSM builds
+  - python=3.12.*
+
+  # === NetCDF and Data Processing ===
+  - xarray>=2024.0.0
+  - netcdf4>=1.6.0
+  - h5netcdf>=1.3.0
+  - h5py>=3.10.0
+  - cftime>=1.6.0
+  - dask>=2024.0.0
+  - numpy>=1.26.0
+  - pandas>=2.1.0
+  - scipy>=1.12.0
+
+  # === Plotting ===
+  - matplotlib>=3.8.0
+  - cartopy>=0.22.0       # for map projections if needed
+
+  # === NCO Tools ===
+  - nco>=5.1.0
+
+  # === Python Linting and Formatting ===
+  - ruff>=0.4.0           # fast linter + formatter (replaces flake8, black, isort)
+  - mypy>=1.9.0           # static type checker
+
+  # === Shell Linting ===
+  - shellcheck>=0.9.0     # shell script linter
+
+  # === Fortran Tools (for CTSM source code work) ===
+  - fprettify>=0.3.7      # Fortran code formatter
+  - fortran-language-server>=1.12.0  # linting, diagnostics, IDE features
+
+  # === LSP Servers (for neovim) ===
+  - python-lsp-server>=1.10.0  # Python language server (pure Python, no Node.js)
+
+  # === Testing ===
+  - pytest>=8.0.0
+  - pytest-cov>=4.1.0
+
+  # === Editor ===
+  - nvim>=0.11.0          # Neovim (self-contained, no lmod dependency)
+
+  # === Development Utilities ===
+  - ipython>=8.20.0       # better REPL
+  - rich>=13.7.0          # pretty terminal output
+  - pyyaml>=6.0.0

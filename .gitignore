@@ -1,0 +1,40 @@
+# Data files (large NetCDF files should not be on GitHub)
+*.nc
+scripts/hillslope.analysis/data/
+scripts/case.analyzer/analysis/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Conda/pip
+.conda/
+.pip/
+
+# Claude Code internal directories (keep .claude at repo root for CLAUDE.md)
+scripts/**/.claude/
