@@ -1,0 +1,98 @@
+#!/bin/bash
+# Script: concat_hist_stream
+# Purpose: Concatenate CTSM history files using NCO
+# Usage: ./concat_hist_stream <CASEDIR> [STREAM]
+
+set -euo pipefail
+
+show_usage() {
+    cat <<EOF
+Usage: $0 <CASEDIR> [STREAM] [OUTPUT_DIR]
+
+Concatenate CLM history files for specified stream.
+
+Arguments:
+  CASEDIR      Path to CIME case directory
+  STREAM       Stream to concatenate: h0, h1, h2, h3, h4, h5 (default: h0)
+  OUTPUT_DIR   Base output directory (default: CASEDIR/analysis)
+
+Output:
+  Creates: OUTPUT_DIR/concat/combined_h{N}.nc
+
+Examples:
+  $0 my_case/                    # Concatenate h0 to my_case/analysis/concat/
+  $0 my_case/ h1                 # Concatenate h1 to my_case/analysis/concat/
+  $0 my_case/ h0 /output         # Concatenate h0 to /tmp/output/concat/
+EOF
+}
+
+# Parse arguments
+if [ $# -ge 1 ] && ([ "$1" = "-h" ] || [ "$1" = "--help" ]); then
+    show_usage
+    exit 0
+fi
+
+if [ $# -lt 1 ]; then
+    echo "ERROR: Missing required argument CASEDIR" >&2
+    show_usage >&2
+    exit 2
+fi
+
+CASEDIR="$1"
+STREAM="${2:-h0}"
+BASE_OUTPUT_DIR="${3:-${CASEDIR}/analysis}"
+
+# Validate stream format
+if [[ ! "$STREAM" =~ ^h[0-5]$ ]]; then
+    echo "ERROR: Invalid stream '$STREAM'. Must be h0, h1, h2, h3, h4, or h5" >&2
+    exit 2
+fi
+
+# Get archive directory
+ARCHIVE_DIR=$(cd "$CASEDIR" && ./xmlquery DOUT_S_ROOT --value)
+HIST_DIR="${ARCHIVE_DIR}/lnd/hist"
+
+# Set output path
+OUTPUT_FILE="${BASE_OUTPUT_DIR}/concat/combined_${STREAM}.nc"
+mkdir -p "$(dirname "$OUTPUT_FILE")"
+
+# Count files
+FILE_COUNT=$(find "$HIST_DIR" -name "*.clm2.$STREAM.*.nc" 2>/dev/null | wc -l)
+
+if [ "$FILE_COUNT" -eq 0 ]; then
+    echo "ERROR: No history files found for stream $STREAM in: $HIST_DIR" >&2
+    exit 1
+fi
+
+echo "Found $FILE_COUNT history files for stream $STREAM" >&2
+
+# Check if last file is incomplete (time=0)
+last_file=$(find "$HIST_DIR" -name "*.clm2.$STREAM.*.nc" -type f | sort | tail -1)
+timedim=$(ncdump -h "$last_file" 2>/dev/null | grep "time = UNLIMITED" | sed -n 's/.*(\([0-9]*\) currently).*/\1/p')
+
+if [ "$timedim" = "0" ]; then
+    echo "Excluding incomplete file: $(basename "$last_file") (time=0)" >&2
+    echo "Concatenating stream $STREAM..." >&2
+
+    # Concatenate all files except the last one
+    file_list=$(find "$HIST_DIR" -name "*.clm2.$STREAM.*.nc" -type f | sort | head -n -1)
+    if ! ncrcat -O $file_list "$OUTPUT_FILE" 2>&1; then
+        echo "ERROR: ncrcat failed" >&2
+        exit 1
+    fi
+else
+    echo "Concatenating stream $STREAM..." >&2
+
+    # Original fast path
+    if ! ncrcat -O "$HIST_DIR"/*.clm2."$STREAM".*.nc "$OUTPUT_FILE" 2>&1; then
+        echo "ERROR: ncrcat failed" >&2
+        exit 1
+    fi
+fi
+
+# Report results
+FILE_SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
+echo "Concatenation complete: $OUTPUT_FILE ($FILE_SIZE)" >&2
+
+# Output path for piping
+echo "$OUTPUT_FILE"

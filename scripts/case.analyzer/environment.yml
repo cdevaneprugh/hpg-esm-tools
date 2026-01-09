@@ -1,0 +1,19 @@
+name: ctsm-tools
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Python
+  - python>=3.9
+
+  # Core Python packages for plotting
+  - xarray>=2023.0.0
+  - matplotlib>=3.5.0
+  - numpy>=1.20.0
+  - netcdf4>=1.5.0
+
+  # NCO tools for bash scripts (ncrcat, ncks, ncdump)
+  - nco>=5.0.0
+
+  # Optional but recommended for xarray performance
+  - dask>=2021.0.0

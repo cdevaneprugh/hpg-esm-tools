@@ -1,0 +1,137 @@
+#!/bin/bash
+# Script: bin_temporal
+# Purpose: Create annual averages from monthly CTSM history files
+# Usage: ./bin_temporal <CASEDIR> [STREAM] [OUTPUT_DIR]
+
+set -euo pipefail
+
+show_usage() {
+    cat <<EOF
+Usage: $0 <CASEDIR> [STREAM] [OUTPUT_DIR]
+
+Create annual average files from monthly CTSM history files.
+
+Arguments:
+  CASEDIR      Path to CIME case directory (absolute or relative)
+  STREAM       History stream to process: h0, h1, h2, h3, h4, h5 (default: h0)
+  OUTPUT_DIR   Base output directory (default: CASEDIR/analysis/binned)
+
+Output:
+  Creates: OUTPUT_DIR/annual/annual_YYYY.nc (one per year)
+  Creates: OUTPUT_DIR/combined_annual_STREAM.nc (concatenated time series)
+  Creates: OUTPUT_DIR/bin_temporal_STREAM_TIMESTAMP.log (processing log)
+
+Examples:
+  $0 my_case/                                    # Process h0 stream
+  $0 my_case/ h1                                 # Process h1 stream
+  $0 /absolute/path/to/case h0                   # Absolute path
+  $0 my_case/ h0 /tmp/output                     # Custom output location
+EOF
+}
+
+# Parse arguments
+if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_usage
+    exit 0
+fi
+
+CASEDIR="${1%/}"
+STREAM="${2:-h0}"
+BASE_OUTPUT_DIR="${3:-${CASEDIR}/analysis/binned}"
+
+# Validate stream format
+if [[ ! "$STREAM" =~ ^h[0-5]$ ]]; then
+    echo "ERROR: Invalid stream '$STREAM'. Must be h0, h1, h2, h3, h4, or h5" >&2
+    exit 2
+fi
+
+# Get archive directory from XML
+ARCHIVE_DIR=$(cd "$CASEDIR" && ./xmlquery DOUT_S_ROOT --value)
+HIST_DIR="${ARCHIVE_DIR}/lnd/hist"
+
+# Set up output directories
+OUTPUT_DIR="${BASE_OUTPUT_DIR}/annual"
+FINAL_OUTPUT="${BASE_OUTPUT_DIR}/combined_annual_${STREAM}.nc"
+
+mkdir -p "$OUTPUT_DIR"
+
+# Create log file
+LOG_FILE="${BASE_OUTPUT_DIR}/bin_temporal_${STREAM}_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee "$LOG_FILE") 2>&1
+
+echo "=============================================="
+echo "CTSM Temporal Binning - Annual Averages"
+echo "=============================================="
+echo "Case: $CASEDIR"
+echo "Stream: $STREAM"
+echo "Output: $BASE_OUTPUT_DIR"
+echo "Started: $(date)"
+echo ""
+
+# Detect available years from filenames
+echo "Detecting years in history files..."
+years=$(find "$HIST_DIR" -name "*.clm2.$STREAM.*.nc" -type f 2>/dev/null | \
+        sed 's/.*\.clm2\.'$STREAM'\.\([0-9]\{4\}\)-[0-9]\{2\}\.nc/\1/' | sort -u)
+
+if [ -z "$years" ]; then
+    echo "ERROR: No history files found for stream $STREAM in: $HIST_DIR" >&2
+    exit 1
+fi
+
+year_count=$(echo "$years" | wc -w)
+echo "Found $year_count unique years: $(echo $years | head -c 80)..."
+echo ""
+
+# Process each year
+processed_count=0
+skipped_count=0
+
+for year in $years; do
+    # Count monthly files for this year
+    file_count=$(find "$HIST_DIR" -name "*.clm2.$STREAM.${year}-*.nc" -type f 2>/dev/null | wc -l)
+
+    # Check for complete year (12 months)
+    if [ "$file_count" -ne 12 ]; then
+        echo "WARNING: Year $year has $file_count months (expected 12), skipping" >&2
+        skipped_count=$((skipped_count + 1))
+        continue
+    fi
+
+    # Create annual average
+    echo "Processing year $year ($((processed_count + 1))/$year_count)..."
+    ncra -O "$HIST_DIR"/*.clm2.$STREAM.${year}-*.nc "$OUTPUT_DIR/annual_${year}.nc"
+    processed_count=$((processed_count + 1))
+done
+
+echo ""
+
+# Check if any years were processed
+if [ "$processed_count" -eq 0 ]; then
+    echo "ERROR: No complete years to process" >&2
+    echo "All years had incomplete monthly data (need exactly 12 months per year)" >&2
+    exit 1
+fi
+
+# Concatenate annual files into time series
+echo "Concatenating $processed_count annual files..."
+ncrcat -O "$OUTPUT_DIR"/annual_*.nc "$FINAL_OUTPUT"
+
+# Get output file size
+FILE_SIZE=$(du -h "$FINAL_OUTPUT" | cut -f1)
+
+# Summary
+echo ""
+echo "=============================================="
+echo "Annual binning complete"
+echo "=============================================="
+echo "Processed: $processed_count years"
+if [ "$skipped_count" -gt 0 ]; then
+    echo "Skipped: $skipped_count years (incomplete data)"
+fi
+echo ""
+echo "Output files:"
+echo "  Individual years: $OUTPUT_DIR/ ($processed_count files)"
+echo "  Time series: $FINAL_OUTPUT ($FILE_SIZE)"
+echo "  Log: $LOG_FILE"
+echo ""
+echo "Finished: $(date)"

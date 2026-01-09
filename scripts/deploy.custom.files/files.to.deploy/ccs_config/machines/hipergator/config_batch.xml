@@ -1,0 +1,17 @@
+<batch_system MACH="hipergator" type="slurm">
+  <batch_submit>sbatch</batch_submit>
+  <submit_args>
+    <arg flag="--time" name="$JOB_WALLCLOCK_TIME"/> <!--max job run time-->
+    <arg flag="-q" name="$JOB_QUEUE"/> <!--determined by quality of service (queue) selected-->
+    <arg flag="--mem" name="16GB"/> <!--exports all env from login node to compute node-->
+  </submit_args>
+  <directives>
+    <directive>--partition=hpg-default</directive> <!--currently set up for hpg-default nodes-->
+    <directive>--mail-type=NONE</directive> <!--select which mail alerts you want (none, all, begin, end, fail)-->
+    <directive>--mail-user=$USER@ufl.edu</directive>
+  </directives>
+  <queues>
+    <queue jobmin="1" jobmax="20" default="true">gerber</queue> <!--default QOS-->
+    <queue jobmin="1" jobmax="128">gerber-b</queue> <!--burst QOS-->
+  </queues>
+</batch_system>

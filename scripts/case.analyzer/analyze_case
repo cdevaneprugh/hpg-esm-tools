@@ -1,0 +1,142 @@
+#!/bin/bash
+# Script: analyze_case
+# Purpose: Main wrapper for analyzing CTSM cases
+# Usage: ./analyze_case <CASEDIR> [--plot] [--config FILE]
+
+set -euo pipefail
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Script paths
+SUMMARY_SCRIPT="${SCRIPT_DIR}/generate_case_summary.sh"
+CONCAT_SCRIPT="${SCRIPT_DIR}/concat_hist_stream"
+PLOT_SCRIPT="${SCRIPT_DIR}/plot_variables.py"
+DEFAULT_CONFIG="${SCRIPT_DIR}/default.conf"
+
+show_usage() {
+    cat <<EOF
+Usage: $0 <CASEDIR> [OPTIONS]
+
+Analyze a CTSM case directory.
+
+Arguments:
+  CASEDIR             Path to CIME case directory
+
+Options:
+  --plot              Generate plots (saves summary + creates plots)
+  --output-dir DIR    Custom output directory (default: CASEDIR/analysis)
+  --config FILE       Custom config file (default: default.conf)
+  -h, --help          Show this help
+
+Examples:
+  $0 my_case/                    # Summary to stdout
+  $0 my_case/ --plot             # Summary + plots (saves to my_case/analysis/)
+  $0 my_case/ --plot --output-dir /tmp/output  # Custom output location
+  $0 my_case/ --plot --config custom.conf
+EOF
+}
+
+# Parse arguments
+if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_usage
+    exit 0
+fi
+
+CASEDIR="${1%/}"  # Strip trailing slash
+shift
+
+GENERATE_PLOTS=false
+OUTPUT_DIR=""
+CONFIG_FILE="$DEFAULT_CONFIG"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --plot)
+            GENERATE_PLOTS=true
+            shift
+            ;;
+        --output-dir)
+            OUTPUT_DIR="${2%/}"  # Strip trailing slash
+            shift 2
+            ;;
+        --config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        *)
+            echo "ERROR: Unknown option: $1" >&2
+            show_usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Source config
+source "$CONFIG_FILE"
+
+# Validate config has required variables
+if [ -z "${XML_VARS+x}" ]; then
+    echo "ERROR: XML_VARS not defined in config" >&2
+    exit 1
+fi
+
+if [ "$GENERATE_PLOTS" = true ] && [ -z "${PLOT_VARS+x}" ]; then
+    echo "ERROR: PLOT_VARS not defined in config" >&2
+    exit 1
+fi
+
+# Set analysis directory (use custom or default)
+if [ -n "$OUTPUT_DIR" ]; then
+    ANALYSIS_DIR="$OUTPUT_DIR"
+else
+    ANALYSIS_DIR="${CASEDIR}/analysis"
+fi
+
+# Generate summary
+xml_vars_csv=$(IFS=','; echo "${XML_VARS[*]}")
+
+if [ "$GENERATE_PLOTS" = true ]; then
+    mkdir -p "$ANALYSIS_DIR"
+    summary_file="${ANALYSIS_DIR}/summary.txt"
+
+    echo "Generating case summary..."
+    "$SUMMARY_SCRIPT" "$CASEDIR" "$summary_file" "$xml_vars_csv"
+    echo "Summary saved to: $summary_file"
+    echo ""
+    cat "$summary_file"
+    echo ""
+
+    # Concatenate h0 stream
+    echo "Concatenating history files (h0 stream)..."
+    "$CONCAT_SCRIPT" "$CASEDIR" h0 "$ANALYSIS_DIR" >/dev/null
+    echo "Concatenation complete"
+    echo ""
+
+    # Generate plots
+    echo "Generating plots..."
+    concat_file="${ANALYSIS_DIR}/concat/combined_h0.nc"
+    plots_dir="${ANALYSIS_DIR}/plots"
+    mkdir -p "$plots_dir"
+
+    "$PLOT_SCRIPT" "$concat_file" "$plots_dir" "${PLOT_VARS[@]}"
+
+    echo ""
+    echo "Plots saved to: $plots_dir/"
+
+    # Final summary
+    case_name=$(basename "$CASEDIR")
+    echo ""
+    echo "=============================================="
+    echo "Analysis complete for case: $case_name"
+    echo "=============================================="
+    echo "Results saved to: $ANALYSIS_DIR"
+    echo ""
+    echo "Summary:  $ANALYSIS_DIR/summary.txt"
+    echo "Concat:   $ANALYSIS_DIR/concat/"
+    echo "Plots:    $ANALYSIS_DIR/plots/"
+    echo ""
+else
+    # Stdout mode
+    "$SUMMARY_SCRIPT" "$CASEDIR" "-" "$xml_vars_csv"
+fi

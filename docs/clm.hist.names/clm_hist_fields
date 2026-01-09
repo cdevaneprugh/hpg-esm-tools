@@ -1,0 +1,688 @@
+## Files referenced:
+src/main/clm_initializeMod.F90
+src/main/atm2lndType.F90
+src/main/lnd2atmType.F90
+src/main/glc2lndMod.F90
+src/main/lnd2glcMod.F90
+src/main/subgridWeightsMod.F90
+src/main/TopoMod.F90
+src/biogeophys/ActiveLayerMod.F90
+src/biogeophys/AerosolMod.F90
+src/biogeophys/CanopyStateType.F90
+src/biogeophys/DaylengthMod.F90
+src/biogeophys/EnergyFluxType.F90
+src/biogeophys/FrictionVelocityMod.F90
+src/biogeophys/HumanIndexMod.F90
+src/biogeophys/InfiltrationExcessRunoffMod.F90
+src/biogeophys/IrrigationMod.F90
+src/biogeophys/LakeStateType.F90
+src/biogeophys/OzoneMod.F90
+src/biogeophys/PhotosynthesisMod.F90
+src/biogeophys/SaturatedExcessRunoffMod.F90
+src/biogeophys/SoilHydrologyType.F90
+src/biogeophys/SoilStateType.F90
+src/biogeophys/SolarAbsorbedType.F90
+src/biogeophys/SurfaceAlbedoType.F90
+src/biogeophys/SurfaceRadiationMod.F90
+src/biogeophys/TemperatureType.F90
+src/biogeophys/Wateratm2lndBulkType.F90
+src/biogeophys/WaterBalanceType.F90
+src/biogeophys/WaterDiagnosticBulkType.F90
+src/biogeophys/WaterFluxBulkType.F90
+src/biogeophys/WaterStateBulkType.F90
+src/biogeophys/WaterStateType.F90
+src/biogeochem/ch4Mod.F90
+src/biogeochem/CNDVType.F90
+src/biogeochem/CNFireBaseMod.F90
+src/biogeochem/CNFireEmissionsMod.F90
+src/biogeochem/CNProductsMod.F90
+src/biogeochem/CNVegCarbonFluxType.F90
+src/biogeochem/CNVegCarbonStateType.F90
+src/biogeochem/CNVegNitrogenFluxType.F90
+src/biogeochem/CNVegNitrogenStateType.F90
+src/biogeochem/CNVegStateType.F90
+src/biogeochem/CropType.F90
+src/biogeochem/DryDepVelocity.F90
+src/biogeochem/DustEmisBase.F90
+src/biogeochem/VOCEmissionMod.F90
+src/soilbiogeochem/SoilBiogeochemCarbonFluxType.F90
+src/soilbiogeochem/SoilBiogeochemCarbonStateType.F90
+src/soilbiogeochem/SoilBiogeochemNitrogenFluxType.F90
+src/soilbiogeochem/SoilBiogeochemNitrogenStateType.F90
+src/soilbiogeochem/SoilBiogeochemStateType.F90
+src/cpl/share_esmf/FireDataBaseType.F90
+src/cpl/share_esmf/UrbanTimeVarType.F90
+
+---
+
+## src/main/clm_initializeMod.F90
+
+DAYL | daylength | s
+PREV_DAYL | daylength from previous timestep | s
+SNO_Z | Snow layer thicknesses | m
+SNO_Z_ICE | Snow layer thicknesses (ice landunits only) | m
+ZII | convective boundary height | m
+
+---
+
+## src/main/atm2lndType.F90
+
+WIND | atmospheric wind velocity magnitude | m/s
+UWIND | atmospheric U wind velocity magnitude | m/s
+VWIND | atmospheric V wind velocity magnitude | m/s
+ZBOT | atmospheric reference height | m
+ATM_TOPO | atmospheric surface height | m
+FSDS_from_atm | atmospheric incident solar radiation (pre-downscaling) | W/m^2
+ATM_O3 | atmospheric ozone partial pressure | mol/mol
+PCO2 | atmospheric partial pressure of CO2 | Pa
+SWdown | atmospheric incident solar radiation | W/m^2
+PCH4 | atmospheric partial pressure of CH4 | Pa
+Tair_from_atm | atmospheric air temperature (pre-downscaling) | K
+FSDS | atmospheric incident solar radiation (downscaled) | W/m^2
+TBOT | atmospheric air temperature (downscaled) | K
+Tair | atmospheric air temperature (downscaled) | K
+PBOT | atmospheric pressure at surface (downscaled) | Pa
+PSurf | atmospheric pressure at surface (downscaled) | Pa
+PBOT_NOT_DOWNSCALED | atmospheric pressure at surface (pre-downscaling) | Pa
+FLDS | atmospheric longwave radiation (downscaled) | W/m^2
+LWdown | atmospheric longwave radiation (downscaled) | W/m^2
+FLDS_NOT_DOWNSCALED | atmospheric longwave radiation (pre-downscaling) | W/m^2
+FLDS_ICE | atmospheric longwave radiation (ice landunits only) | W/m^2
+THBOT | atmospheric air potential temperature (downscaled) | K
+Thair_from_atm | atmospheric air potential temperature (pre-downscaling) | K
+Rho_from_atm | atmospheric density (pre-downscaling) | kg/m^3
+BCPHIDRY | black carbon deposition (phidry) from atmosphere | kg/m^2/s
+BCPHODRY | black carbon deposition (phodry) from atmosphere | kg/m^2/s
+BCPHIWET | black carbon deposition (phiwet) from atmosphere | kg/m^2/s
+OCPHIDRY | organic carbon deposition (phidry) from atmosphere | kg/m^2/s
+OCPHODRY | organic carbon deposition (phodry) from atmosphere | kg/m^2/s
+OCPHIWET | organic carbon deposition (phiwet) from atmosphere | kg/m^2/s
+DSTWET1 | dust deposition (wet1) from atmosphere | kg/m^2/s
+DSTDRY1 | dust deposition (dry1) from atmosphere | kg/m^2/s
+DSTWET2 | dust deposition (wet2) from atmosphere | kg/m^2/s
+DSTDRY2 | dust deposition (dry2) from atmosphere | kg/m^2/s
+DSTWET3 | dust deposition (wet3) from atmosphere | kg/m^2/s
+DSTDRY3 | dust deposition (dry3) from atmosphere | kg/m^2/s
+DSTWET4 | dust deposition (wet4) from atmosphere | kg/m^2/s
+DSTDRY4 | dust deposition (dry4) from atmosphere | kg/m^2/s
+FSI24 | indirect radiation (last 24hrs) | K
+FSI240 | indirect radiation (last 240hrs) | K
+FSD24 | direct radiation (last 24hrs) | K
+FSD240 | direct radiation (last 240hrs) | K
+TDA | daily average 2-m temperature | K
+PCO2_240 | 10 day running mean of CO2 pressure | Pa
+PO2_240 | 10 day running mean of O2 pressure | Pa
+PBOT_240 | 10 day running mean of air pressure | Pa
+
+---
+
+## src/main/lnd2atmType.F90
+
+FSH_TO_COUPLER | sensible heat sent to coupler | W/m^2
+FSH_RUNOFF_ICE_TO_LIQ | sensible heat from ice runoff conversion | W/m^2
+FCO2 | CO2 flux to atmosphere (+ to atm) | kgCO2/m2/s
+Z0M_TO_COUPLER | roughness length momentum sent to coupler | m
+FCH4 | Gridcell surface CH4 flux to atmosphere | kgC/m2/s
+NEM | Gridcell net adjustment for methane production | gC/m2/s
+
+---
+
+## src/main/glc2lndMod.F90
+
+ICE_MODEL_FRACTION | Ice sheet model fractional coverage | unitless
+
+---
+
+## src/main/lnd2glcMod.F90
+
+QICE_FORC | qice forcing sent to GLC | mm/s
+TSRF_FORC | surface temperature sent to GLC | K
+TOPO_FORC | topographic height sent to GLC | m
+
+---
+
+## src/main/subgridWeightsMod.F90
+
+PCT_LANDUNIT | % of each landunit on grid cell | %
+PCT_NAT_PFT | % of each PFT on natural vegetation landunit | %
+PCT_CFT | % of each crop on the crop landunit | %
+PCT_GLC_MEC | % of each GLC elevation class on glacier landunit | %
+
+---
+
+## src/main/TopoMod.F90
+
+TOPO_COL | column-level topographic height | m
+TOPO_COL_ICE | column-level topographic height (ice landunits only) | m
+
+---
+
+## src/biogeophys/ActiveLayerMod.F90
+
+ALT | current active layer thickness | m
+ALTMAX | maximum annual active layer thickness | m
+ALTMAX_LASTYEAR | maximum prior year active layer thickness | m
+
+---
+
+## src/biogeophys/AerosolMod.F90
+
+DSTDEP | total dust deposition (dry+wet) from atmosphere | kg/m^2/s
+BCDEP | total BC deposition (dry+wet) from atmosphere | kg/m^2/s
+OCDEP | total OC deposition (dry+wet) from atmosphere | kg/m^2/s
+SNOBCMCL | mass of BC in snow column | kg/m2
+SNOBCMSL | mass of BC in top snow layer | kg/m2
+SNOOCMCL | mass of OC in snow column | kg/m2
+SNOOCMSL | mass of OC in top snow layer | kg/m2
+SNODSTMCL | mass of dust in snow column | kg/m2
+SNODSTMSL | mass of dust in top snow layer | kg/m2
+
+---
+
+## src/biogeophys/FrictionVelocityMod.F90
+
+Z0MG | roughness length over ground, momentum | m
+Z0HG | roughness length over ground, sensible heat | m
+Z0QG | roughness length over ground, latent heat | m
+VA | atmospheric wind speed plus convective velocity | m/s
+U10 | 10-m wind | m/s
+U10_ICE | 10-m wind (ice landunits only) | m/s
+U10_DUST | 10-m wind for dust model | m/s
+RAM1 | aerodynamical resistance | s/m
+FV | friction velocity | m/s
+RAH1 | aerodynamical resistance | s/m
+RAH2 | aerodynamical resistance | s/m
+RAW1 | aerodynamical resistance | s/m
+RAW2 | aerodynamical resistance | s/m
+USTAR | friction velocity | s/m
+UM | wind speed plus stability effect | m/s
+UAF | canopy air speed | m/s
+TAF | canopy air temperature | K
+QAF | canopy air humidity | kg/kg
+OBU | Monin-Obukhov length | m
+ZETA | dimensionless stability parameter | unitless
+VPD | vapor pressure deficit | Pa
+num_iter | number of iterations | unitless
+RB | leaf boundary resistance | s/m
+Z0HV | roughness length over vegetation, sensible heat | m
+Z0MV | roughness length over vegetation, momentum | m
+Z0QV | roughness length over vegetation, latent heat | m
+Z0HG_P | patch roughness length over ground, sensible heat | m
+Z0MG_P | patch roughness length over ground, momentum | m
+Z0QG_P | patch roughness length over ground, latent heat | m
+KBM1 | natural logarithm of Z0MG_P/Z0HG_P | unitless
+RB10 | 10 day running mean boundary layer resistance | s/m
+
+---
+
+## src/biogeophys/HumanIndexMod.F90
+
+SWBGT | 2 m Simplified Wetbulb Globe Temp | C
+SWBGT_U | Urban 2 m Simplified Wetbulb Globe Temp | C
+SWBGT_R | Rural 2 m Simplified Wetbulb Globe Temp | C
+HUMIDEX | 2 m Humidex | C
+HUMIDEX_U | Urban 2 m Humidex | C
+HUMIDEX_R | Rural 2 m Humidex | C
+WBT | 2 m Stull Wet Bulb | C
+WBT_U | Urban 2 m Stull Wet Bulb | C
+WBT_R | Rural 2 m Stull Wet Bulb | C
+HIA | 2 m NWS Heat Index | C
+HIA_U | Urban 2 m NWS Heat Index | C
+HIA_R | Rural 2 m NWS Heat Index | C
+APPAR_TEMP | 2 m apparent temperature | C
+APPAR_TEMP_U | Urban 2 m apparent temperature | C
+APPAR_TEMP_R | Rural 2 m apparent temperature | C
+WBA | 2 m Wet Bulb | C
+WBA_U | Urban 2 m Wet Bulb | C
+WBA_R | Rural 2 m Wet Bulb | C
+TEQ | 2 m Equiv Temp | K
+TEQ_U | Urban 2 m Equiv Temp | K
+TEQ_R | Rural 2 m Equiv Temp | K
+EPT | 2 m Equiv Pot Temp | K
+EPT_U | Urban 2 m Equiv Pot Temp | K
+EPT_R | Rural 2 m Equiv Pot Temp | K
+DISCOI | 2 m Discomfort Index | C
+DISCOI_U | Urban 2 m Discomfort Index | C
+DISCOI_R | Rural 2 m Discomfort Index | C
+THIP | 2 m Temp Hum Index Physiology | C
+THIP_U | Urban 2 m Temp Hum Index Physiology | C
+THIP_R | Rural 2 m Temp Hum Index Physiology | C
+THIC | 2 m Temp Hum Index Comfort | C
+THIC_U | Urban 2 m Temp Hum Index Comfort | C
+THIC_R | Rural 2 m Temp Hum Index Comfort | C
+SWMP65 | 2 m Swamp Cooler Temp 65% Eff | C
+SWMP65_U | Urban 2 m Swamp Cooler Temp 65% Eff | C
+SWMP65_R | Rural 2 m Swamp Cooler Temp 65% Eff | C
+SWMP80 | 2 m Swamp Cooler Temp 80% Eff | C
+SWMP80_U | Urban 2 m Swamp Cooler Temp 80% Eff | C
+SWMP80_R | Rural 2 m Swamp Cooler Temp 80% Eff | C
+DISCOIS | 2 m Stull Discomfort Index | C
+DISCOIS_U | Urban 2 m Stull Discomfort Index | C
+DISCOIS_R | Rural 2 m Stull Discomfort Index | C
+
+---
+
+## src/biogeophys/LakeStateType.F90
+
+LAKEICEFRAC | lake layer ice mass fraction | unitless
+LAKEICEFRAC_SURF | surface lake layer ice mass fraction | unitless
+LAKEICETHICK | thickness of lake ice | m
+TKE1 | top lake level eddy thermal conductivity | W/(mK)
+RAM_LAKE | aerodynamic resistance for momentum (lakes only) | s/m
+UST_LAKE | friction velocity (lakes only) | m/s
+
+---
+
+## src/biogeophys/OzoneMod.F90
+
+O3UPTAKESUN | ozone flux per unit sunlit leaf area | mmol/m^2/s
+O3UPTAKESHA | ozone flux per unit shaded leaf area | mmol/m^2/s
+O3COEFPSNSHA | ozone coeff for photosynthesis - shaded | unitless
+O3COEFPSNSUN | ozone coeff for photosynthesis - sunlit | unitless
+O3COEFGSSHA | ozone coeff for stomatal conductance - shaded | unitless
+O3COEFGSSUN | ozone coeff for stomatal conductance - sunlit | unitless
+O3COEFJMAXSHA | ozone coeff for electron transport - shaded | unitless
+O3COEFJMAXSUN | ozone coeff for electron transport - sunlit | unitless
+
+---
+
+## src/biogeophys/SaturatedExcessRunoffMod.F90
+
+FCOV | fractional impermeable area | unitless
+FSAT | fractional area with water table at surface | unitless
+
+---
+
+## src/biogeophys/SoilHydrologyType.F90
+
+QCHARGE | aquifer recharge rate | mm/s
+NSUBSTEPS | number of adaptive timesteps in CLM timestep | unitless
+FROST_TABLE | frost table depth | m
+ZWT | water table depth | m
+ZWT_PERCH | perched water table depth | m
+
+---
+
+## src/biogeophys/SoilStateType.F90
+
+SMP | soil matric potential | mm
+KROOT | root conductivity | mm/s
+KSOIL | soil conductivity | mm/s
+bsw | slope of soil water retention curve | unitless
+ROOTR | effective fraction of roots in each soil layer | proportion
+ROOTR_COLUMN | effective fraction of roots (column level) | proportion
+SOILPSI | soil water potential in each soil layer | MPa
+SNO_TK | snow thermal conductivity | W/m-K
+SNO_TK_ICE | snow thermal conductivity (ice landunits only) | W/m-K
+HK | hydraulic conductivity | mm/s
+SoilAlpha | VG m parameter for soil | unitless
+SoilAlpha_U | VG alpha parameter for Unconfined aquifer | unitless
+watsat | saturated soil water content (porosity) | mm3/mm3
+EFF_POROSITY | effective porosity = porosity - vol_ice | mm3/mm3
+watfc | water content at field capacity | mm3/mm3
+SOILRESIS | soil evaporative resistance | s/m
+DSL | dry surface layer thickness | mm
+
+---
+
+## src/biogeophys/SolarAbsorbedType.F90
+
+FSA | absorbed solar radiation | W/m^2
+FSA_ICE | absorbed solar radiation (ice landunits only) | W/m^2
+FSA_R | Rural absorbed solar radiation | W/m^2
+FSA_U | Urban absorbed solar radiation | W/m^2
+FSR | reflected solar radiation | W/m^2
+SWup | upwelling shortwave radiation | W/m^2
+FSR_ICE | reflected solar radiation (ice landunits only) | W/m^2
+SNO_ABS | Absorbed solar radiation in each snow layer | W/m^2
+SNO_ABS_ICE | Absorbed solar radiation (ice landunits only) | W/m^2
+SABV | solar rad absorbed by veg | W/m^2
+SABG | solar rad absorbed by ground | W/m^2
+SABG_PEN | Rural solar rad penetrating top soil/snow | W/m^2
+FSDSNDDLN | direct nir incident solar radiation at local noon | W/m^2
+FSDSND | direct nir incident solar radiation | W/m^2
+FSDSNI | diffuse nir incident solar radiation | W/m^2
+FSRND | direct nir reflected solar radiation | W/m^2
+FSRNI | diffuse nir reflected solar radiation | W/m^2
+FSRNDLN | direct nir reflected solar radiation at local noon | W/m^2
+FSRSF | reflected solar radiation | W/m^2
+SSRE_FSR | surface snow effect on reflected solar radiation | W/m^2
+FSRSFND | direct nir reflected solar radiation | W/m^2
+FSRSFNI | diffuse nir reflected solar radiation | W/m^2
+FSRSFNDLN | direct nir reflected solar radiation at local noon | W/m^2
+SSRE_FSRND | surface snow effect on direct nir reflected radiation | W/m^2
+SSRE_FSRNI | surface snow effect on diffuse nir reflected radiation | W/m^2
+SSRE_FSRNDLN | surface snow effect on direct nir at local noon | W/m^2
+SNOINTABS | Fraction of incoming solar absorbed by lower snow layers | -
+PAR240DZ | 10-day running mean daytime absorbed PAR | W/m^2
+PAR240XZ | 10-day running mean max absorbed PAR | W/m^2
+
+---
+
+## src/biogeophys/SurfaceAlbedoType.F90
+
+AZSUN | azimuth angle of the sun | radians
+COSZEN_GRC | cosine of solar zenith angle | none
+COSZEN | cosine of solar zenith angle (downscaled) | none
+ALBGRD | ground albedo (direct) | proportion
+ALBGRI | ground albedo (indirect) | proportion
+ALBDSF | diagnostic snow-free surface albedo (direct) | proportion
+ALBISF | diagnostic snow-free surface albedo (indirect) | proportion
+ALBD | surface albedo (direct) | proportion
+ALBI | surface albedo (indirect) | proportion
+ALBD_HIST | surface albedo (direct) | proportion
+ALBI_HIST | surface albedo (indirect) | proportion
+ALBGRD_HIST | ground albedo (direct) | proportion
+ALBGRI_HIST | ground albedo (indirect) | proportion
+ALBGRD_PUR_HIST | ground albedo without aerosol (direct) | proportion
+ALBGRI_PUR_HIST | ground albedo without aerosol (diffuse) | proportion
+ALBGRD_BC_HIST | ground albedo without BC (direct) | proportion
+ALBGRI_BC_HIST | ground albedo without BC (diffuse) | proportion
+ALBGRD_OC_HIST | ground albedo without OC (direct) | proportion
+ALBGRI_OC_HIST | ground albedo without OC (diffuse) | proportion
+ALBGRD_DST_HIST | ground albedo without dust (direct) | proportion
+ALBGRI_DST_HIST | ground albedo without dust (diffuse) | proportion
+ALBSND_HIST | snow albedo (direct) | proportion
+ALBSNI_HIST | snow albedo (diffuse) | proportion
+
+---
+
+## src/biogeophys/SurfaceRadiationMod.F90
+
+SNOAERFRCL | surface forcing of all aerosols in snow | W/m^2
+SNOAERFRC2L | surface forcing of aerosols (snow present only) | W/m^2
+SNOBCFRCL | surface forcing of BC in snow | W/m^2
+SNOBCFRC2L | surface forcing of BC (snow present only) | W/m^2
+SNOOCFRCL | surface forcing of OC in snow | W/m^2
+SNOOCFRC2L | surface forcing of OC (snow present only) | W/m^2
+SNODSTFRCL | surface forcing of dust in snow | W/m^2
+SNODSTFRC2L | surface forcing of dust (snow present only) | W/m^2
+FSDSVD | direct vis incident solar radiation | W/m^2
+FSDSVI | diffuse vis incident solar radiation | W/m^2
+FSRVD | direct vis reflected solar radiation | W/m^2
+FSRVI | diffuse vis reflected solar radiation | W/m^2
+FSRSFVD | direct vis reflected solar radiation | W/m^2
+FSRSFVI | diffuse vis reflected solar radiation | W/m^2
+SSRE_FSRVD | surface snow effect on direct vis reflected | W/m^2
+SSRE_FSRVI | surface snow effect on diffuse vis reflected | W/m^2
+FSDSVDLN | direct vis incident solar at local noon | W/m^2
+FSDSVILN | diffuse vis incident solar at local noon | W/m^2
+PARVEGLN | absorbed par by vegetation at local noon | W/m^2
+FSRVDLN | direct vis reflected solar at local noon | W/m^2
+FSRSFVDLN | direct vis reflected solar at local noon | W/m^2
+SSRE_FSRVDLN | surface snow effect on direct vis at local noon | W/m^2
+SNOFSDSVD | direct vis incident solar on snow | W/m^2
+SNOFSDSND | direct nir incident solar on snow | W/m^2
+SNOFSDSVI | diffuse vis incident solar on snow | W/m^2
+SNOFSDSNI | diffuse nir incident solar on snow | W/m^2
+SNOFSRVD | direct vis reflected solar from snow | W/m^2
+SNOFSRND | direct nir reflected solar from snow | W/m^2
+SNOFSRVI | diffuse vis reflected solar from snow | W/m^2
+SNOFSRNI | diffuse nir reflected solar from snow | W/m^2
+
+---
+
+## src/biogeophys/TemperatureType.F90
+
+TH2OSFC | surface water temperature | K
+TG_U | Urban ground temperature | K
+TLAKE | lake temperature | K
+SNO_T | Snow temperatures | K
+SNO_T_ICE | Snow temperatures (ice landunits only) | K
+TSA | 2m air temperature | K
+TSA_ICE | 2m air temperature (ice landunits only) | K
+TSA_R | Rural 2m air temperature | K
+TREFMNAV | daily minimum of average 2-m temperature | K
+TREFMXAV | daily maximum of average 2-m temperature | K
+TREFMNAV_R | Rural daily minimum of average 2-m temperature | K
+TREFMXAV_R | Rural daily maximum of average 2-m temperature | K
+TSA_U | Urban 2m air temperature | K
+TREFMNAV_U | Urban daily minimum of average 2-m temperature | K
+TREFMXAV_U | Urban daily maximum of average 2-m temperature | K
+TSTEM | stem temperature | K
+TV | vegetation temperature | K
+TSKIN | skin temperature | K
+TG | ground temperature | K
+TG_ICE | ground temperature (ice landunits only) | K
+TG_R | Rural ground temperature | K
+TSOI | soil temperature | K
+TSOI_ICE | soil temperature (ice landunits only) | K
+TSOI_10CM | soil temperature in top 10cm of soil | K
+TSL | temperature of near-surface soil layer | K
+SNOTXMASS | snow temperature times layer mass | K kg/m2
+SNOTXMASS_ICE | snow temperature times layer mass (ice) | K kg/m2
+T10 | 10-day running mean of 2-m temperature | K
+SOIL10 | 10-day running mean of 12cm layer soil | K
+A5TMIN | 5-day running mean of min 2-m temperature | K
+A10TMIN | 10-day running mean of min 2-m temperature | K
+TBUILD | internal urban building temperature | K
+TROOF_INNER | roof inside surface temperature | K
+TSUNW_INNER | sunwall inside surface temperature | K
+TSHDW_INNER | shadewall inside surface temperature | K
+TFLOOR | floor temperature | K
+HEAT_CONTENT1 | initial gridcell total heat content | J/m^2
+HEAT_CONTENT1_VEG | initial heat content (nat veg and crop only) | J/m^2
+HEAT_CONTENT2 | post land cover change total heat content | J/m^2
+LIQUID_WATER_TEMP1 | initial weighted average liquid water temperature | K
+SNOTTOPLEL | snow temperature (top layer) | K
+SNOTTOPLEL_ICE | snow temperature (top layer, ice only) | K
+SNOdTdzL | top snow layer temperature gradient | K/m
+DT_VEG | change in t_veg, last iteration | K
+
+---
+
+## src/biogeophys/WaterStateType.F90
+
+WA | water in the unconfined aquifer | mm
+STREAM_WATER_VOLUME | volume of water in stream channel | m3
+EXCESS_ICE | excess soil ice | kg/m2
+
+---
+
+## src/biogeochem/CropType.F90
+
+FERTNITRO | Nitrogen fertilizer for each crop | gN/m2/yr
+HUI | Crop patch heat unit index | ddays
+GDDACCUM | Accumulated growing degree days past planting | ddays
+GDDTSOI | Growing degree-days from planting (top two soil layers) | ddays
+CPHASE | crop phenology phase | unitless
+LATBASET | latitude vary base temperature for hui | degree C
+SDATES | actual crop sowing dates | day of year
+SWINDOW_STARTS | crop sowing window start dates | day of year
+SWINDOW_ENDS | crop sowing window end dates | day of year
+SDATES_PERHARV | actual sowing dates for crops harvested this year | day of year
+SYEARS_PERHARV | actual sowing years for crops harvested this year | year
+HDATES | actual crop harvest dates | day of year
+GDDACCUM_PERHARV | At-harvest accumulated growing degree days | ddays
+HUI_PERHARV | At-harvest accumulated heat unit index | ddays
+SOWING_REASON | Reason for each crop sowing | unitless
+SOWING_REASON_PERHARV | Reason for sowing of each crop harvested | unitless
+HARVEST_REASON_PERHARV | Reason for each crop harvest | unitless
+GDD20_BASELINE | Baseline mean GDD accumulated during accumulation period | ddays
+GDD20_SEASON_START | Start of the GDD20 accumulation season | day of year
+GDD20_SEASON_END | End of the GDD20 accumulation season | day of year
+
+---
+
+## src/biogeochem/CNDVType.F90
+
+AGDD | growing degree-days base 5C | K
+
+---
+
+## src/soilbiogeochem/SoilBiogeochemCarbonFluxType.F90
+
+HR | total heterotrophic respiration | gC/m^2/s
+MICC_HR | microbial C heterotrophic respiration | gC/m^2/s
+CWDC_HR | cwd C heterotrophic respiration | gC/m^2/s
+LITTERC_HR | litter C heterotrophic respiration | gC/m^2/s
+SOILC_HR | soil C heterotrophic respiration | gC/m^2/s
+FPHR_vr | fraction of potential HR due to N limitation | unitless
+SOMC_FIRE | C loss due to peat burning | gC/m^2/s
+T_SCALAR | temperature inhibition of decomposition | unitless
+W_SCALAR | Moisture inhibition of decomposition | unitless
+O_SCALAR | fraction decomposition reduced due to anoxia | unitless
+SOM_C_LEACHED | total flux of C from SOM pools due to leaching | gC/m^2/s
+HR_vr | total vertically resolved heterotrophic respiration | gC/m^3/s
+C13_HR | C13 total heterotrophic respiration | gC13/m^2/s
+C13_MICC_HR | C13 microbial heterotrophic respiration | gC13/m^2/s
+C13_CWDC_HR | C13 cwd C heterotrophic respiration | gC/m^2/s
+C13_LITTERC_HR | C13 litter C heterotrophic respiration | gC13/m^2/s
+C13_SOILC_HR | C13 soil organic matter heterotrophic respiration | gC13/m^2/s
+C14_HR | C14 total heterotrophic respiration | gC14/m^2/s
+C14_MICC_HR | C14 microbial heterotrophic respiration | gC13/m^2/s
+C14_CWDC_HR | C14 cwd C heterotrophic respiration | gC/m^2/s
+C14_LITTERC_HR | C14 litter carbon heterotrophic respiration | gC14/m^2/s
+C14_SOILC_HR | C14 soil organic matter heterotrophic respiration | gC14/m^2/s
+
+---
+
+## src/soilbiogeochem/SoilBiogeochemCarbonStateType.F90
+
+SOILC_vr | SOIL C (vertically resolved) | gC/m^3
+TOTMICC | total microbial carbon | gC/m^2
+TOTLITC | total litter carbon | gC/m^2
+TOTSOMC | total soil organic matter carbon | gC/m^2
+TOTLITC_1m | total litter carbon to 1 meter depth | gC/m^2
+TOTSOMC_1m | total soil organic matter carbon to 1 meter depth | gC/m^2
+COL_CTRUNC | column-level sink for C truncation | gC/m^2
+DYN_COL_SOIL_ADJUSTMENTS_C | Adjustments in soil carbon due to dynamic column areas | gC/m^2
+TOTCOLC | total column carbon, incl veg and cpool | gC/m^2
+TOTECOSYSC | total ecosystem carbon, incl veg | gC/m^2
+C13_SOILC_vr | C13 SOIL C (vertically resolved) | gC13/m^3
+C13_TOTMICC | C13 total microbial carbon | gC/m^2
+C13_TOTLITC | C13 total litter carbon | gC13/m^2
+C13_TOTSOMC | C13 total soil organic matter carbon | gC13/m^2
+C13_TOTLITC_1m | C13 total litter carbon to 1 meter | gC13/m^2
+C13_TOTSOMC_1m | C13 total soil organic matter carbon to 1 meter | gC13/m^2
+C13_COL_CTRUNC | C13 column-level sink for C truncation | gC13/m^2
+C13_DYN_COL_SOIL_ADJUSTMENTS_C | C13 adjustments in soil carbon | gC13/m^2
+C13_TOTCOLC | C13 total column carbon | gC13/m^2
+C13_TOTECOSYSC | C13 total ecosystem carbon | gC13/m^2
+C14_SOILC_vr | C14 SOIL C (vertically resolved) | gC14/m^3
+C14_TOTMICC | C14 total microbial carbon | gC/m^2
+C14_TOTLITC | C14 total litter carbon | gC14/m^2
+C14_TOTSOMC | C14 total soil organic matter carbon | gC14/m^2
+C14_TOTLITC_1m | C14 total litter carbon to 1 meter | gC14/m^2
+C14_TOTSOMC_1m | C14 total soil organic matter carbon to 1 meter | gC14/m^2
+C14_COL_CTRUNC | C14 column-level sink for C truncation | gC14/m^2
+C14_DYN_COL_SOIL_ADJUSTMENTS_C | C14 adjustments in soil carbon | gC14/m^2
+C14_TOTCOLC | C14 total column carbon | gC14/m^2
+C14_TOTECOSYSC | C14 total ecosystem carbon | gC14/m^2
+
+---
+
+## src/soilbiogeochem/SoilBiogeochemNitrogenFluxType.F90
+
+NDEP_TO_SMINN | atmospheric N deposition to soil mineral N | gN/m^2/s
+NFIX_TO_SMINN | symbiotic/asymbiotic N fixation to soil mineral N | gN/m^2/s
+FFIX_TO_SMINN | free living N fixation to soil mineral N | gN/m^2/s
+DENIT | total rate of denitrification | gN/m^2/s
+SOM_N_LEACHED | total flux of N from SOM pools due to leaching | gN/m^2/s
+SMINN_TO_DENIT_EXCESS | denitrification from excess mineral N pool | gN/m^2/s
+SMINN_LEACHED | soil mineral N pool loss to leaching | gN/m^2/s
+SMINN_TO_DENIT_EXCESS_vr | denitrification from excess mineral N | gN/m^3/s
+SMINN_LEACHED_vr | soil mineral N pool loss to leaching | gN/m^3/s
+F_NIT | nitrification flux | gN/m^2/s
+F_DENIT | denitrification flux | gN/m^2/s
+POT_F_NIT | potential nitrification flux | gN/m^2/s
+POT_F_DENIT | potential denitrification flux | gN/m^2/s
+SMIN_NO3_LEACHED | soil NO3 pool loss to leaching | gN/m^2/s
+SMIN_NO3_RUNOFF | soil NO3 pool loss to runoff | gN/m^2/s
+F_NIT_vr | nitrification flux | gN/m^3/s
+F_DENIT_vr | denitrification flux | gN/m^3/s
+POT_F_NIT_vr | potential nitrification flux | gN/m^3/s
+POT_F_DENIT_vr | potential denitrification flux | gN/m^3/s
+SMIN_NO3_LEACHED_vr | soil NO3 pool loss to leaching | gN/m^3/s
+SMIN_NO3_RUNOFF_vr | soil NO3 pool loss to runoff | gN/m^3/s
+n2_n2o_ratio_denit | n2_n2o_ratio_denit | gN/gN
+ACTUAL_IMMOB_NO3 | immobilization of NO3 | gN/m^3/s
+ACTUAL_IMMOB_NH4 | immobilization of NH4 | gN/m^3/s
+SMIN_NO3_TO_PLANT | plant uptake of NO3 | gN/m^3/s
+SMIN_NH4_TO_PLANT | plant uptake of NH4 | gN/m^3/s
+SMIN_NO3_MASSDENS | SMIN_NO3_MASSDENS | ugN/cm^3
+K_NITR_T | K_NITR_T | unitless
+K_NITR_PH | K_NITR_PH | unitless
+K_NITR_H2O | K_NITR_H2O | unitless
+K_NITR | K_NITR | 1/s
+WFPS | water-filled pore space | percent
+FMAX_DENIT_CARBONSUBSTRATE | FMAX_DENIT_CARBONSUBSTRATE | gN/m^3/s
+FMAX_DENIT_NITRATE | FMAX_DENIT_NITRATE | gN/m^3/s
+F_DENIT_BASE | F_DENIT_BASE | gN/m^3/s
+diffus | diffusivity | m^2/s
+ratio_k1 | ratio_k1 | none
+ratio_no3_co2 | ratio_no3_co2 | ratio
+soil_co2_prod | soil_co2_prod | ug C/g soil/day
+fr_WFPS | fr_WFPS | fraction
+soil_bulkdensity | soil_bulkdensity | kg/m3
+anaerobic_frac | anaerobic_frac | m3/m3
+r_psi | r_psi | m
+POTENTIAL_IMMOB_vr | potential N immobilization | gN/m^3/s
+ACTUAL_IMMOB_vr | actual N immobilization | gN/m^3/s
+SMINN_TO_PLANT_vr | plant uptake of soil mineral N | gN/m^3/s
+SUPPLEMENT_TO_SMINN_vr | supplemental N supply | gN/m^3/s
+GROSS_NMIN_vr | gross rate of N mineralization | gN/m^3/s
+NET_NMIN_vr | net rate of N mineralization | gN/m^3/s
+POTENTIAL_IMMOB | potential N immobilization | gN/m^2/s
+ACTUAL_IMMOB | actual N immobilization | gN/m^2/s
+SMINN_TO_PLANT | plant uptake of soil mineral N | gN/m^2/s
+SUPPLEMENT_TO_SMINN | supplemental N supply | gN/m^2/s
+GROSS_NMIN | gross rate of N mineralization | gN/m^2/s
+NET_NMIN | net rate of N mineralization | gN/m^2/s
+F_N2O_NIT | nitrification N2O flux | gN/m^2/s
+F_N2O_DENIT | denitrification N2O flux | gN/m^2/s
+FERT_TO_SMINN | fertilizer to soil mineral N | gN/m^2/s
+SOYFIXN_TO_SMINN | Soybean fixation to soil mineral N | gN/m^2/s
+
+---
+
+## src/soilbiogeochem/SoilBiogeochemNitrogenStateType.F90
+
+SOILN_vr | SOIL N (vertically resolved) | gN/m^3
+SMINN | soil mineral N | gN/m^2
+TOTLITN_1m | total litter N to 1 meter | gN/m^2
+TOTSOMN_1m | total soil organic matter N to 1 meter | gN/m^2
+COL_NTRUNC | column-level sink for N truncation | gN/m^2
+SMIN_NO3_vr | soil mineral NO3 (vert. res.) | gN/m^3
+SMIN_NH4_vr | soil mineral NH4 (vert. res.) | gN/m^3
+SMINN_vr | soil mineral N | gN/m^3
+SMIN_NO3 | soil mineral NO3 | gN/m^2
+SMIN_NH4 | soil mineral NH4 | gN/m^2
+TOTLITN | total litter N | gN/m^2
+TOTMICN | total microbial N | gN/m^2
+TOTSOMN | total soil organic matter N | gN/m^2
+DYN_COL_SOIL_ADJUSTMENTS_N | Adjustments in soil nitrogen | gN/m^2
+DYN_COL_SOIL_ADJUSTMENTS_NO3 | Adjustments in soil NO3 | gN/m^2
+DYN_COL_SOIL_ADJUSTMENTS_NH4 | Adjustments in soil NH4 | gN/m^2
+TOTECOSYSN | total ecosystem N | gN/m^2
+TOTCOLN | total column-level N | gN/m^2
+
+---
+
+## src/soilbiogeochem/SoilBiogeochemStateType.F90
+
+CROOT_PROF | profile for litter C and N inputs from coarse roots | 1/m
+FROOT_PROF | profile for litter C and N inputs from fine roots | 1/m
+LEAF_PROF | profile for litter C and N inputs from leaves | 1/m
+STEM_PROF | profile for litter C and N inputs from stems | 1/m
+NFIXATION_PROF | profile for biological N fixation | 1/m
+NDEP_PROF | profile for atmospheric N deposition | 1/m
+SOM_ADV_COEF | advection term for vertical SOM translocation | m/s
+SOM_DIFFUS_COEF | diffusion coefficient for vertical SOM translocation | m^2/s
+FPI | fraction of potential immobilization | proportion
+FPG | fraction of potential gpp | proportion
+FPI_vr | fraction of potential immobilization | proportion
+
+---
+
+## src/cpl/share_esmf/FireDataBaseType.F90
+
+HDM | human population density | counts/km^2
+LNFM | Lightning frequency | counts/km^2/hr
+
+---
+
+## src/cpl/share_esmf/UrbanTimeVarType.F90
+
+TBUILD_MAX | prescribed maximum interior building temperature | K
+P_AC | prescribed air-conditioning ownership rate | fraction

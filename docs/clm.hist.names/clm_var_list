@@ -1,0 +1,735 @@
+## Files referenced:
+src/main/controlMod.F90
+src/main/atm2lndType.F90
+src/main/lnd2atmType.F90
+src/main/glcBehaviorMod.F90
+src/main/restFileMod.F90
+src/biogeophys/CanopyFluxesMod.F90
+src/biogeophys/CanopyHydrologyMod.F90
+src/biogeophys/CanopyStateType.F90
+src/biogeophys/FrictionVelocityMod.F90
+src/biogeophys/HumanIndexMod.F90
+src/biogeophys/IrrigationMod.F90
+src/biogeophys/PhotosynthesisMod.F90
+src/biogeophys/RootBiophysMod.F90
+src/biogeophys/SnowCoverFractionSwensonLawrence2012Mod.F90
+src/biogeophys/SnowHydrologyMod.F90
+src/biogeophys/SoilHydrologyMod.F90
+src/biogeophys/SoilHydrologyType.F90
+src/biogeophys/SoilStateInitTimeConstMod.F90
+src/biogeophys/SoilWaterMovementMod.F90
+src/biogeophys/SurfaceAlbedoMod.F90
+src/biogeophys/SurfaceResistanceMod.F90
+src/biogeophys/TemperatureType.F90
+src/biogeophys/UrbanParamsType.F90
+src/biogeophys/WaterType.F90
+src/biogeochem/ch4varcon.F90
+src/biogeochem/CNFireBaseMod.F90
+src/biogeochem/CNFireFactoryMod.F90
+src/biogeochem/CNFUNMod.F90
+src/biogeochem/CNMRespMod.F90
+src/biogeochem/CNNDynamicsMod.F90
+src/biogeochem/CNPhenologyMod.F90
+src/biogeochem/CNPrecisionControlMod.F90
+src/biogeochem/CNSharedParamsMod.F90
+src/biogeochem/CNVegCarbonStateType.F90
+src/biogeochem/CNVegetationFacade.F90
+src/biogeochem/CropType.F90
+src/soilbiogeochem/SoilBiogeochemDecompCascadeConType.F90
+src/soilbiogeochem/TillageMod.F90
+src/dyn_subgrid/dynSubgridControlMod.F90
+src/dyn_subgrid/dynpftFileMod.F90
+src/init_interp/initInterp.F90
+src/cpl/nuopc/lnd_import_export.F90
+src/cpl/share_esmf/cropcalStreamMod.F90
+src/cpl/share_esmf/ndepStreamMod.F90
+src/cpl/share_esmf/laiStreamMod.F90
+src/cpl/share_esmf/FireDataBaseType.F90
+src/cpl/share_esmf/SoilMoistureStreamMod.F90
+src/cpl/share_esmf/UrbanTimeVarType.F90
+src/cpl/share_esmf/ch4FInundatedStreamType.F90
+src/cpl/share_esmf/ExcessIceStreamType.F90
+src/cpl/share_esmf/PrigentRoughnessStreamType.F90
+src/cpl/share_esmf/ZenderSoilErodStreamType.F90
+
+---
+
+## src/main/controlMod.F90 (clm_inparm)
+
+fatmlndfrc | Full pathname of land fraction data file |
+finidat | Full pathname of initial conditions file |
+nrevsn | Full pathname of master restart file for branch run |
+use_init_interp | Apply initInterp to file given by finidat |
+compname | Component name for history and restart files |
+fsurdat | Full pathname of surface data file |
+hillslope_file | Full pathname of hillslope data file |
+paramfile | Full pathname of PFT parameter file |
+fsnowoptics | SNICAR optical data file name |
+fsnowaging | SNICAR snow aging data file name |
+hist_empty_htapes | Do NOT output any default history fields |
+hist_dov2xy | Output data on 2D lat/lon grid |
+hist_avgflag_pertape | Per file averaging flag |
+hist_type1d_pertape | Averaging type for 1D output |
+hist_nhtfrq | Per tape history write frequency |
+hist_ndens | Per tape history file density |
+hist_mfilt | Per tape max number of time samples |
+hist_fincl1 | Fields to add to history tape 1 |
+hist_fincl2 | Fields to add to history tape 2 |
+hist_fincl3 | Fields to add to history tape 3 |
+hist_fincl4 | Fields to add to history tape 4 |
+hist_fincl5 | Fields to add to history tape 5 |
+hist_fincl6 | Fields to add to history tape 6 |
+hist_fincl7 | Fields to add to history tape 7 |
+hist_fincl8 | Fields to add to history tape 8 |
+hist_fincl9 | Fields to add to history tape 9 |
+hist_fincl10 | Fields to add to history tape 10 |
+hist_fexcl1 | Fields to exclude from history tape 1 |
+hist_fexcl2 | Fields to exclude from history tape 2 |
+hist_fexcl3 | Fields to exclude from history tape 3 |
+hist_fexcl4 | Fields to exclude from history tape 4 |
+hist_fexcl5 | Fields to exclude from history tape 5 |
+hist_fexcl6 | Fields to exclude from history tape 6 |
+hist_fexcl7 | Fields to exclude from history tape 7 |
+hist_fexcl8 | Fields to exclude from history tape 8 |
+hist_fexcl9 | Fields to exclude from history tape 9 |
+hist_fexcl10 | Fields to exclude from history tape 10 |
+hist_wrtch4diag | Add extra diagnostics for methane model |
+hist_fields_list_file | Write list of all output fields to file |
+suplnitro | Supplemental Nitrogen mode (NONE/ALL) |
+nfix_timeconst | Exponential relaxation days for N fixation | days
+spinup_state | Accelerated decomposition spinup state |
+override_bgc_restart_mismatch_dump | Override BGC restart mismatch check |
+co2_type | Type of CO2 feedback (constant/prognostic/diagnostic) |
+anoxia | Reduce heterotrophic respiration by oxygen availability |
+use_fun | Turn on FUN2.0 nitrogen model |
+perchroot | Weight btran by unfrozen layers only |
+perchroot_alt | Weight btran by active layer depth |
+deepmixing_depthcrit | Min lake depth for increased diffusivities | m
+deepmixing_mixfact | Factor to increase lake thermal diffusivities |
+lake_melt_icealb | Albedo values for melting lakes |
+use_matrixcn | Turn on Matrix solution for aboveground BGC |
+use_soil_matrixcn | Turn on Matrix solution for soil BGC |
+hist_wrt_matrixcn_diag | Turn on extra output for matrix solution |
+spinup_matrixcn | Turn on semi-analytic spinup for matrix |
+nyr_forcing | Years to average for matrix spinup | years
+nyr_sasu | Length of semi-analytic solution | years
+iloop_avg | Loop iteration for restart file average |
+maxpatch_glc | Number of elevation classes for glaciers |
+glc_do_dynglacier | Dynamically change glacier areas/heights |
+glc_snow_persistence_max_days | Days before snow-covered point is land ice | days
+nlevsno | Number of snow layers |
+h2osno_max | Maximum snow depth | mm H2O
+clump_pproc | Clumps per processor |
+create_crop_landunit | Separate crop and natural veg landunits |
+nsegspc | Number of segments per clump |
+co2_ppmv | Atmospheric CO2 molar ratio | umol/mol
+albice | Albedos for glacier ice |
+soil_layerstruct_predefined | Pre-defined soil layer structure |
+soil_layerstruct_userdefined | User-defined soil layer thicknesses | m
+soil_layerstruct_userdefined_nlevsoi | User-defined number of soil layers |
+use_subgrid_fluxes | Use subgrid fluxes for snow |
+snow_thermal_cond_method | Snow thermal conductivity parameterization |
+snow_thermal_cond_glc_method | Snow thermal conductivity for glaciers |
+snow_thermal_cond_lake_method | Snow thermal conductivity for lakes |
+snow_cover_fraction_method | Snow cover fraction parameterization |
+irrigate | Turn on irrigation |
+run_zero_weight_urban | Run all urban landunits everywhere |
+all_active | Make ALL pfts/columns/landunits active |
+crop_fsat_equals_zero | Set fsat to zero for crop columns |
+for_testing_run_ncdiopio_tests | Run tests of ncdio_pio |
+for_testing_use_second_grain_pool | Use second crop grain pool |
+for_testing_use_repr_structure_pool | Use reproductive structure pools |
+for_testing_no_crop_seed_replenishment | No grain C/N for seed replenishment |
+z0param_method | Surface roughness parameterization |
+use_z0m_snowmelt | Use snow z0m as function of melt |
+som_adv_flux | Base advective flux for SOM | m/s
+max_depth_cryoturb | Max depth for cryoturbation mixing | m
+surfprof_exp | Profile for C and N surface distribution |
+no_frozen_nitrif_denitrif | No nitrif/denitrif in frozen soil |
+use_c13 | Enable C13 model |
+use_c14 | Enable C14 model |
+for_testing_allow_interp_non_ciso_to_ciso | Allow non-ciso to ciso interpolation |
+fates_paramfile | Full pathname of FATES parameter file |
+use_fates | Turn on FATES model |
+fates_spitfire_mode | FATES fire module mode (0-5) |
+fates_harvest_mode | FATES harvesting mode |
+use_fates_planthydro | Turn on FATES plant hydraulics |
+use_fates_ed_st3 | Turn on FATES Static Stand Structure |
+use_fates_cohort_age_tracking | Turn on FATES cohort age tracking |
+use_fates_ed_prescribed_phys | Turn on FATES prescribed physiology |
+use_fates_inventory_init | Turn on FATES inventory initialization |
+use_fates_fixed_biogeog | Turn on FATES fixed biogeography |
+use_fates_nocomp | Turn on FATES no competition mode |
+use_fates_sp | Turn on FATES satellite phenology |
+use_fates_luh | Enable FATES land use harmonization |
+use_fates_lupft | Enable FATES land use with fixed biogeog |
+use_fates_potentialveg | Ignore land-use, assert primary lands |
+fluh_timeseries | Full pathname of LUH data file |
+flandusepftdat | Full pathname of FATES landuse x pft map |
+fates_inventory_ctrl_filename | FATES inventory control file |
+fates_stomatal_model | FATES stomatal conductance model |
+fates_stomatal_assimilation | FATES stomatal assimilation type |
+fates_leafresp_model | FATES leaf respiration model |
+fates_cstarvation_model | FATES carbon starvation model |
+fates_regeneration_model | FATES seed regeneration model |
+fates_radiation_model | FATES radiation model |
+fates_hydro_solver | FATES hydro solver method |
+fates_electron_transport_model | FATES electron transport model |
+fates_parteh_mode | FATES nutrient model mode |
+fates_seeddisp_cadence | FATES seed dispersal cadence |
+use_fates_tree_damage | Turn on FATES tree damage |
+use_fates_daylength_factor | Enable FATES day length factor |
+fates_photosynth_acclimation | FATES photosynthesis acclimation |
+fates_history_dimlevel | FATES history allocation setting |
+o3_veg_stress_method | Ozone vegetation stress method |
+use_flexibleCN | Allow CN ratio to flexibly change |
+use_luna | Turn on LUNA model for leaf N |
+use_soil_moisture_streams | Turn on prescribed soil moisture |
+use_excess_ice | Turn on excess ice physics |
+use_lai_streams | Turn on LAI streams |
+use_bedrock | Use variable soil depth |
+use_biomass_heat_storage | Include biomass heat storage |
+use_hillslope | Turn on hillslope hydrology |
+downscale_hillslope_meteorology | Turn on hillslope met downscaling |
+use_hillslope_routing | Turn on hillslope surface routing |
+hillslope_fsat_equals_zero | Set fsat to zero for hillslope |
+use_hydrstress | Turn on plant hydraulic stress |
+use_c14_bombspike | Use atmospheric C14 bomb fallout series |
+atm_c14_filename | Filename for atmospheric Delta C14 |
+use_c13_timeseries | Use atmospheric C13 time series |
+atm_c13_filename | Filename for atmospheric Delta C13 |
+convert_ocean_to_land | Convert ocean points to bare ground |
+n_dom_pfts | Number of dominant pfts |
+n_dom_landunits | Number of dominant landunits |
+collapse_urban | Collapse urban to dominant type |
+toosmall_soil | Threshold to keep soil landunit | %
+toosmall_crop | Threshold to keep crop landunit | %
+toosmall_glacier | Threshold to keep glacier landunit | %
+toosmall_lake | Threshold to keep lake landunit | %
+toosmall_wetland | Threshold to keep wetland landunit | %
+toosmall_urban | Threshold to keep urban landunits | %
+use_SSRE | Turn on Snow Radiative Effect diagnostic |
+use_lch4 | Turn on methane model |
+use_nitrif_denitrif | Turn on nitrification/denitrification |
+use_extralakelayers | Use 25 lake layers instead of 10 |
+use_vichydro | Turn on VIC hydrologic parameterizations |
+use_cn | Turn on Carbon Nitrogen model |
+use_cndv | Turn on CN with Dynamic Vegetation |
+use_crop | Turn on prognostic crop model |
+use_fertilizer | Turn on prognostic fertilizer |
+use_grainproduct | Turn on 1-year grain product pool |
+use_snicar_frc | Turn on SNICAR albedo forcing diagnostics |
+use_vancouver | Toggle for Vancouver specific logic |
+use_mexicocity | Toggle for Mexico City specific logic |
+use_noio | Turn all history output OFF |
+use_nguardrail | Apply leaf-N guardrail |
+crop_residue_removal_frac | Fraction of crop residues to product pool |
+flush_gdd20 | Flush accumulated GDD20 variables |
+snicar_numrad_snw | Number of wavelength bands in SNICAR |
+snicar_solarspec | Downward solar spectrum type for SNICAR |
+snicar_dust_optics | Dust optics type for SNICAR |
+snicar_use_aerosol | Toggle aerosol deposition in snow |
+snicar_snw_shape | Snow grain shape in SNICAR |
+snicar_snobc_intmix | Activate BC-snow internal mixing |
+snicar_snodst_intmix | Activate dust-snow internal mixing |
+do_sno_oc | Activate organic carbon in SNICAR |
+
+---
+
+## src/main/controlMod.F90 (clm_nitrogen)
+
+MM_Nuptake_opt | Michaelis Menten nitrogen uptake kinetics |
+CNratio_floating | Flexible CN ratio for Phenology |
+lnc_opt | How LUNA/Photosynthesis get leaf N content |
+reduce_dayl_factor | Reduce day length factor |
+vcmax_opt | Vcmax calculation option (0/3/4) |
+CN_evergreen_phenology_opt | Evergreen phenology option (0/1) |
+carbon_resp_opt | Carbon respiration option (0/1) |
+
+---
+
+## src/main/atm2lndType.F90 (atm2lnd_inparm)
+
+repartition_rain_snow | Repartition rain/snow based on temperature |
+glcmec_downscale_longwave | Downscale longwave radiation |
+lapse_rate | Surface temperature lapse rate | K/m
+lapse_rate_longwave | Longwave radiation lapse rate | W/m2/m
+longwave_downscaling_limit | Relative limit for longwave downscaling |
+precip_repartition_glc_all_snow_t | All snow temperature for glaciers | K
+precip_repartition_glc_all_rain_t | All rain temperature for glaciers | K
+precip_repartition_nonglc_all_snow_t | All snow temperature for non-glaciers | K
+precip_repartition_nonglc_all_rain_t | All rain temperature for non-glaciers | K
+
+---
+
+## src/main/lnd2atmType.F90 (lnd2atm_inparm)
+
+melt_non_icesheet_ice_runoff | Convert non-icesheet ice runoff to liquid |
+
+---
+
+## src/main/glcBehaviorMod.F90 (clm_glacier_behavior)
+
+glacier_region_behavior | Behavior for each glacier region ID |
+glacier_region_melt_behavior | Ice melt treatment for each region |
+glacier_region_ice_runoff_behavior | Ice runoff treatment for each region |
+
+---
+
+## src/main/restFileMod.F90 (finidat_consistency_checks)
+
+check_finidat_year_consistency | Check year consistency on finidat file |
+check_finidat_pct_consistency | Check pct_pft consistency on finidat |
+
+---
+
+## src/biogeophys/CanopyFluxesMod.F90 (canopyfluxes_inparm)
+
+use_undercanopy_stability | Use undercanopy stability term |
+use_biomass_heat_storage | Use biomass heat storage |
+itmax_canopy_fluxes | Max iterations in CanopyFluxes |
+
+---
+
+## src/biogeophys/CanopyHydrologyMod.F90 (clm_canopyhydrology_inparm)
+
+use_clm5_fpi | Use CLM5 fraction of intercepted precip equation |
+
+---
+
+## src/biogeophys/CanopyStateType.F90 (clm_canopy_inparm)
+
+leaf_mr_vcm | Scalar of leaf respiration to vcmax |
+
+---
+
+## src/biogeophys/FrictionVelocityMod.F90 (friction_velocity)
+
+zetamaxstable | Maximum stability parameter zeta |
+
+---
+
+## src/biogeophys/HumanIndexMod.F90 (clm_humanindex_inparm)
+
+calc_human_stress_indices | Which stress indices to calculate (ALL/FAST/NONE) |
+
+---
+
+## src/biogeophys/IrrigationMod.F90 (irrigation_inparm)
+
+irrig_min_lai | Minimum LAI for irrigation | m2/m2
+irrig_start_time | Time of day to check for irrigation | seconds
+irrig_length | Desired irrigation time per day | seconds
+irrig_target_smp | Target soil matric potential | mm
+irrig_depth | Soil depth for irrigation measurement | m
+irrig_threshold_fraction | Soil moisture threshold fraction |
+irrig_river_volume_threshold | River volume threshold for irrigation |
+limit_irrigation_if_rof_enabled | Limit irrigation by river storage |
+use_groundwater_irrigation | Use groundwater for irrigation |
+irrig_method_default | Default irrigation method |
+
+---
+
+## src/biogeophys/PhotosynthesisMod.F90 (photosyns_inparm)
+
+leafresp_method | Leaf maintenance respiration method |
+light_inhibit | If light should inhibit respiration |
+rootstem_acc | Respiratory acclimation for roots/stems |
+stomatalcond_method | Stomatal conductance method |
+modifyphoto_and_lmr_forcrop | Modify photosynthesis/LMR for crop |
+
+---
+
+## src/biogeophys/RootBiophysMod.F90 (rooting_profile_inparm)
+
+rooting_profile_method_water | Rooting profile method for water |
+rooting_profile_method_carbon | Rooting profile method for carbon |
+rooting_profile_varindex_water | Rooting profile variant index for water |
+rooting_profile_varindex_carbon | Rooting profile variant index for carbon |
+
+---
+
+## src/biogeophys/SnowCoverFractionSwensonLawrence2012Mod.F90 (scf_swenson_lawrence_2012_inparm)
+
+int_snow_max | Integrated snow cover parameter | mm
+n_melt_glcmec | Snow cover fraction param for glaciers | 1/mm
+
+---
+
+## src/biogeophys/SnowHydrologyMod.F90 (clm_snowhydrology_inparm)
+
+wind_dependent_snow_density | If snow density depends on wind |
+snow_overburden_compaction_method | Snow overburden compaction method |
+lotmp_snowdensity_method | Low temperature snow density method |
+overburden_compress_Tfactor | Snow compaction temperature factor | 1/K
+reset_snow | Reset non-glc snow pack |
+reset_snow_glc | Reset glc snow pack |
+reset_snow_glc_ela | Equilibrium line altitude for snow reset | m
+snow_dzmin_1 | Min snow thickness of top layer | m
+snow_dzmax_l_1 | Max top layer thickness (no layers beneath) | m
+snow_dzmax_u_1 | Max top layer thickness (layers beneath) | m
+snow_dzmin_2 | Min snow thickness of 2nd layer | m
+snow_dzmax_l_2 | Max 2nd layer thickness (no layers beneath) | m
+snow_dzmax_u_2 | Max 2nd layer thickness (layers beneath) | m
+
+---
+
+## src/biogeophys/SoilHydrologyMod.F90 (soilhydrology_inparm)
+
+baseflow_scalar | Baseflow scalar |
+
+---
+
+## src/biogeophys/SoilHydrologyMod.F90 (hillslope_hydrology_inparm)
+
+hillslope_head_gradient_method | Head gradient method |
+hillslope_transmissivity_method | Transmissivity method |
+
+---
+
+## src/biogeophys/SoilHydrologyType.F90 (clm_soilhydrology_inparm)
+
+h2osfcflag | If surface water is active |
+
+---
+
+## src/biogeophys/SoilStateInitTimeConstMod.F90 (clm_soilstate_inparm)
+
+organic_frac_squared | Square organic fraction when used |
+
+---
+
+## src/biogeophys/SoilWaterMovementMod.F90 (soilwater_movement_inparm)
+
+soilwater_movement_method | Richards equation solution method |
+upper_boundary_condition | Upper boundary condition index |
+lower_boundary_condition | Lower boundary condition index |
+dtmin | Minimum time step length | seconds
+verySmall | Small number for substep completion check |
+xTolerUpper | Tolerance to halve substep length |
+xTolerLower | Tolerance to double substep length |
+expensive | Adaptive time stepping control parameter |
+inexpensive | Adaptive time stepping control parameter |
+flux_calculation | First order Taylor flux approximation |
+
+---
+
+## src/biogeophys/SurfaceAlbedoMod.F90 (surfacealbedo_inparm)
+
+snowveg_affects_radiation | Snow on canopy affects radiation/albedo |
+
+---
+
+## src/biogeophys/SurfaceResistanceMod.F90 (soil_resis_inparm)
+
+soil_resis_method | Soil resistance method |
+
+---
+
+## src/biogeophys/TemperatureType.F90 (clm_temperature_inparm)
+
+excess_ice_coldstart_depth | Excess ice cold start depth | m
+excess_ice_coldstart_temp | Excess ice cold start temperature | K
+
+---
+
+## src/biogeophys/UrbanParamsType.F90 (clmu_inparm)
+
+urban_hac | Urban heating/air conditioning parameter |
+urban_explicit_ac | Urban explicit air conditioning |
+urban_traffic | Urban traffic |
+building_temp_method | Building temperature method |
+
+---
+
+## src/biogeophys/WaterType.F90 (water_tracers_inparm)
+
+enable_water_tracer_consistency_checks | Enable water tracer consistency checks |
+enable_water_isotopes | Enable water isotopes |
+
+---
+
+## src/biogeochem/ch4varcon.F90 (ch4par_in)
+
+ch4offline | Methane not passed between land/atmosphere |
+replenishlakec | Keep carbon storage under lakes constant |
+allowlakeprod | Allow production under lakes from soil C |
+finundation_method | Finundation method type |
+usephfact | Use pH factor in methane production |
+use_aereoxid_prog | Use prognostic aerenchyma oxidation |
+usefrootc | Use CLMCN fine root C |
+
+---
+
+## src/biogeochem/CNFireBaseMod.F90 (lifire_inparm)
+
+cli_scale | Global constant for deforestation fires | /day
+boreal_peatfire_c | Boreal peatland fire parameter | /hr
+pot_hmn_ign_counts_alpha | Potential human ignition counts | /person/month
+non_boreal_peatfire_c | Non-boreal peatland fire parameter | /hr
+cropfire_a1 | Cropland fire parameter | /hr
+rh_low | Relative humidity low threshold | %
+rh_hgh | Relative humidity high threshold | %
+bt_min | btran minimum |
+bt_max | btran maximum |
+occur_hi_gdp_tree | Fire occurrence for high GDP tree areas |
+lfuel | Lower fuel mass threshold for ignition | gC/m2
+ufuel | Upper fuel mass threshold for ignition | gC/m2
+cmb_cmplt_fact_litter | Combustion completeness factor for litter |
+cmb_cmplt_fact_cwd | Combustion completeness factor for CWD |
+max_rh30_affecting_fuel | Max 30-day RH affecting fuel combustibility | %
+defo_fire_precip_thresh_bet | Max precip for deforestation fire (BET) | mm/d
+defo_fire_precip_thresh_bdt | Max precip for deforestation fire (BDT) | mm/d
+borpeat_fire_soilmoist_denom | Boreal peat fire soil moisture denominator |
+nonborpeat_fire_precip_denom | Non-boreal peat fire precip denominator |
+
+---
+
+## src/biogeochem/CNFireFactoryMod.F90 (cnfire_inparm)
+
+fire_method | CN fire method to use |
+
+---
+
+## src/biogeochem/CNFUNMod.F90 (cnfun_inparm)
+
+nfix_method | Nitrogen fixation parameterization choice |
+
+---
+
+## src/biogeochem/CNMRespMod.F90 (cnmresp_inparm)
+
+br_root | Base rate for root maintenance respiration | gC/gN/s
+
+---
+
+## src/biogeochem/CNNDynamicsMod.F90 (mineral_nitrogen_dynamics)
+
+freelivfix_intercept | Free living N fixation intercept | gN/m2/s
+freelivfix_slope_wET | Free living N fixation slope with ET | gN/m2/s per mm/s
+
+---
+
+## src/biogeochem/CNPhenologyMod.F90 (cnphenology)
+
+initial_seed_at_planting | Initial seed at planting | gC/m2
+onset_thresh_depends_on_veg | Onset threshold depends on veg type |
+min_critical_dayl_method | Method for critical day length |
+generate_crop_gdds | Harvest day before next sowing |
+use_mxmat | Ignore crop max growing season length |
+
+---
+
+## src/biogeochem/CNPrecisionControlMod.F90 (cnprecision_inparm)
+
+ncrit | Critical N state for truncation | gN/m2
+ccrit | Critical C state for truncation | gC/m2
+cnegcrit | Critical negative C for abort | gC/m2
+nnegcrit | Critical negative N for abort | gN/m2
+
+---
+
+## src/biogeochem/CNSharedParamsMod.F90 (bgc_shared)
+
+constrain_stress_deciduous_onset | Additional constraint on stress deciduous onset |
+
+---
+
+## src/biogeochem/CNVegCarbonStateType.F90 (cnvegcarbonstate)
+
+initial_vegC | Initial vegetation carbon | gC/m2
+
+---
+
+## src/biogeochem/CNVegetationFacade.F90 (cn_general)
+
+reseed_dead_plants | Reseed dead plants at startup |
+dribble_crophrv_xsmrpool_2atm | Harvest xsmrpool to atmosphere |
+
+---
+
+## src/biogeochem/CropType.F90 (crop_inparm)
+
+baset_mapping | Latitude vary baset mapping method |
+baset_latvary_intercept | Latitude vary base temp intercept | degC
+baset_latvary_slope | Latitude vary base temp slope | degC/deg
+
+---
+
+## src/soilbiogeochem/SoilBiogeochemDecompCascadeConType.F90 (soilbgc_decomp)
+
+soil_decomp_method | Soil decomposition method |
+
+---
+
+## src/soilbiogeochem/TillageMod.F90 (tillage_inparm)
+
+tillage_mode | Tillage intensity setting (off/low/high) |
+use_original_tillage_phases | Use buggy tillage phase determination |
+max_tillage_depth | Maximum depth to till | m
+
+---
+
+## src/dyn_subgrid/dynSubgridControlMod.F90 (dynamic_subgrid)
+
+flanduse_timeseries | Transient landuse dataset filename |
+do_transient_pfts | Apply transient natural PFTs |
+do_transient_crops | Apply transient crops |
+do_transient_lakes | Apply transient lakes |
+do_transient_urban | Apply transient urban |
+do_harvest | Apply harvest from dataset |
+do_grossunrep | Apply gross unrepresented landcover change |
+reset_dynbal_baselines | Reset baseline water/energy values |
+for_testing_allow_non_annual_changes | Allow non-annual area changes |
+for_testing_zero_dynbal_fluxes | Set dynbal fluxes to zero |
+
+---
+
+## src/dyn_subgrid/dynpftFileMod.F90 (dynpft_consistency_checks)
+
+check_dynpft_consistency | Check dynpft file consistency |
+
+---
+
+## src/init_interp/initInterp.F90 (clm_initinterp_inparm)
+
+init_interp_method | Interpolation method |
+init_interp_fill_missing_with_natveg | Fill missing with natural veg |
+
+---
+
+## src/cpl/nuopc/lnd_import_export.F90 (ctsm_nuopc_cap)
+
+force_send_to_atm | Send export state to ATM even with data ATM |
+
+---
+
+## src/cpl/share_esmf/cropcalStreamMod.F90 (cropcal_streams)
+
+stream_year_first_cropcal_swindows | First year for sowing window stream |
+stream_year_last_cropcal_swindows | Last year for sowing window stream |
+model_year_align_cropcal_swindows | Alignment year for sowing windows |
+stream_year_first_cropcal_cultivar_gdds | First year for cultivar GDD stream |
+stream_year_last_cropcal_cultivar_gdds | Last year for cultivar GDD stream |
+model_year_align_cropcal_cultivar_gdds | Alignment year for cultivar GDDs |
+allow_invalid_swindow_inputs | Fall back on paramfile sowing windows |
+stream_fldFileName_swindow_start | Sowing window start stream file |
+stream_fldFileName_swindow_end | Sowing window end stream file |
+stream_fldFileName_cultivar_gdds | Cultivar GDD stream file |
+stream_fldFileName_gdd20_baseline | GDD20 baseline stream file |
+stream_meshfile_cropcal | Crop calendar stream meshfile |
+stream_gdd20_seasons | Read gdd20 season dates from streams |
+allow_invalid_gdd20_season_inputs | Fall back on hemisphere warm periods |
+stream_fldFileName_gdd20_season_start | GDD20 season start stream file |
+stream_fldFileName_gdd20_season_end | GDD20 season end stream file |
+
+---
+
+## src/cpl/share_esmf/ndepStreamMod.F90 (ndepdyn_nml)
+
+stream_year_first_ndep | First year in N deposition stream |
+stream_year_last_ndep | Last year in N deposition stream |
+model_year_align_ndep | Alignment year for N deposition |
+ndepmapalgo | Mapping algorithm for N deposition |
+ndep_taxmode | Time axis mode for N deposition |
+ndep_varlist | Variable list for N deposition |
+ndep_tintalgo | Time interpolation algorithm |
+stream_fldFileName_ndep | N deposition stream filename |
+stream_meshfile_ndep | N deposition stream meshfile |
+
+---
+
+## src/cpl/share_esmf/laiStreamMod.F90 (lai_streams)
+
+stream_year_first_lai | First year in LAI stream |
+stream_year_last_lai | Last year in LAI stream |
+model_year_align_lai | Alignment year for LAI |
+lai_dtlimit | dlimit for LAI stream |
+lai_mapalgo | Mapping algorithm for LAI |
+stream_fldFileName_lai | LAI stream filename |
+stream_meshfile_lai | LAI stream meshfile |
+lai_tintalgo | Time interpolation algorithm for LAI |
+
+---
+
+## src/cpl/share_esmf/FireDataBaseType.F90 (popd_streams)
+
+stream_year_first_popdens | First year in population density stream |
+stream_year_last_popdens | Last year in population density stream |
+model_year_align_popdens | Alignment year for population density |
+popdensmapalgo | Mapping algorithm for population density |
+stream_fldFileName_popdens | Population density stream filename |
+stream_meshfile_popdens | Population density stream meshfile |
+popdens_tintalgo | Time interpolation for population density |
+
+---
+
+## src/cpl/share_esmf/FireDataBaseType.F90 (light_streams)
+
+stream_year_first_lightng | First year in lightning stream |
+stream_year_last_lightng | Last year in lightning stream |
+model_year_align_lightng | Alignment year for lightning |
+lightngmapalgo | Mapping algorithm for lightning |
+stream_fldFileName_lightng | Lightning stream filename |
+stream_meshfile_lightng | Lightning stream meshfile |
+lightng_tintalgo | Time interpolation for lightning |
+
+---
+
+## src/cpl/share_esmf/SoilMoistureStreamMod.F90 (soil_moisture_streams)
+
+stream_year_first_soilm | First year in soil moisture stream |
+stream_year_last_soilm | Last year in soil moisture stream |
+model_year_align_soilm | Alignment year for soil moisture |
+soilm_tintalgo | Time interpolation for soil moisture |
+soilm_offset | Time offset for soil moisture dataset | seconds
+soilm_ignore_data_if_missing | Ignore streams if data missing |
+stream_fldfilename_soilm | Soil moisture stream filename |
+
+---
+
+## src/cpl/share_esmf/UrbanTimeVarType.F90 (urbantv_streams)
+
+stream_year_first_urbantv | First year in urban time-varying stream |
+stream_year_last_urbantv | Last year in urban time-varying stream |
+model_year_align_urbantv | Alignment year for urban time-varying |
+urbantvmapalgo | Mapping algorithm for urban time-varying |
+stream_fldFileName_urbantv | Urban time-varying stream filename |
+stream_meshfile_urbantv | Urban time-varying stream meshfile |
+urbantv_tintalgo | Time interpolation for urban time-varying |
+
+---
+
+## src/cpl/share_esmf/ch4FInundatedStreamType.F90 (ch4finundated)
+
+ch4finundatedmapalgo | Mapping algorithm for CH4 inundation |
+stream_fldFileName_ch4finundated | CH4 inundation stream filename |
+stream_meshfile_ch4finundated | CH4 inundation stream meshfile |
+
+---
+
+## src/cpl/share_esmf/ExcessIceStreamType.F90 (exice_streams)
+
+stream_mapalgo_exice | Mapping algorithm for excess ice |
+stream_fldFileName_exice | Excess ice stream filename |
+stream_meshfile_exice | Excess ice stream meshfile |
+use_excess_ice_streams | Use excess ice streams |
+
+---
+
+## src/cpl/share_esmf/PrigentRoughnessStreamType.F90 (prigentroughness)
+
+prigentroughnessmapalgo | Mapping algorithm for Prigent roughness |
+stream_fldFileName_prigentroughness | Prigent roughness stream filename |
+stream_meshfile_prigentroughness | Prigent roughness stream meshfile |
+use_prigent_roughness | Use Prigent roughness data |
+
+---
+
+## src/cpl/share_esmf/ZenderSoilErodStreamType.F90 (zendersoilerod)
+
+zendersoilerod_mapalgo | Mapping algorithm for Zender soil erodibility |
+stream_fldFileName_zendersoilerod | Zender soil erodibility stream filename |
+stream_meshfile_zendersoilerod | Zender soil erodibility stream meshfile |
+
+---
