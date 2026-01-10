@@ -77,20 +77,22 @@ After conda environment is set up and scripts have been reviewed:
 Tools for Claude Code to use. Where functionality overlaps, design as a single tool that can run either in-context (slash command style) or as background agent.
 
 ### Case Management Tools
-1. **Case Troubleshooter/Debugger**
-   - Input: case directory
-   - Reads logs, diagnoses failure, suggests fixes
-   - Optional: fix and resubmit (user confirmation required)
+1. **Case Troubleshooter/Debugger** - DONE (documentation approach)
+   - Added troubleshooting guidance to CLAUDE.md
+   - Workflow: CaseStatus → follow log paths → diagnose
+   - More comprehensive docs planned for Phase 4
 
-2. **Case Creator**
-   - Input: compset, grid, specific variables
-   - Creates and builds case
-   - Optional: monitor until execution starts
+2. **Case Creator** - DEFERRED (handle in-context)
+   - Simple enough to do conversationally
+   - Explored subset data workflow, documented key paths
+   - No separate tool needed
 
-3. **Hist File & Case Parser**
-   - Query case variables from XML configs
-   - Examine and report on history files
-   - Could leverage/replace case_analyzer scripts
+3. **Case Smoke Test** - DONE (`/case-check` slash command)
+   - Location: `~/.claude/commands/case-check.md`
+   - Verifies output files match expected (count, completeness)
+   - Quick plots for sanity check (spinup trending, etc.)
+   - Interactive follow-ups in main context
+   - Leverages case.analyzer scripts
 
 ### Research & Documentation Tools
 4. **Documentation Reconciler** (HIGH PRIORITY for Phase 4)
@@ -250,6 +252,21 @@ For tower run script - maximize use of local data files.
 - Enabled color schemes in plot_elevation_width_overlay.py and plot_col_areas.py
 - Fixed plot_zwt_hillslope_profile.py docstring (said "3 periods" but implemented 2)
 - Moved plot_vr_profile.py from vr_variables/ to main directory, added --hillslope parameter
+
+**2025-01-10:** Phase 3 Case Management Tools
+- Added Case Troubleshooting section to hpg-esm-tools/CLAUDE.md
+- Updated hillslope script references (bin_temporal.sh, removed get_upstream_changes.sh)
+- Explored subset data case workflow: examined working case, user_mods structure
+- Decided Case Creator not needed as separate tool (handle in-context)
+- Created `/case-check` slash command (`~/.claude/commands/case-check.md`):
+  - Smoke test workflow for CTSM cases
+  - File inventory (expected vs actual)
+  - Quick plots for sanity check
+  - Leverages existing case.analyzer scripts
+- Added Phase 4.6: ESM Guidance File task
+- Created `~/.claude/esm-guidance.md` draft with section placeholders
+- Added `@~/.claude/esm-guidance.md` reference to global CLAUDE.md
+- Discussed SLURM integration possibilities (future capability)
 - Updated generate_all_plots.py for new function signatures
 - Removed vr_variables/ subdirectory
 - All scripts pass shellcheck and ruff
