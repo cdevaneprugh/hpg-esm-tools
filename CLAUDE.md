@@ -112,11 +112,11 @@ esm    # activates esm-tools environment
 
 Includes:
 - **Python 3.12** (pinned to match HiPerGator module used for CTSM builds)
-- **Neovim 0.11+** with LSP support (pylsp for Python, fortls for Fortran)
+- **Neovim 0.11+** with treesitter syntax highlighting
 - **Data:** xarray, netCDF4, matplotlib, numpy, pandas, NCO tools
 - **Python linting:** ruff, mypy
 - **Shell linting:** shellcheck
-- **Fortran tools:** fprettify (formatter), fortran-language-server (linting/diagnostics)
+- **Fortran tools:** fprettify (formatter)
 - **Testing:** pytest
 
 ## Editor Setup
@@ -126,16 +126,17 @@ Neovim is included in the conda environment (no lmod module needed).
 **Config location:** `~/.config/nvim/`
 
 **Features:**
-- LSP: Python (pylsp), Fortran (fortls)
-- Completion: nvim-cmp
-- Theme: gruvbox (auto-detects true color support)
-- 80-column marker, spell check, line numbers
+- Treesitter syntax highlighting (Python, Fortran, Bash, Lua, Markdown)
+- Gruvbox colorscheme (auto-detects true color support)
+- Lualine statusline
+- Built-in completion (Ctrl-N/Ctrl-P)
+- 80-column marker, line numbers
 
 **Usage:**
 ```bash
-esm           # activate environment (includes neovim + LSP servers)
-vim file.py   # opens neovim with Python LSP
-vim file.f90  # opens neovim with Fortran LSP
+esm           # activate environment (includes neovim)
+vim file.py   # opens neovim with syntax highlighting
+vim file.f90  # opens neovim with Fortran syntax highlighting
 ```
 
 ## Related Repositories

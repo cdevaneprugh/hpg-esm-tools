@@ -1,5 +1,8 @@
 # NCO Temporal Analysis for CTSM History Files
 
+> **Note**: Historical analysis document. Test case directories referenced may no longer
+> exist. The NCO workflows and commands remain valid and applicable.
+
 **Date:** 2025-10-29
 **Test Case:** `subset_data.78pfts.no-dompft.I1850Clm60BgcCru.OSBS.251006-113206`
 **Duration:** 20 years (1901-1920), 240 monthly files

@@ -36,10 +36,6 @@ dependencies:
 
   # === Fortran Tools (for CTSM source code work) ===
   - fprettify>=0.3.7      # Fortran code formatter
-  - fortran-language-server>=1.12.0  # linting, diagnostics, IDE features
-
-  # === LSP Servers (for neovim) ===
-  - python-lsp-server>=1.10.0  # Python language server (pure Python, no Node.js)
 
   # === Testing ===
   - pytest>=8.0.0

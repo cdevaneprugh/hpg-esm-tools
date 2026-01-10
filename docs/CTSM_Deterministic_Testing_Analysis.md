@@ -1,5 +1,9 @@
 # CTSM Deterministic Testing and Hash Comparison Analysis
 
+> **Note**: This is a historical analysis document from September 2025. Some file paths
+> (e.g., `ctsm5.3-development`) may have changed since then. The analysis methodology
+> and findings remain valid.
+
 ## Executive Summary
 
 This document presents a comprehensive analysis of deterministic behavior in the Community Terrestrial Systems Model (CTSM) through hash comparison testing. Two identical model cases were executed and their outputs analyzed to determine the viability of using file hash comparison for model validation and reproducibility testing.

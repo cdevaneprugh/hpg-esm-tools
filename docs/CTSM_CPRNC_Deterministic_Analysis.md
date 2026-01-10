@@ -1,5 +1,9 @@
 # CTSM CPRNC Deterministic Testing Analysis
 
+> **Note**: This is a historical analysis document from September 2025. Some file paths
+> (e.g., `ctsm5.3-development`) may have changed since then. The analysis methodology
+> and findings remain valid.
+
 ## Executive Summary
 
 This document presents a comprehensive analysis of CTSM deterministic behavior using the CPRNC (Compare NetCDF) tool. Following the initial hash comparison study, CPRNC was successfully deployed to provide detailed scientific variable comparison between identical model runs. The analysis confirms **component-specific deterministic behavior** in CTSM and validates the effectiveness of hash comparison as a screening tool for model validation.

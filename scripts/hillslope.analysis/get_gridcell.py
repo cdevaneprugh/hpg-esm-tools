@@ -29,5 +29,9 @@ print("Calculated indices:")
 print(f"  lat_idx={LAT_IDX}, lon_idx={LON_IDX}")
 print("")
 print("To verify:")
-print(f"  ncks -H -v LATIXY -d lsmlat,{LAT_IDX} -d lsmlon,{LON_IDX} hillslopes_0.9x1.25_c240416.nc")
-print(f"  ncks -H -v LONGXY -d lsmlat,{LAT_IDX} -d lsmlon,{LON_IDX} hillslopes_0.9x1.25_c240416.nc")
+print(
+    f"  ncks -H -v LATIXY -d lsmlat,{LAT_IDX} -d lsmlon,{LON_IDX} hillslopes_0.9x1.25_c240416.nc"
+)
+print(
+    f"  ncks -H -v LONGXY -d lsmlat,{LAT_IDX} -d lsmlon,{LON_IDX} hillslopes_0.9x1.25_c240416.nc"
+)
