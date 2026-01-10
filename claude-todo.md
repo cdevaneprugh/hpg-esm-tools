@@ -151,6 +151,18 @@ Long-term efforts requiring the tools built in Phase 3.
 - [ ] Build out MkDocs site with GitHub Pages
 - [ ] Target audience: future researchers and students
 
+### 4.6 ESM Guidance File for Claude Code
+- [ ] Complete `~/.claude/esm-guidance.md` with comprehensive content
+- [ ] Reference from global CLAUDE.md via `@~/.claude/esm-guidance.md`
+- [ ] Sections to complete:
+  - Scientific Goals (research context, what we're studying)
+  - Directory Structure & Model Layout (paths, organization)
+  - Input Data (sources, subset data, NEON data)
+  - Case Creation (compsets, namelists, spinup, runtime estimation)
+  - Troubleshooting (CaseStatus workflow, common errors)
+  - Case Analysis (tools, key variables, workflows)
+- [ ] Draft created at `~/.claude/esm-guidance.md` - needs content after CTSM deep dive
+
 ---
 
 ## Phase 5: Low Priority / Deferred

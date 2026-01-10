@@ -31,6 +31,18 @@ Defined in user's bashrc:
 | `$INPUT_DATA` | `/blue/gerber/earth_models/inputdata` | Shared input data |
 | `$SUBSET_DATA` | `/blue/gerber/earth_models/shared.subset.data` | Shared subset data |
 
+## Case Troubleshooting
+
+When debugging a failed CTSM case:
+
+1. **Start with CaseStatus** - Read `CaseStatus` in the case root directory. It logs all workflow steps with timestamps and provides absolute paths to relevant log files when errors occur.
+
+2. **Follow the path** - CaseStatus points directly to the log containing the error. Read that file and diagnose.
+
+3. **Find directories if needed** - Use `./xmlquery EXEROOT RUNDIR DOUT_S_ROOT` from the case directory to locate build, run, and archive directories.
+
+Note: Detailed case structure and HiPerGator-specific configuration will be documented in Phase 4.
+
 ## Scripts Reference
 
 ### case.analyzer/ (v0.7.1 - Production Ready)
@@ -65,7 +77,7 @@ Scripts for analyzing CTSM hillslope hydrology simulations with column-level (h1
 
 | Script | Purpose |
 |--------|---------|
-| `bin_1yr.sh` / `bin_20yr.sh` | Temporal binning |
+| `bin_temporal.sh` | Temporal binning (N-year averages) |
 | `plot_timeseries_*.py` | Time series plots |
 | `plot_zwt_hillslope_profile.py` | Water table vs elevation |
 | `plot_elevation_width_overlay.py` | Hillslope geometry |
@@ -79,7 +91,6 @@ Utilities for downloading CTSM input data from NCAR servers.
 ### porting/
 
 - `module_env_setup.sh` - Load required modules for CTSM builds
-- `get_upstream_changes.sh` - Generate changelog between git tags
 
 ### deploy.custom.files/ (Legacy)
 
