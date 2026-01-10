@@ -136,41 +136,37 @@ Gridcell averages calculated from h1 column data match h0 gridcell values to num
 
 ## Binning Scripts
 
-### `bin_1yr.sh`
-Creates annual (1-year) binned averages from monthly data.
+### `bin_temporal.sh`
+Creates N-year binned averages from monthly data. Replaces separate `bin_1yr.sh` and `bin_20yr.sh` scripts.
 
 **Usage:**
 ```bash
-./bin_1yr.sh <input_file> <output_file>
+./bin_temporal.sh <input_file> <output_file> [--years=N]
+./bin_temporal.sh -h | --help
 ```
 
-**Example:**
+**Arguments:**
+- `input_file` - Input NetCDF file (concatenated monthly history)
+- `output_file` - Output NetCDF file (binned time series)
+- `--years=N` - Years per bin (default: 1 for annual averages)
+
+**Examples:**
 ```bash
-./bin_1yr.sh data/combined_h1.nc data/combined_h1_1yr.nc
+# Annual averages (default)
+./bin_temporal.sh data/combined_h0.nc data/combined_h0_1yr.nc
+
+# 20-year averages
+./bin_temporal.sh data/combined_h0.nc data/combined_h0_20yr.nc --years=20
+
+# 5-year averages
+./bin_temporal.sh data/combined_h1.nc data/combined_h1_5yr.nc --years=5
 ```
 
 **Process:**
-- Averages every 12 consecutive months (1 year)
-- Discards incomplete final year
-- Preserves all spatial dimensions
-
-### `bin_20yr.sh`
-Creates N-year binned averages from monthly data (default: 20 years).
-
-**Usage:**
-```bash
-./bin_20yr.sh <input_file> <output_file> [years_per_bin]
-```
-
-**Example:**
-```bash
-./bin_20yr.sh data/combined_h1.nc data/combined_h1_20yr.nc 20
-```
-
-**Process:**
-- Averages every 240 consecutive months (20 years)
+- Averages every N×12 consecutive months
 - Discards incomplete final bin
 - Uses NCO tools (ncra, ncrcat)
+- Automatic progress reporting
 
 **Important Note**: The `mcdate` variable in binned files represents the **center/average** of each bin, not the end. For a bin covering years 1-20, mcdate will show year ~10.
 
@@ -330,6 +326,37 @@ python3 plot_pft_distribution.py data/combined_h1.nc plots/pft_distribution.png
 
 ---
 
+### 7. `plot_vr_profile.py`
+Depth profiles of vertically resolved variables (soil temperature, moisture, carbon).
+
+**Usage:**
+```bash
+python3 plot_vr_profile.py <input_file> <output_file> <variable> [--hillslope=NAME]
+python3 plot_vr_profile.py -h
+```
+
+**Arguments:**
+- `input_file` - 20-year binned h1 NetCDF file
+- `output_file` - Output PNG filename
+- `variable` - Vertically resolved variable name (e.g., TSOI, H2OSOI_LIQ)
+- `--hillslope` - Hillslope aspect: North, East, South, West (default: North)
+
+**Examples:**
+```bash
+python3 plot_vr_profile.py data/combined_h1_20yr.nc plots/TSOI_profile.png TSOI
+python3 plot_vr_profile.py data/combined_h1_20yr.nc plots/SOILC_south.png SOILLIQ --hillslope=South
+```
+
+**Features:**
+- 4 vertical profiles (one per hillslope position: Outlet, Lower, Upper, Ridge)
+- Uses most recent time step from input file
+- Log scale x-axis for better visualization of soil profiles
+- Depth increases downward (inverted y-axis)
+
+**Input:** h1 20-year binned file (variable must have `levsoi`, `levgrnd`, or `levdcmp` dimension)
+
+---
+
 ## Key Variables
 
 ### Spatial Variables (in h1 files)
@@ -382,29 +409,47 @@ From ZWT analysis:
 - **Recent period (years 841-860)**: Shallower, stable water table (1.9-2.4m depth)
 - Water table rises significantly during simulation and stabilizes in later years
 
-## Verification Files
+## Utility Scripts
 
-### `verify_gridcell_calc.py`
-Comprehensive verification script that validates weighted averaging calculations.
+### `generate_all_plots.py`
+Batch generation of all standard hillslope analysis plots.
 
-**Features:**
-- Compares h1 column calculations to h0 gridcell reference values
-- Tests for GPP variable
-- Shows column-by-column weighted contributions
-- Validates that weights sum to 1.0
-- Confirms numerical accuracy (< 1e-12 relative error)
+**Usage:**
+```bash
+python3 generate_all_plots.py
+```
 
-**Output:** `gridcell_verification.txt`
+**Prerequisites:**
+Data files in `data/` directory:
+- `combined_h0_20yr.nc` - gridcell-level, 20-year bins
+- `combined_h1.nc` - column-level, full resolution
+- `combined_h1_1yr.nc` - column-level, annual bins
+- `combined_h1_20yr.nc` - column-level, 20-year bins
 
-### `verify_totecosysc_vs_h0.py`
-Specific verification for TOTECOSYSC variable.
+**Output:**
+All plots saved to `plots/` directory:
+- `{VAR}_full.png` - Full simulation timeseries
+- `{VAR}_last20.png` - Last 20 years by hillslope group
+- `ZWT_hillslope_profile.png` - Water table vs elevation profile
+- `elevation_width_overlay.png` - Hillslope geometry
+- `column_areas.png` - Column area distribution
+- `pft_distribution.png` - PFT pie chart
 
-**Features:**
-- Verifies TOTECOSYSC gridcell calculation against h0 reference
-- Demonstrates stream column effect on gridcell average
-- Matches h0 values with < 1e-6 relative error
+**Notes:**
+- Modify `VARIABLES` list in script to change which variables are plotted
+- Creates `plots/` directory if it doesn't exist
 
-**Output:** `totecosysc_h0_verification.txt`
+---
+
+### `get_gridcell.py`
+Calculate grid indices for a coordinate on the 0.9x1.25° CTSM grid.
+
+**Usage:**
+```bash
+python3 get_gridcell.py
+```
+
+Prints lat/lon indices for OSBS site (hardcoded) and NCO verification commands. Modify `TARGET_LAT` and `TARGET_LON` constants to use for other sites.
 
 ## Dependencies
 
