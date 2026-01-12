@@ -102,6 +102,16 @@ Utilities for downloading CTSM input data from NCAR servers.
 | `TEST_Cases.md` | Test case configurations |
 | `clm.hist.names/` | CLM history field reference |
 
+## Documentation Index
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| CTSM Development Guide | `docs/CTSM_DEVELOPMENT_GUIDE.md` | Quick reference for CTSM development |
+| CTSM Research Notes | `docs/CTSM_RESEARCH_NOTES.md` | Detailed findings from Phase 4.3 research |
+| Fork Audit | `docs/FORK_AUDIT_2025-01-11.md` | Local modifications analysis |
+| Modification Analysis | `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md` | Root cause analysis of fixes |
+| Upstream Check | `docs/CTSM_UPSTREAM_CHECK_2025-01-11.md` | Upstream comparison results |
+
 ## Conda Environment
 
 Use `environment.yml` to create the development environment:
