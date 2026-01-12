@@ -100,24 +100,27 @@ Tools for Claude Code to use. Where functionality overlaps, design as a single t
    - Leverages case.analyzer scripts
 
 ### Research & Documentation Tools
-4. **Documentation Reconciler** (HIGH PRIORITY for Phase 4)
-   - Reconcile discrepancies between: online docs, local READMEs, code behavior
-   - Generate findings file with solutions, observations, insights
-   - Critical for CTSM deep dive work
+4. **Documentation Reconciler** - DONE (agent, draft)
+   - Location: `~/.claude/agents/doc-reconciler.md`
+   - Reconciles: online docs, local READMEs, code behavior
+   - Uses opus model for complexity
+   - Primary sources: CTSM docs, CESM forums, CLM page
+   - Will be refined during Phase 4 deep dive
 
-5. **Paper Summarizer & Info Extractor**
-   - Summarize scientific papers
-   - Extract relevant information for research
+5. **Paper Summarizer & Info Extractor** - DEFERRED
+   - Needs better research context first
+   - Revisit after Phase 4 establishes scientific goals
 
-6. **GitHub Project Status Checker**
-   - Compare local version to upstream commits
-   - Identify notable changes relevant to our use case
-   - Recommend whether to update, with analysis of advantages/risks
+6. **GitHub Project Status Checker** - DONE (`/upstream-check` slash command)
+   - Location: `~/.claude/commands/upstream-check.md`
+   - Compares local repo to upstream
+   - Flags: hillslope, biogeochem, biogeophys, src/ changes
+   - Interactive follow-up in main context
 
 ### Source Code Tools (for Phase 4)
-7. **CTSM Module Analyzer**
-   - Find specific parameters or submodules in CTSM source
-   - Limited use case - mainly when context window retention isn't needed
+7. **CTSM Module Analyzer** - DEFERRED
+   - Limited use case
+   - Can handle in-context when needed
 
 ---
 
@@ -272,3 +275,16 @@ For tower run script - maximize use of local data files.
 - Created `~/.claude/esm-guidance.md` draft with section placeholders
 - Added `@~/.claude/esm-guidance.md` reference to global CLAUDE.md
 - Discussed SLURM integration possibilities (future capability)
+
+**2025-01-11:** Phase 3 Research & Documentation Tools
+- Created `/upstream-check` slash command (`~/.claude/commands/upstream-check.md`):
+  - Compares local repo to upstream remote
+  - Flags relevant changes: hillslope, biogeochem, biogeophys, src/
+  - Provides upgrade recommendations
+- Created `doc-reconciler` agent (`~/.claude/agents/doc-reconciler.md`):
+  - Uses opus model for complexity
+  - Primary sources: CTSM docs, CESM forums, CLM page
+  - Generates reconciliation reports for documentation discrepancies
+  - Draft - will refine during Phase 4
+- Deferred: Paper Summarizer (needs research context), CTSM Module Analyzer (limited use)
+- Phase 3 complete - all tools either implemented or intentionally deferred

@@ -164,6 +164,7 @@ See `claude-todo.md` for the current task list and planning document.
 | Command | Purpose |
 |---------|---------|
 | `/case-check <path>` | Smoke test a case - verify output files, quick plots |
+| `/upstream-check <path\|ctsm>` | Compare local repo to upstream, identify relevant changes |
 
 ### When Modifying Scripts
 
