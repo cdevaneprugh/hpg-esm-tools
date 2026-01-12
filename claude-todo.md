@@ -168,12 +168,39 @@ Long-term efforts requiring the tools built in Phase 3.
   - RRTMGP temperature bug fix
 - [x] Analysis saved: `docs/CTSM_UPSTREAM_CHECK_2025-01-11.md`
 
-### 4.3 Claude Code Best Practices for CTSM Development
-- [ ] Pull documentation from NCAR/CESM wikis and PDFs
-- [ ] Parse what's relevant vs outdated
-- [ ] Create local summaries with source links
-- [ ] Establish reference priority: 1) local summaries, 2) provided sources, 3) CESM forums
-- [ ] Implement guide for Claude Code when modifying Fortran source code
+### 4.3 Claude Code Best Practices for CTSM Development - COMPLETE
+
+**Research complete.** Extensive documentation crawled and compiled.
+
+**Resources Crawled:**
+- CTSM GitHub Wiki (69 pages)
+- UCAR CLM Developers Guide + subpages
+- CESM Tutorial (SourceMods, debugging, output)
+- DiscussCESM Forums
+
+**Documentation Created:**
+- `docs/CTSM_DEVELOPMENT_GUIDE.md` - Quick reference guide
+- `~/.claude/esm-guidance.md` - Updated with workflow sections
+- `~/.claude/plans/indexed-chasing-hammock.md` - Full research findings
+
+**Reference Priority Established:**
+1. Local summaries (esm-guidance.md, CTSM_DEVELOPMENT_GUIDE.md)
+2. Official docs (CTSM wiki, tech note, user guide)
+3. CESM forums (community knowledge)
+4. Third-party sources (verify carefully)
+
+**Topics Covered:**
+- Git workflow and PR requirements
+- Coding conventions (indentation, comments, argument passing)
+- Testing (aux_clm, test categories, baselines)
+- SourceMods usage
+- Adding features (namelist items, restart variables, parameters)
+- History output configuration
+- Debugging techniques
+- Spinup procedures
+- git-fleximod submodule management
+- FATES integration
+- Machine porting
 
 ### 4.4 CTSM Source Code Deep Dive
 - [ ] Use Documentation Reconciler to identify: broken docs, outdated but useful docs, up-to-date docs
@@ -187,17 +214,22 @@ Long-term efforts requiring the tools built in Phase 3.
 - [ ] Build out MkDocs site with GitHub Pages
 - [ ] Target audience: future researchers and students
 
-### 4.6 ESM Guidance File for Claude Code
-- [ ] Complete `~/.claude/esm-guidance.md` with comprehensive content
-- [ ] Reference from global CLAUDE.md via `@~/.claude/esm-guidance.md`
-- [ ] Sections to complete:
-  - Scientific Goals (research context, what we're studying)
-  - Directory Structure & Model Layout (paths, organization)
-  - Input Data (sources, subset data, NEON data)
-  - Case Creation (compsets, namelists, spinup, runtime estimation)
-  - Troubleshooting (CaseStatus workflow, common errors)
-  - Case Analysis (tools, key variables, workflows)
-- [ ] Draft created at `~/.claude/esm-guidance.md` - needs content after CTSM deep dive
+### 4.6 ESM Guidance File for Claude Code - PARTIAL
+- [x] Complete `~/.claude/esm-guidance.md` with comprehensive content
+- [x] Reference from global CLAUDE.md via `@~/.claude/esm-guidance.md`
+- [x] Sections completed:
+  - CTSM Fork Setup (repositories, modifications, upstream tracking)
+  - CTSM Source Structure (directories, subgrid hierarchy)
+  - Case Workflow (lifecycle, directories, run types)
+  - Spinup Procedures (AD spinup, monitoring, equilibrium)
+  - History Output (configuration, frequency, averaging)
+  - Troubleshooting (CaseStatus, debug mode, common issues)
+  - SourceMods (when to use, workflow)
+  - Documentation Reference Priority
+- [ ] Sections still TODO:
+  - Scientific Goals (research context)
+  - Input Data details (NEON, surface data)
+  - Case Analysis details (h0/h1/h2 streams)
 
 ### 4.7 Upstream Contributions
 - [ ] Evaluate and submit PRs for genuine bugs found during porting
@@ -388,3 +420,31 @@ For tower run script - maximize use of local data files.
   - Archived deploy.custom.files to deploy.custom.files.archived
   - Updated CLAUDE.md with fork information
   - Updated esm-guidance.md with fork setup section
+
+**2026-01-12:** Phase 4.3 CTSM Development Best Practices - COMPLETE
+- Crawled primary resources:
+  - CTSM GitHub Wiki (69 pages covering development workflow, coding guidelines, testing)
+  - UCAR CLM Developers Guide (coding conventions, namelist items, restart variables)
+  - CESM Tutorial (SourceMods, debugging, output configuration)
+  - DiscussCESM Forums (debugging tips, community solutions)
+- Topics researched:
+  - Git workflow and PR requirements
+  - CLM coding conventions (indentation, comments, argument passing)
+  - Testing (aux_clm, baselines, status codes)
+  - SourceMods usage and workflow
+  - Adding features (namelist items, restart variables, parameters)
+  - History output (hist_fincl, averaging flags)
+  - Debugging (DEBUG mode, INFO_DBUG, log analysis)
+  - Spinup procedures (AD spinup, equilibrium criteria)
+  - git-fleximod submodule management
+  - FATES integration protocols
+  - Machine porting (CTSM 5.2+ structure)
+- Documentation created:
+  - `docs/CTSM_DEVELOPMENT_GUIDE.md` - Quick reference guide
+  - `~/.claude/esm-guidance.md` - Updated with workflow sections
+  - `~/.claude/plans/indexed-chasing-hammock.md` - Full research findings
+- Established reference priority:
+  1. Local summaries (esm-guidance.md, CTSM_DEVELOPMENT_GUIDE.md)
+  2. Official docs (CTSM wiki, tech note)
+  3. CESM forums
+  4. Third-party (verify carefully)
