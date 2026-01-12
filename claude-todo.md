@@ -231,6 +231,26 @@ Long-term efforts requiring the tools built in Phase 3.
   - Case Analysis (tools, key variables, workflows)
 - [ ] Draft created at `~/.claude/esm-guidance.md` - needs content after CTSM deep dive
 
+### 4.7 Upstream Contributions
+- [ ] Evaluate and submit PRs for genuine bugs found during porting
+- [ ] Analysis saved: `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md`
+
+**Strong contribution candidates:**
+1. **CMakeLists.txt STATIC/SHARED fix** - `tools/mksurfdata_esmf/src/CMakeLists.txt`
+   - Bug: declares `STATIC IMPORTED` but points to `.so` files
+   - Fix: change to `SHARED IMPORTED`
+   - Affects anyone using shared PIO libraries
+
+2. **mksurfdata.F90 format specifiers** - `tools/mksurfdata_esmf/src/mksurfdata.F90`
+   - Bug: `I` format without width fails on GCC 10+
+   - Fix: add explicit widths (`I` → `I12`)
+   - Portability fix for modern compilers
+
+**Possible contribution:**
+3. **gen_mksurfdata_build GCC flags** - GCC 14 compatibility workarounds
+   - `-fallow-argument-mismatch -fallow-invalid-boz -ffree-line-length-none`
+   - These mask underlying legacy Fortran issues
+
 ---
 
 ## Phase 5: Low Priority / Deferred
@@ -366,3 +386,12 @@ For tower run script - maximize use of local data files.
 - Created `docs/FORK_AUDIT_2025-01-11.md` with detailed findings
 - Plan saved at `~/.claude/plans/indexed-chasing-hammock.md`
 - **Stopping point:** Ready for Phase A - user needs to create GitHub forks before next session
+
+**2025-01-12:** Modification Root Cause Analysis
+- Analyzed why local CTSM modifications were necessary
+- CMakeLists.txt STATIC/SHARED: upstream bug - declares STATIC but points to .so files
+- mksurfdata.F90 format specifiers: legacy Fortran without width fails on GCC 10+
+- gen_mksurfdata_build flags: GCC 14 workarounds for legacy code
+- Identified 2 strong upstream contribution candidates, 1 possible
+- Created `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md`
+- Added Phase 4.7 (Upstream Contributions) to todo list
