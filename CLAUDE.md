@@ -10,8 +10,7 @@ hpg-esm-tools/
 │   ├── case.analyzer/       # Case analysis toolkit (production ready)
 │   ├── hillslope.analysis/  # Hillslope hydrology plotting
 │   ├── inputdata.downloading/  # Input data download utilities
-│   ├── porting/             # Module setup and upstream tracking
-│   └── deploy.custom.files/ # HiPerGator config deployment (legacy)
+│   └── porting/             # Module setup and upstream tracking
 ├── docs/                    # Technical documentation
 ├── CLAUDE.md               # This file
 ├── claude-todo.md          # Working to-do list for Claude Code sessions
@@ -92,10 +91,6 @@ Utilities for downloading CTSM input data from NCAR servers.
 
 - `module_env_setup.sh` - Load required modules for CTSM builds
 
-### deploy.custom.files/ (Legacy)
-
-Deployment scripts for HiPerGator-specific configs. Being replaced by proper CTSM fork strategy.
-
 ## Documentation
 
 | File | Content |
@@ -153,7 +148,12 @@ vim file.f90  # opens neovim with Fortran syntax highlighting
 ## Related Repositories
 
 - **hpg-esm-docs** - Official documentation (MkDocs/GitHub Pages)
-- **ctsm5.3** - CTSM checkout at `$CIME_SCRIPTS/../..`
+- **CTSM fork** - `github.com/cdevaneprugh/CTSM` branch `uf-ctsm5.3.085`
+  - Local: `/blue/gerber/cdevaneprugh/ctsm5.3`
+  - Contains HiPerGator-specific tool fixes (mksurfdata, subset_data paths)
+- **ccs_config_cesm fork** - `github.com/cdevaneprugh/ccs_config_cesm` branch `uf-hipergator`
+  - Submodule of CTSM fork
+  - Contains HiPerGator machine configuration
 
 ## Working with Claude Code
 

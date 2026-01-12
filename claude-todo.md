@@ -128,67 +128,35 @@ Tools for Claude Code to use. Where functionality overlaps, design as a single t
 
 Long-term efforts requiring the tools built in Phase 3.
 
-### 4.1 CTSM Fork Strategy - IN PROGRESS
+### 4.1 CTSM Fork Strategy - COMPLETE
 
-**Status:** Phase 0 (Audit) complete. Ready for Phase A (Create GitHub Forks).
+**Status:** All phases complete. Fork strategy operational.
 
 **Plan file:** `~/.claude/plans/indexed-chasing-hammock.md`
 **Audit results:** `docs/FORK_AUDIT_2025-01-11.md`
 
-#### Decisions Made
-- Fork to personal GitHub account (cdevaneprugh/ctsm, cdevaneprugh/ccs_config)
-- Jump straight to ctsm5.3.085 (skip setting up on 5.3.059 first)
-- Keep lmod modules for now, evaluate conda migration later (Phase 5)
-- No current SourceMods (src.mods directory for future use)
+#### Final Setup
+| Component | Location |
+|-----------|----------|
+| CTSM fork | `github.com/cdevaneprugh/CTSM` branch `uf-ctsm5.3.085` |
+| ccs_config fork | `github.com/cdevaneprugh/ccs_config_cesm` branch `uf-hipergator` |
+| Local checkout | `/blue/gerber/cdevaneprugh/ctsm5.3` |
+| Old checkout | `/blue/gerber/cdevaneprugh/ctsm5.3.old` (archived) |
+| Legacy scripts | `scripts/deploy.custom.files.archived/` |
 
-#### Phase 0: Audit - COMPLETE
-- [x] Audited all local modifications in ctsm5.3.059
-- [x] Compared deploy.custom.files to upstream 5.3.085
-- [x] Identified what's still needed vs fixed upstream
-- [x] Verified HiPerGator configs are current
-- [x] Verified prerequisites (GCC 14.2.0, shared PIO, cprnc)
+#### Completed Phases
+- [x] **Phase 0:** Audit local modifications
+- [x] **Phase A:** Create GitHub forks (CTSM + ccs_config_cesm)
+- [x] **Phase B:** Set up local CTSM fork on 5.3.085
+- [x] **Phase C:** Set up ccs_config fork with HiPerGator configs
+- [x] **Phase D:** Test and validate (case built and ran successfully)
+- [x] **Phase E:** Clean up (directories swapped, deploy.custom.files archived)
 
-#### Key Audit Findings (see docs/FORK_AUDIT_2025-01-11.md)
-**No longer needed (fixed in upstream 5.3.085):**
-- Longitude TypeError fixes in single_point_case.py
-
-**Still needed (carry forward):**
-- `MPILIB=openmpi` in single_point_case.py (HiPerGator-specific)
-- DATM type default change in subset_data.py
-- HiPerGator input paths in default_data_*.cfg
-- mksurfdata Fortran format specifier fixes
-- CMakeLists.txt shared PIO linking
-- gen_mksurfdata_build GCC 14 compiler flags
-- PIO version in .gitmodules (pio2_6_6)
-- spillheight namelist default (research-specific)
-
-**ccs_config (needs fork):**
-- machines/hipergator/config_machines.xml
-- machines/hipergator/config_batch.xml
-- machines/hipergator/gnu_hipergator.cmake
-
-#### Remaining Phases
-- [ ] **Phase A:** Create GitHub forks (CTSM + ccs_config) - USER ACTION REQUIRED
-- [ ] **Phase B:** Set up local CTSM fork on 5.3.085
-- [ ] **Phase C:** Set up ccs_config fork with HiPerGator configs
-- [ ] **Phase D:** Test and validate (build, subset_data, run)
-- [ ] **Phase E:** Clean up (swap dirs, retire deploy.custom.files)
-- [ ] **Phase F:** Create src.mods directory (future use)
-
-#### Next Session Pickup Point
-**User needs to create GitHub forks first:**
-1. Go to https://github.com/ESCOMP/CTSM → Fork to cdevaneprugh/ctsm
-2. Go to https://github.com/ESMCI/ccs_config → Fork to cdevaneprugh/ccs_config
-
-**Then Claude will:**
-1. Clone fresh from fork
-2. Create uf-ctsm5.3.085 branch from upstream tag
-3. Apply modifications identified in audit (only what's still needed)
-4. Update .gitmodules to point to ccs_config fork
-5. Add CLAUDE.md to CTSM root
-6. Set up ccs_config fork with HiPerGator configs
-7. Test build and run
-8. Swap directories and retire deploy.custom.files
+#### Key Notes
+- ccs_config repo was renamed to `ccs_config_cesm` by ESMCI
+- Removed `--exclusive` from default SLURM config (HiPerGator uses shared nodes)
+- Existing cases don't pick up batch config changes - must create fresh case
+- Test case: `ctsm-fork.I1850Clm60SpCru.f09_g17.260112-122859`
 
 ### 4.2 Version Analysis - DONE
 - [x] Evaluated ctsm5.3.059 against upstream (1114 commits behind)
@@ -395,3 +363,28 @@ For tower run script - maximize use of local data files.
 - Identified 2 strong upstream contribution candidates, 1 possible
 - Created `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md`
 - Added Phase 4.7 (Upstream Contributions) to todo list
+
+**2026-01-12:** Phase 4.1 Fork Strategy - COMPLETE
+- User created GitHub forks: `cdevaneprugh/CTSM`, `cdevaneprugh/ccs_config_cesm`
+- Note: ccs_config was renamed to ccs_config_cesm by ESMCI
+- Phase A: Cloned CTSM fork, created `uf-ctsm5.3.085` branch from tag
+- Phase B: Applied all HiPerGator-specific modifications to CTSM fork
+  - mksurfdata Fortran fixes, CMakeLists.txt, gen_mksurfdata_build
+  - single_point_case.py MPILIB, default_data paths, spillheight
+  - Added CLAUDE.md to CTSM root
+- Phase C: Set up ccs_config fork
+  - Initially tried ~/.cime approach - hit CIME v3 bugs
+  - `--share` directive not recognized by HiPerGator SLURM
+  - Forked ccs_config_cesm, created `uf-hipergator` branch
+  - Added HiPerGator machine config (config_machines.xml, config_batch.xml, gnu_hipergator.cmake)
+  - Removed `--exclusive` from default SLURM config
+  - Updated CTSM .gitmodules to point to ccs_config fork
+- Phase D: Test validation
+  - First case failed: `--share` flag error (stale batch config in existing case)
+  - Created fresh case: `ctsm-fork.I1850Clm60SpCru.f09_g17.260112-122859`
+  - Build succeeded, model ran 5 days successfully
+- Phase E: Cleanup
+  - Swapped directories: ctsm5.3 → ctsm5.3.old, ctsm5.3.new → ctsm5.3
+  - Archived deploy.custom.files to deploy.custom.files.archived
+  - Updated CLAUDE.md with fork information
+  - Updated esm-guidance.md with fork setup section
