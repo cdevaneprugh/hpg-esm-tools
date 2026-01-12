@@ -215,8 +215,8 @@ Long-term efforts requiring the tools built in Phase 3.
 - [ ] Target audience: future researchers and students
 
 ### 4.6 ESM Guidance File for Claude Code - PARTIAL
-- [x] Complete `~/.claude/esm-guidance.md` with comprehensive content
-- [x] Reference from global CLAUDE.md via `@~/.claude/esm-guidance.md`
+- [x] Complete `~/.claude/docs/esm-guidance.md` with comprehensive content
+- [x] Reference from global CLAUDE.md via `@~/.claude/docs/esm-guidance.md`
 - [x] Sections completed:
   - CTSM Fork Setup (repositories, modifications, upstream tracking)
   - CTSM Source Structure (directories, subgrid hierarchy)
@@ -448,3 +448,9 @@ For tower run script - maximize use of local data files.
   2. Official docs (CTSM wiki, tech note)
   3. CESM forums
   4. Third-party (verify carefully)
+- Documentation organization:
+  - Created `docs/CTSM_RESEARCH_NOTES.md` with full research findings
+  - Organized `~/.claude/docs/` directory structure
+  - Moved `esm-guidance.md` to `~/.claude/docs/`
+  - Updated `~/.claude/CLAUDE.md` reference path
+  - Added Documentation Index to `hpg-esm-tools/CLAUDE.md`
