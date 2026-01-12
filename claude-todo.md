@@ -84,8 +84,13 @@ Tools for Claude Code to use. Where functionality overlaps, design as a single t
 
 2. **Case Creator** - DEFERRED (handle in-context)
    - Simple enough to do conversationally
-   - Explored subset data workflow, documented key paths
    - No separate tool needed
+   - **Subset data workflow learned:**
+     - `create_newcase --res CLM_USRDAT --run-unsupported --user-mods-dirs <subset_dir>/user_mods/`
+     - Subset data structure: `datmdata/`, `surfdata_*.nc`, `user_mods/`
+     - `user_mods/` contains: `shell_commands`, `user_nl_clm`, `user_nl_datm_streams`
+     - Example compset: `1850_DATM%CRUv7_CLM60%BGC_SICE_SOCN_MOSART_SGLC_SWAV_SESP`
+   - **Key concepts confirmed:** spinup (AD/post-AD), branch vs hybrid runs, restart files
 
 3. **Case Smoke Test** - DONE (`/case-check` slash command)
    - Location: `~/.claude/commands/case-check.md`
@@ -267,6 +272,3 @@ For tower run script - maximize use of local data files.
 - Created `~/.claude/esm-guidance.md` draft with section placeholders
 - Added `@~/.claude/esm-guidance.md` reference to global CLAUDE.md
 - Discussed SLURM integration possibilities (future capability)
-- Updated generate_all_plots.py for new function signatures
-- Removed vr_variables/ subdirectory
-- All scripts pass shellcheck and ruff

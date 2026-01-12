@@ -159,7 +159,14 @@ vim file.f90  # opens neovim with Fortran syntax highlighting
 
 See `claude-todo.md` for the current task list and planning document.
 
-When modifying scripts:
+### Slash Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/case-check <path>` | Smoke test a case - verify output files, quick plots |
+
+### When Modifying Scripts
+
 1. Use the `esm-tools` conda environment
 2. Run `ruff check` and `ruff format` on Python files
 3. Run `shellcheck` on bash scripts
