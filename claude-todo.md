@@ -202,11 +202,41 @@ Long-term efforts requiring the tools built in Phase 3.
 - FATES integration
 - Machine porting
 
-### 4.4 CTSM Source Code Deep Dive
-- [ ] Use Documentation Reconciler to identify: broken docs, outdated but useful docs, up-to-date docs
-- [ ] Write Claude-specific documentation for reference
-- [ ] Focus on commonly used scripts, source code, build directions
-- [ ] Work with user to systematically document findings
+### 4.4 CTSM Source Code Deep Dive - COMPLETE
+
+**Status:** Comprehensive CLAUDE.md documentation created across CTSM repository.
+
+**Plan file:** `~/.claude/plans/stateful-brewing-mist.md`
+
+- [x] Explore tools/, python/, src/, libraries/ directories
+- [x] Document wrapper→implementation architecture (tools/ vs python/ctsm/)
+- [x] Document Fortran source organization (subgrid hierarchy, type system)
+- [x] Document testing infrastructure (5 testing systems)
+- [x] Research mpi-serial and PIO library status
+- [x] Create CLAUDE.md files for Claude Code context loading
+
+**Files Created (13 total):**
+```
+/blue/gerber/cdevaneprugh/ctsm5.3/
+├── claude-todo.md                    # Progress tracking
+├── TESTING.md                        # 5 testing systems guide
+├── tools/CLAUDE.md                   # Tool inventory, decision tree
+├── tools/mksurfdata_esmf/CLAUDE.md   # Build process, HiPerGator mods
+├── tools/site_and_regional/CLAUDE.md # subset_data documentation
+├── python/CLAUDE.md                  # Package structure
+├── python/ctsm/site_and_regional/CLAUDE.md  # Implementation details
+├── src/CLAUDE.md                     # Fortran organization
+├── src/main/CLAUDE.md                # Driver, types, control vars
+├── src/biogeophys/CLAUDE.md          # Hydrology, energy, hillslope
+├── src/biogeochem/CLAUDE.md          # Carbon-nitrogen cycling
+└── libraries/CLAUDE.md               # mpi-serial/PIO research
+```
+
+**Key Findings:**
+- tools/ contains thin wrappers (20-40 lines), python/ctsm/ has implementations (~5,600 LOC)
+- 5 testing systems: run_sys_tests, CIME create_test, Fortran pFUnit, Python pytest, FATES
+- mpi-serial not used on HiPerGator (openmpi workaround sufficient)
+- Shared PIO already configured at `/blue/gerber/earth_models/shared/parallelio/bld`
 
 ### 4.5 hpg-esm-docs Integration - COMPLETE
 
@@ -517,3 +547,25 @@ For tower run script - maximize use of local data files.
 - Set up dark mode (slate theme)
 - Deployed to GitHub Pages: https://cdevaneprugh.github.io/hpg-esm-docs/
 - Added future tasks: 4.8 (Conda env configuration), 5.5 (MPI-serial)
+
+**2026-01-13:** Phase 4.4 CTSM Source Code Deep Dive - COMPLETE
+- Created comprehensive CLAUDE.md documentation across CTSM repository (13 files, ~3,440 lines)
+- Explored and documented 4 major areas: tools/, python/, src/, libraries/
+- Key architectural finding: tools/ contains thin CLI wrappers (20-40 lines), python/ctsm/ has actual implementations (~5,600 LOC)
+- Documented 5 testing systems with invocations and HiPerGator notes:
+  - run_sys_tests (CTSM orchestration)
+  - CIME create_test (200+ integration tests)
+  - Fortran pFUnit (module unit tests)
+  - Python pytest (~12,300 LOC)
+  - FATES testing suite
+- Library research findings:
+  - mpi-serial: Not used on HiPerGator (openmpi workaround is sufficient)
+  - PIO: Shared build already configured at /blue/gerber/earth_models/shared/parallelio/bld
+- Created TESTING.md at CTSM root for comprehensive testing guidance
+- Documented Fortran source organization:
+  - Subgrid hierarchy: Gridcell → LandUnit → Column → Patch
+  - Type system and clm_instMod.F90 (~50+ instances)
+  - Driver calling sequence and initialization order
+  - biogeophys/ (hydrology, energy, hillslope) and biogeochem/ (C-N cycling)
+- Updated hpg-esm-tools/CLAUDE.md documentation index to reference new CTSM docs
+- All documentation committed and pushed to CTSM fork
