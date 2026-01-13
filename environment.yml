@@ -44,6 +44,10 @@ dependencies:
   # === Editor ===
   - nvim>=0.11.0          # Neovim (self-contained, no lmod dependency)
 
+  # === Documentation ===
+  - mkdocs>=1.6.0         # static site generator for docs
+  - mkdocs-material>=9.0.0  # Material theme for mkdocs
+
   # === Development Utilities ===
   - ipython>=8.20.0       # better REPL
   - rich>=13.7.0          # pretty terminal output
