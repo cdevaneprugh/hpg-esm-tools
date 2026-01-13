@@ -298,19 +298,20 @@ Long-term efforts requiring the tools built in Phase 3.
    - `-fallow-argument-mismatch -fallow-invalid-boz -ffree-line-length-none`
    - These mask underlying legacy Fortran issues
 
-### 4.8 Conda Environment Configuration
-- [ ] Explore running CTSM entirely with conda environments
-- [ ] Goal: Remove lmod module dependencies
-- [ ] Benefits:
-  - More portable setup (conda environments are self-contained)
-  - Easier reproducibility (environment.yml captures all dependencies)
-  - Simpler onboarding (no module collection setup needed)
-- [ ] Challenges to investigate:
-  - MPI libraries (OpenMPI via conda vs lmod)
-  - NetCDF/HDF5 compatibility
-  - ESMF availability in conda-forge
-  - Integration with SLURM
-- [ ] Research conda-forge packages: `openmpi`, `netcdf-fortran`, `esmf`
+### 4.8 Conda Environment Configuration - RESOLVED
+- [x] Explored running CTSM entirely with conda environments
+- [x] **Conclusion: Hybrid approach is optimal for HPC**
+- Research findings (2026-01-13):
+  - conda MPI has SLURM compatibility issues (PMIx support often missing)
+  - System MPI (lmod) has native SLURM integration and cluster optimizations
+  - ESMF requires MPI, so can't use conda for full isolation
+- **Adopted approach:**
+  - lmod: Compilers, MPI, NetCDF, HDF5, ESMF for CTSM builds
+  - Conda (esm-tools): Python 3.12, editor, linters, dev tools for Claude Code sessions
+- User workflow:
+  1. Load module collection with CTSM build deps + conda module
+  2. Activate `esm-tools` conda for development work
+- This provides best of both worlds: optimized builds + modern dev tools
 
 ---
 
@@ -327,27 +328,25 @@ For tower run script - maximize use of local data files.
 - [ ] Verify permissions are correct (Lustre filesystem has had chmod issues)
 - [ ] Location: `/blue/gerber/earth_models/inputdata`
 
-### 5.4 Shared PIO Build Strategy
-- [ ] Figure out optimal shared PIO build for subset data and single point scripts
-- [ ] Current approach: ad-hoc shared build at `/blue/gerber/earth_models/shared/parallelio/`
-- [ ] Issues to address:
-  - Shipped PIO version breaks subset/single-point scripts
-  - Shared PIO enables faster CTSM rebuilds (PIO doesn't need to rebuild each time)
-- [ ] Consider documenting in CTSM fork strategy
+### 5.4 Shared PIO Build Strategy - COMPLETE
+- [x] Figure out optimal shared PIO build for subset data and single point scripts
+- [x] Current approach: shared build at `/blue/gerber/earth_models/shared/parallelio/bld`
+- [x] Solution implemented (2026-01-13):
+  - Added `PIO_VERSION_MAJOR=2` to config_machines.xml
+  - Added `PIO_TYPENAME_VALID_VALUES=netcdf`
+  - Added `LD_LIBRARY_PATH` for runtime dynamic linking
+  - case.build now uses external PIO instead of rebuilding
+- [x] Committed to ccs_config fork (ed750f2)
 
-### 5.5 MPI-Serial Library
-- [ ] Investigate mpi-serial as alternative to OpenMPI for single-core runs
-- [ ] Rationale:
-  - Many CTSM use cases are single-point, single-core simulations
-  - MPI-serial provides stub MPI implementation (no real parallelization)
-  - Avoids MPI overhead and complexity for simple cases
-  - May simplify conda environment setup (no real MPI needed)
-- [ ] Questions to investigate:
-  - Does CTSM support mpi-serial out of the box?
-  - What config changes are needed (MPILIB setting)?
-  - Performance implications vs real MPI for single-core?
-  - Integration with subset_data / single-point workflows
-- [ ] CIME supports mpi-serial - see `MPILIB` setting in config_machines.xml
+### 5.5 MPI-Serial Library - ABANDONED
+- [x] Investigated mpi-serial as alternative to OpenMPI for single-core runs
+- [x] **Conclusion: Not feasible with modern CTSM**
+- Findings (2026-01-13):
+  - CTSM 5.3+ uses CDEPS/CMEPS data model (replaced deprecated data models)
+  - CDEPS/CMEPS requires ESMF
+  - ESMF on HiPerGator is built with OpenMPI, incompatible with mpi-serial
+  - Build fails at link stage: "undefined reference to symbol 'ompi_mpi_unsigned_short'"
+- Workaround: Use OpenMPI with NTASKS=1 for single-point runs (current approach works)
 
 ---
 
@@ -569,3 +568,26 @@ For tower run script - maximize use of local data files.
   - biogeophys/ (hydrology, energy, hillslope) and biogeochem/ (C-N cycling)
 - Updated hpg-esm-tools/CLAUDE.md documentation index to reference new CTSM docs
 - All documentation committed and pushed to CTSM fork
+
+**2026-01-13:** Phase 4.8 Environment Modernization - PIO Complete, mpi-serial Abandoned
+- Investigated conda-based CTSM environment:
+  - Research showed conda MPI has SLURM compatibility issues on HPC
+  - User chose hybrid approach: lmod for builds, conda for dev tools (esm-tools)
+- Enabled shared PIO library usage:
+  - Added `PIO_VERSION_MAJOR=2` to config_machines.xml (tells case.build to use external PIO)
+  - Added `PIO_TYPENAME_VALID_VALUES=netcdf` (specifies supported I/O backends)
+  - Added `LD_LIBRARY_PATH` for runtime dynamic linking to PIO shared libs
+  - Test case (f45_g37 global, 5 days) ran successfully with shared PIO
+- Investigated mpi-serial for single-point interactive runs:
+  - mpi-serial build failed: ESMF on HiPerGator requires OpenMPI
+  - Modern CTSM with CDEPS/CMEPS requires ESMF, blocking mpi-serial usage
+  - User chose to abandon mpi-serial entirely
+- Added comprehensive documentation comments to config files:
+  - config_machines.xml: Machine identification, modules, PIO paths, environment variables
+  - config_batch.xml: QOS queues, partition settings, removed --exclusive explanation
+- Committed changes:
+  - ccs_config: ed750f2 "Add shared PIO support and documentation to HiPerGator config"
+  - CTSM: b0a18e442 "Update ccs_config submodule: shared PIO support"
+- Both repositories pushed to GitHub
+- Test case cleaned up: `claude-test.I1850Clm60Sp.f45_g37.pio-test`
+- Updated Phase 5.4 (Shared PIO) and 5.5 (MPI-Serial) - both now documented as resolved/abandoned
