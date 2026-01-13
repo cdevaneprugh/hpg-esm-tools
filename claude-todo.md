@@ -208,11 +208,28 @@ Long-term efforts requiring the tools built in Phase 3.
 - [ ] Focus on commonly used scripts, source code, build directions
 - [ ] Work with user to systematically document findings
 
-### 4.5 hpg-esm-docs Integration
-- [ ] Design documentation structure with user
-- [ ] Integrate findings from deep dive
-- [ ] Build out MkDocs site with GitHub Pages
-- [ ] Target audience: future researchers and students
+### 4.5 hpg-esm-docs Integration - COMPLETE
+
+**Status:** Documentation overhauled and deployed to GitHub Pages.
+
+**Live site:** https://cdevaneprugh.github.io/hpg-esm-docs/
+
+**Tone shift:** From "Gerber group docs" → "HiPerGator community resource"
+- Core message: "Here's how to set this up yourself (and here's our fork if you want it)"
+- Generalized all paths with `<group>` placeholders
+- Reframed environment variables as recommendations
+
+**New pages created:**
+- `installation/quickstart.md` - Clean step-by-step installation guide
+- `installation/cime-config.md` - Detailed config file explanation
+
+**Pages updated:**
+- `index.md` - Removed personal paths, reworded to "Reference Fork"
+- `onboarding.md` - Generalized paths, reframed env vars
+- `prerequisites.md` - Reframed as example, added data size warning
+- `fork-setup.md` → "Fork Reference" - Expanded "Why We Fork" section
+
+**Tracking:** `hpg-esm-docs/DOCUMENTATION_TODO.md` for ongoing improvements
 
 ### 4.6 ESM Guidance File for Claude Code - PARTIAL
 - [x] Complete `~/.claude/docs/esm-guidance.md` with comprehensive content
@@ -251,6 +268,20 @@ Long-term efforts requiring the tools built in Phase 3.
    - `-fallow-argument-mismatch -fallow-invalid-boz -ffree-line-length-none`
    - These mask underlying legacy Fortran issues
 
+### 4.8 Conda Environment Configuration
+- [ ] Explore running CTSM entirely with conda environments
+- [ ] Goal: Remove lmod module dependencies
+- [ ] Benefits:
+  - More portable setup (conda environments are self-contained)
+  - Easier reproducibility (environment.yml captures all dependencies)
+  - Simpler onboarding (no module collection setup needed)
+- [ ] Challenges to investigate:
+  - MPI libraries (OpenMPI via conda vs lmod)
+  - NetCDF/HDF5 compatibility
+  - ESMF availability in conda-forge
+  - Integration with SLURM
+- [ ] Research conda-forge packages: `openmpi`, `netcdf-fortran`, `esmf`
+
 ---
 
 ## Phase 5: Low Priority / Deferred
@@ -273,6 +304,20 @@ For tower run script - maximize use of local data files.
   - Shipped PIO version breaks subset/single-point scripts
   - Shared PIO enables faster CTSM rebuilds (PIO doesn't need to rebuild each time)
 - [ ] Consider documenting in CTSM fork strategy
+
+### 5.5 MPI-Serial Library
+- [ ] Investigate mpi-serial as alternative to OpenMPI for single-core runs
+- [ ] Rationale:
+  - Many CTSM use cases are single-point, single-core simulations
+  - MPI-serial provides stub MPI implementation (no real parallelization)
+  - Avoids MPI overhead and complexity for simple cases
+  - May simplify conda environment setup (no real MPI needed)
+- [ ] Questions to investigate:
+  - Does CTSM support mpi-serial out of the box?
+  - What config changes are needed (MPILIB setting)?
+  - Performance implications vs real MPI for single-core?
+  - Integration with subset_data / single-point workflows
+- [ ] CIME supports mpi-serial - see `MPILIB` setting in config_machines.xml
 
 ---
 
@@ -454,3 +499,21 @@ For tower run script - maximize use of local data files.
   - Moved `esm-guidance.md` to `~/.claude/docs/`
   - Updated `~/.claude/CLAUDE.md` reference path
   - Added Documentation Index to `hpg-esm-tools/CLAUDE.md`
+
+**2026-01-13:** Phase 4.5 hpg-esm-docs Integration - COMPLETE
+- Major documentation overhaul for broader HiPerGator audience
+- Tone shift: "Gerber group docs" → "HiPerGator community resource"
+- Core message: "Here's how to set this up yourself (and here's our fork if you want it)"
+- New pages created:
+  - `installation/quickstart.md` - Clean step-by-step installation guide
+  - `installation/cime-config.md` - Detailed CIME config file explanation
+- Pages updated:
+  - `index.md` - Removed personal paths, "Our Setup" → "Reference Fork"
+  - `onboarding.md` - Generalized paths with `<group>` placeholders
+  - `prerequisites.md` - Reframed as example structure, added input data size warning
+  - `fork-setup.md` - Renamed to "Fork Reference", expanded "Why We Fork"
+- Navigation reorganized: Quick Start first in Installation section
+- Created `DOCUMENTATION_TODO.md` for ongoing tracking
+- Set up dark mode (slate theme)
+- Deployed to GitHub Pages: https://cdevaneprugh.github.io/hpg-esm-docs/
+- Added future tasks: 4.8 (Conda env configuration), 5.5 (MPI-serial)
