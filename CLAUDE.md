@@ -104,6 +104,8 @@ Utilities for downloading CTSM input data from NCAR servers.
 
 ## Documentation Index
 
+### hpg-esm-tools Documentation
+
 | Document | Location | Purpose |
 |----------|----------|---------|
 | CTSM Development Guide | `docs/CTSM_DEVELOPMENT_GUIDE.md` | Quick reference for CTSM development |
@@ -111,6 +113,30 @@ Utilities for downloading CTSM input data from NCAR servers.
 | Fork Audit | `docs/FORK_AUDIT_2025-01-11.md` | Local modifications analysis |
 | Modification Analysis | `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md` | Root cause analysis of fixes |
 | Upstream Check | `docs/CTSM_UPSTREAM_CHECK_2025-01-11.md` | Upstream comparison results |
+
+### CTSM Repository Documentation (Phase 4.4)
+
+Comprehensive CLAUDE.md documentation in the CTSM fork (`/blue/gerber/cdevaneprugh/ctsm5.3/`):
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| Root CLAUDE.md | `CLAUDE.md` | Repository overview, navigation hub |
+| Testing Guide | `TESTING.md` | All 5 testing systems |
+| Progress Tracking | `claude-todo.md` | Documentation progress |
+| **tools/** | | |
+| tools/ overview | `tools/CLAUDE.md` | Tool inventory, decision tree |
+| mksurfdata_esmf | `tools/mksurfdata_esmf/CLAUDE.md` | Build process, HiPerGator fixes |
+| site_and_regional | `tools/site_and_regional/CLAUDE.md` | subset_data, mesh tools |
+| **python/** | | |
+| Python package | `python/CLAUDE.md` | Package structure, module map |
+| site_and_regional impl | `python/ctsm/site_and_regional/CLAUDE.md` | Implementation details |
+| **src/** | | |
+| Source overview | `src/CLAUDE.md` | Fortran organization, types |
+| main/ | `src/main/CLAUDE.md` | Driver, types, control |
+| biogeophys/ | `src/biogeophys/CLAUDE.md` | Hydrology, energy, hillslope |
+| biogeochem/ | `src/biogeochem/CLAUDE.md` | Carbon-nitrogen cycling |
+| **libraries/** | | |
+| Libraries | `libraries/CLAUDE.md` | mpi-serial, PIO research |
 
 ## Conda Environment
 
