@@ -3,6 +3,9 @@
 scripts/hillslope.analysis/data/
 scripts/case.analyzer/analysis/
 
+# Papers (PDFs only - keep .md summaries)
+docs/papers/*.pdf
+
 # Python
 __pycache__/
 *.py[cod]

@@ -17,9 +17,9 @@ Set up a new default conda environment for development work. This is prerequisit
 - [x] Verify linters work (ruff, shellcheck, mypy, fprettify, fortls)
 - [x] Clean up old environments (removed: claude, ctsm5.3.059, ctsm.tools)
 
-**Active environments:** `esm-tools` (default), `ferret`
+**Active environments:** `ctsm` (default), `ferret`
 
-**Usage:** `module load conda && conda activate esm-tools`
+**Usage:** `module load conda && conda activate ctsm`
 
 ### 1.2 Workspace Organization - COMPLETE
 - [x] Set up git repos (hpg-esm-tools, hpg-esm-docs)
@@ -261,7 +261,7 @@ Long-term efforts requiring the tools built in Phase 3.
 
 **Tracking:** `hpg-esm-docs/DOCUMENTATION_TODO.md` for ongoing improvements
 
-### 4.6 ESM Guidance File for Claude Code - PARTIAL
+### 4.6 ESM Guidance File for Claude Code - COMPLETE
 - [x] Complete `~/.claude/docs/esm-guidance.md` with comprehensive content
 - [x] Reference from global CLAUDE.md via `@~/.claude/docs/esm-guidance.md`
 - [x] Sections completed:
@@ -273,10 +273,10 @@ Long-term efforts requiring the tools built in Phase 3.
   - Troubleshooting (CaseStatus, debug mode, common issues)
   - SourceMods (when to use, workflow)
   - Documentation Reference Priority
-- [ ] Sections still TODO:
-  - Scientific Goals (research context)
-  - Input Data details (NEON, surface data)
-  - Case Analysis details (h0/h1/h2 streams)
+  - Scientific Goals (DOE project, wetlandscapes, TAI, OSBS)
+  - Hillslope Hydrology (structure, parameters, physical principles)
+  - Input Data (strategy, hillslope data)
+  - Case Analysis (h0/h1/h2 streams, key variables, column mapping)
 
 ### 4.7 Upstream Contributions
 - [ ] Evaluate and submit PRs for genuine bugs found during porting
@@ -307,10 +307,10 @@ Long-term efforts requiring the tools built in Phase 3.
   - ESMF requires MPI, so can't use conda for full isolation
 - **Adopted approach:**
   - lmod: Compilers, MPI, NetCDF, HDF5, ESMF for CTSM builds
-  - Conda (esm-tools): Python 3.12, editor, linters, dev tools for Claude Code sessions
+  - Conda (ctsm): Python 3.12, editor, linters, dev tools for Claude Code sessions
 - User workflow:
   1. Load module collection with CTSM build deps + conda module
-  2. Activate `esm-tools` conda for development work
+  2. Activate `ctsm` conda for development work
 - This provides best of both worlds: optimized builds + modern dev tools
 
 ---
@@ -365,7 +365,7 @@ For tower run script - maximize use of local data files.
 - Created environment.yml with linters (ruff, mypy, shellcheck, fprettify, fortls) and data tools
 - Created .gitignore to exclude .nc files and caches
 - Updated CLAUDE.md with accurate repo documentation
-- Created `esm-tools` conda environment (Python 3.12)
+- Created `ctsm` conda environment (Python 3.12)
 - Cleaned up old conda environments (removed claude, ctsm5.3.059, ctsm.tools)
 - Cleaned up bashrc: removed defunct newcase alias, fixed deploy_configs path, added esm and vim aliases
 - Migrated from vim to neovim with lua config:
@@ -572,7 +572,7 @@ For tower run script - maximize use of local data files.
 **2026-01-13:** Phase 4.8 Environment Modernization - PIO Complete, mpi-serial Abandoned
 - Investigated conda-based CTSM environment:
   - Research showed conda MPI has SLURM compatibility issues on HPC
-  - User chose hybrid approach: lmod for builds, conda for dev tools (esm-tools)
+  - User chose hybrid approach: lmod for builds, conda for dev tools (ctsm)
 - Enabled shared PIO library usage:
   - Added `PIO_VERSION_MAJOR=2` to config_machines.xml (tells case.build to use external PIO)
   - Added `PIO_TYPENAME_VALID_VALUES=netcdf` (specifies supported I/O backends)
@@ -591,3 +591,19 @@ For tower run script - maximize use of local data files.
 - Both repositories pushed to GitHub
 - Test case cleaned up: `claude-test.I1850Clm60Sp.f45_g37.pio-test`
 - Updated Phase 5.4 (Shared PIO) and 5.5 (MPI-Serial) - both now documented as resolved/abandoned
+
+**2026-01-14:** Phase 4.6 ESM Guidance - COMPLETE
+- Created paper summaries for research context:
+  - `docs/papers/DOE_Grant_Summary.md` - Project scope and actual focus
+  - `docs/papers/Fan_2019_Hillslope_Hydrology_ESM_Summary.md` - Scientific foundation
+  - `docs/papers/Swenson_2025_Hillslope_Dataset_Summary.md` - Dataset methodology
+- Updated `~/.claude/docs/esm-guidance.md` with comprehensive project context:
+  - Scientific Goals (DOE project, wetlandscapes, TAI, OSBS site)
+  - Hillslope Hydrology section (structure, parameters, physical principles)
+  - Input Data details (current strategy, hillslope data workflow)
+  - Case Analysis (h0/h1/h2 streams, key variables, column mapping)
+- Updated hpg-esm-docs research section:
+  - `docs/research/overview.md` - DOE project context, research areas
+  - `docs/research/hillslope.md` - Comprehensive hillslope documentation
+  - `docs/research/neon-sites.md` - OSBS details, data workflow
+- Phase 4.6 now complete - all TODO sections filled in
