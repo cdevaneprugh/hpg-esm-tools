@@ -124,9 +124,9 @@ Tools for Claude Code to use. Where functionality overlaps, design as a single t
 
 ---
 
-## Phase 4: CTSM Deep Work
+## Phase 4: CTSM Deep Work - COMPLETE
 
-Long-term efforts requiring the tools built in Phase 3.
+Long-term efforts requiring the tools built in Phase 3. All subsections complete.
 
 ### 4.1 CTSM Fork Strategy - COMPLETE
 
@@ -278,25 +278,26 @@ Long-term efforts requiring the tools built in Phase 3.
   - Input Data (strategy, hillslope data)
   - Case Analysis (h0/h1/h2 streams, key variables, column mapping)
 
-### 4.7 Upstream Contributions
-- [ ] Evaluate and submit PRs for genuine bugs found during porting
-- [ ] Analysis saved: `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md`
+### 4.7 Upstream Contributions - COMPLETE
+- [x] Evaluate and submit PRs for genuine bugs found during porting
+- [x] Analysis saved: `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md`
 
-**Strong contribution candidates:**
-1. **CMakeLists.txt STATIC/SHARED fix** - `tools/mksurfdata_esmf/src/CMakeLists.txt`
+**PRs Submitted (2026-01-21):**
+
+1. **CMakeLists.txt STATIC/SHARED fix**
+   - PR: https://github.com/ESCOMP/CTSM/pull/3700
+   - Branch: `fix/mksurfdata-cmake-shared-pio`
    - Bug: declares `STATIC IMPORTED` but points to `.so` files
    - Fix: change to `SHARED IMPORTED`
-   - Affects anyone using shared PIO libraries
 
-2. **mksurfdata.F90 format specifiers** - `tools/mksurfdata_esmf/src/mksurfdata.F90`
+2. **mksurfdata.F90 format specifiers**
+   - PR: https://github.com/ESCOMP/CTSM/pull/3701
+   - Branch: `fix/mksurfdata-format-specifiers`
    - Bug: `I` format without width fails on GCC 10+
-   - Fix: add explicit widths (`I` → `I12`)
-   - Portability fix for modern compilers
+   - Fix: `I0` for write statements, `I6` for read statements (matches CTSM style)
 
-**Possible contribution:**
-3. **gen_mksurfdata_build GCC flags** - GCC 14 compatibility workarounds
-   - `-fallow-argument-mismatch -fallow-invalid-boz -ffree-line-length-none`
-   - These mask underlying legacy Fortran issues
+**Not submitted (workarounds, not fixes):**
+- gen_mksurfdata_build GCC flags - masks underlying legacy Fortran issues
 
 ### 4.8 Conda Environment Configuration - RESOLVED
 - [x] Explored running CTSM entirely with conda environments
@@ -607,3 +608,15 @@ For tower run script - maximize use of local data files.
   - `docs/research/hillslope.md` - Comprehensive hillslope documentation
   - `docs/research/neon-sites.md` - OSBS details, data workflow
 - Phase 4.6 now complete - all TODO sections filled in
+
+**2026-01-21:** Phase 4.7 Upstream Contributions - COMPLETE
+- Submitted two PRs to ESCOMP/CTSM for mksurfdata_esmf bugs:
+  1. CMakeLists.txt STATIC→SHARED fix for shared PIO libraries
+  2. Format specifier fix (I→I0/I6) for GCC 10+ compatibility
+- Key finding during testing: `I0` works for write but not read (requires positive width)
+- Correct fix: `I0` for write statements, `I6` for read statements
+- Verified build succeeds on HiPerGator with GCC 14.2.0
+- Searched GitHub issues - no existing issues for these bugs
+- Fork branches: `fix/mksurfdata-cmake-shared-pio`, `fix/mksurfdata-format-specifiers`
+- Fork branch `uf-ctsm5.3.085` also updated with corrected format specifiers
+- Phase 4 now fully complete
