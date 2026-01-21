@@ -349,6 +349,33 @@ For tower run script - maximize use of local data files.
   - Build fails at link stage: "undefined reference to symbol 'ompi_mpi_unsigned_short'"
 - Workaround: Use OpenMPI with NTASKS=1 for single-point runs (current approach works)
 
+### 5.6 Possible Bug Fixes (Upstream Contributions)
+
+Potential CTSM issues we could contribute fixes for.
+
+#### 5.6.1 #2263 - SMINN_TO_PLANT_FUN units incorrect ⭐ EASY
+- **File:** `src/biogeochem/CNVegNitrogenFluxType.F90`
+- **Issue:** Vertically-resolved variant `sminn_to_plant_fun_no3_vr` has wrong units in history metadata
+- **Fix:** Change `units='gN/m^2/s'` to `units='gN/m^3/s'`
+- **Labels:** bfb, bug (bit-for-bit, won't change model answers)
+- **Link:** https://github.com/ESCOMP/CTSM/issues/2263
+
+#### 5.6.2 #2767 - Broken external links in docs
+- **Location:** `doc/` directory `.rst` files
+- **Issue:** Multiple broken URLs in Technical Note and User's Guide
+- **Fix:** Find and correct broken external links
+- **Labels:** good first issue, size: small, documentation
+- **Note:** Already assigned to Adrianna Foster - check status before starting
+- **Link:** https://github.com/ESCOMP/CTSM/issues/2767
+
+#### 5.6.3 #793 - htvp determination looks wrong
+- **File:** `src/biogeophys/CanopyTemperatureMod.F90` (lines 409-410)
+- **Issue:** Binary switch between `hvap`/`hsub` when liquid water == 0 exactly; should use weighted average
+- **Labels:** bug, science (changes model answers)
+- **Complexity:** Medium - requires scientific justification
+- **Note:** Open since 2019 - may be controversial or intentionally deferred
+- **Link:** https://github.com/ESCOMP/CTSM/issues/793
+
 ---
 
 ## Notes

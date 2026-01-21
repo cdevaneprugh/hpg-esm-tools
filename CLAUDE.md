@@ -17,30 +17,7 @@ hpg-esm-tools/
 └── environment.yml         # Conda environment specification
 ```
 
-## Key Environment Variables
-
-Defined in user's bashrc:
-
-| Variable | Path | Purpose |
-|----------|------|---------|
-| `$BLUE` | `/blue/gerber/cdevaneprugh` | User's primary workspace |
-| `$CASES` | `/blue/gerber/cdevaneprugh/cases` | CTSM case directories |
-| `$ESM_OUTPUT` | `/blue/gerber/cdevaneprugh/earth_model_output/cime_output_root` | Model output root |
-| `$CIME_SCRIPTS` | `/blue/gerber/cdevaneprugh/ctsm5.3/cime/scripts` | CIME scripts location |
-| `$INPUT_DATA` | `/blue/gerber/earth_models/inputdata` | Shared input data |
-| `$SUBSET_DATA` | `/blue/gerber/earth_models/shared.subset.data` | Shared subset data |
-
-## Case Troubleshooting
-
-When debugging a failed CTSM case:
-
-1. **Start with CaseStatus** - Read `CaseStatus` in the case root directory. It logs all workflow steps with timestamps and provides absolute paths to relevant log files when errors occur.
-
-2. **Follow the path** - CaseStatus points directly to the log containing the error. Read that file and diagnose.
-
-3. **Find directories if needed** - Use `./xmlquery EXEROOT RUNDIR DOUT_S_ROOT` from the case directory to locate build, run, and archive directories.
-
-Note: Detailed case structure and HiPerGator-specific configuration will be documented in Phase 4.
+Environment variables are documented in `$BLUE/CLAUDE.md`.
 
 ## Scripts Reference
 
@@ -95,48 +72,26 @@ Utilities for downloading CTSM input data from NCAR servers.
 
 | File | Content |
 |------|---------|
+| `CTSM_DEVELOPMENT_GUIDE.md` | Quick reference for CTSM development |
+| `CTSM_RESEARCH_NOTES.md` | Detailed findings from Phase 4.3 research |
+| `SPILLHEIGHT_IMPLEMENTATION.md` | Spillheight mechanism for hillslope hydrology |
+| `NCO_TEMPORAL_ANALYSIS.md` | NCO tools for temporal analysis |
 | `CTSM_Deterministic_Testing_Analysis.md` | Deterministic behavior and hash comparison |
 | `CTSM_CPRNC_Deterministic_Analysis.md` | CPRNC tool usage for NetCDF comparison |
-| `NCO_TEMPORAL_ANALYSIS.md` | NCO tools for temporal analysis |
-| `SPILLHEIGHT_IMPLEMENTATION.md` | Spillheight mechanism for hillslope hydrology |
-| `TEST_Cases.md` | Test case configurations |
 | `clm.hist.names/` | CLM history field reference |
 
-## Documentation Index
+### Archive (historical)
 
-### hpg-esm-tools Documentation
+| Document | Location |
+|----------|----------|
+| Fork Audit | `docs/archive/FORK_AUDIT_2025-01-11.md` |
+| Modification Analysis | `docs/archive/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md` |
+| Upstream Check | `docs/archive/CTSM_UPSTREAM_CHECK_2025-01-11.md` |
 
-| Document | Location | Purpose |
-|----------|----------|---------|
-| CTSM Development Guide | `docs/CTSM_DEVELOPMENT_GUIDE.md` | Quick reference for CTSM development |
-| CTSM Research Notes | `docs/CTSM_RESEARCH_NOTES.md` | Detailed findings from Phase 4.3 research |
-| Fork Audit | `docs/FORK_AUDIT_2025-01-11.md` | Local modifications analysis |
-| Modification Analysis | `docs/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md` | Root cause analysis of fixes |
-| Upstream Check | `docs/CTSM_UPSTREAM_CHECK_2025-01-11.md` | Upstream comparison results |
+### CTSM Fork Documentation
 
-### CTSM Repository Documentation (Phase 4.4)
-
-Comprehensive CLAUDE.md documentation in the CTSM fork (`/blue/gerber/cdevaneprugh/ctsm5.3/`):
-
-| Document | Location | Purpose |
-|----------|----------|---------|
-| Root CLAUDE.md | `CLAUDE.md` | Repository overview, navigation hub |
-| Testing Guide | `TESTING.md` | All 5 testing systems |
-| Progress Tracking | `claude-todo.md` | Documentation progress |
-| **tools/** | | |
-| tools/ overview | `tools/CLAUDE.md` | Tool inventory, decision tree |
-| mksurfdata_esmf | `tools/mksurfdata_esmf/CLAUDE.md` | Build process, HiPerGator fixes |
-| site_and_regional | `tools/site_and_regional/CLAUDE.md` | subset_data, mesh tools |
-| **python/** | | |
-| Python package | `python/CLAUDE.md` | Package structure, module map |
-| site_and_regional impl | `python/ctsm/site_and_regional/CLAUDE.md` | Implementation details |
-| **src/** | | |
-| Source overview | `src/CLAUDE.md` | Fortran organization, types |
-| main/ | `src/main/CLAUDE.md` | Driver, types, control |
-| biogeophys/ | `src/biogeophys/CLAUDE.md` | Hydrology, energy, hillslope |
-| biogeochem/ | `src/biogeochem/CLAUDE.md` | Carbon-nitrogen cycling |
-| **libraries/** | | |
-| Libraries | `libraries/CLAUDE.md` | mpi-serial, PIO research |
+Comprehensive CLAUDE.md files exist throughout the CTSM fork at `$BLUE/ctsm5.3/`.
+See the root `CLAUDE.md` there for navigation.
 
 ## Conda Environment
 
@@ -149,37 +104,16 @@ conda env create -f environment.yml
 
 **Quick activation (defined in bashrc):**
 ```bash
-esm    # activates esm-tools environment
+esm    # activates ctsm environment
 ```
 
 Includes:
 - **Python 3.12** (pinned to match HiPerGator module used for CTSM builds)
-- **Neovim 0.11+** with treesitter syntax highlighting
 - **Data:** xarray, netCDF4, matplotlib, numpy, pandas, NCO tools
 - **Python linting:** ruff, mypy
 - **Shell linting:** shellcheck
 - **Fortran tools:** fprettify (formatter)
 - **Testing:** pytest
-
-## Editor Setup
-
-Neovim is included in the conda environment (no lmod module needed).
-
-**Config location:** `~/.config/nvim/`
-
-**Features:**
-- Treesitter syntax highlighting (Python, Fortran, Bash, Lua, Markdown)
-- Gruvbox colorscheme (auto-detects true color support)
-- Lualine statusline
-- Built-in completion (Ctrl-N/Ctrl-P)
-- 80-column marker, line numbers
-
-**Usage:**
-```bash
-esm           # activate environment (includes neovim)
-vim file.py   # opens neovim with syntax highlighting
-vim file.f90  # opens neovim with Fortran syntax highlighting
-```
 
 ## Related Repositories
 
@@ -204,6 +138,6 @@ See `claude-todo.md` for the current task list and planning document.
 
 ### When Modifying Scripts
 
-1. Use the `esm-tools` conda environment
+1. Use the `ctsm` conda environment
 2. Run `ruff check` and `ruff format` on Python files
 3. Run `shellcheck` on bash scripts

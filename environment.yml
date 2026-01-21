@@ -1,7 +1,7 @@
 # Conda environment for hpg-esm-tools development
 # Create with: conda env create -f environment.yml
 # Update with: conda env update -f environment.yml --prune
-name: esm-tools
+name: ctsm
 channels:
   - conda-forge
   - defaults

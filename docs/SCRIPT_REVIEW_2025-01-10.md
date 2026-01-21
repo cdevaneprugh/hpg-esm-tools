@@ -129,7 +129,7 @@ Minimal collection of environment setup scripts. Mostly obsolete given conda env
 ### Issues
 - No error handling or validation
 - Incomplete implementations
-- Superseded by conda environment (`esm-tools`)
+- Superseded by conda environment (`ctsm`)
 
 ### Recommendations
 1. **Remove** get_upstream_changes.sh (too minimal, document as git recipe)
@@ -226,8 +226,8 @@ High-quality technical documentation with strong current relevance.
 - **CIME**: xmlquery (in case directory)
 
 ### Python Libraries
-- xarray, matplotlib, numpy (conda: esm-tools environment)
-- netcdf4 (conda: esm-tools environment)
+- xarray, matplotlib, numpy (conda: ctsm environment)
+- netcdf4 (conda: ctsm environment)
 
 ---
 
