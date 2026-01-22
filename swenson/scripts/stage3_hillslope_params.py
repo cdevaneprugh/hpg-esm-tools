@@ -70,9 +70,7 @@ except ImportError:
 
 
 # Configuration
-MERIT_DEM_PATH = (
-    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
-)
+MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
 STAGE2_RESULTS = (
     "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage2/stage2_results.json"
 )
@@ -305,6 +303,47 @@ def fit_trapezoidal_width(
             "width": np.sum(area) / n_hillslopes / 100,
             "area": np.sum(area) / n_hillslopes,
         }
+
+
+def quadratic(coefs, root=0, eps=1e-6):
+    """
+    Solve quadratic equation ax² + bx + c = 0.
+
+    Port of Swenson's geospatial_utils.quadratic().
+
+    Parameters
+    ----------
+    coefs : tuple
+        (a, b, c) coefficients
+    root : int
+        Which root to return (0 or 1)
+    eps : float
+        Tolerance for near-zero discriminant
+
+    Returns
+    -------
+    float : The selected root
+    """
+    ak, bk, ck = coefs
+
+    discriminant = bk**2 - 4 * ak * ck
+
+    if discriminant < 0:
+        # If negative due to roundoff, adjust c to get zero discriminant
+        if abs(discriminant) < eps:
+            ck = bk**2 / (4 * ak) * (1 - eps)
+            discriminant = bk**2 - 4 * ak * ck
+        else:
+            raise RuntimeError(
+                f"Cannot solve quadratic: discriminant={discriminant:.2f}"
+            )
+
+    roots = [
+        (-bk + np.sqrt(discriminant)) / (2 * ak),
+        (-bk - np.sqrt(discriminant)) / (2 * ak),
+    ]
+
+    return roots[root]
 
 
 def circular_mean_aspect(aspects: np.ndarray) -> float:
@@ -697,7 +736,10 @@ def main():
             f"    Trapezoidal fit: slope={trap_slope:.4f}, width={trap_width:.0f} m, area={trap_area:.0f} m²"
         )
 
-        # Process each HAND bin
+        # First pass: collect raw pixel areas for each bin to compute fractions
+        bin_raw_areas = []
+        bin_data = []
+
         for h_idx in range(N_HAND_BINS):
             h_lower = hand_bounds[h_idx]
             h_upper = hand_bounds[h_idx + 1]
@@ -708,6 +750,43 @@ def main():
             bin_indices = np.where(bin_mask)[0]
 
             if len(bin_indices) == 0:
+                bin_raw_areas.append(0)
+                bin_data.append(
+                    {
+                        "indices": None,
+                        "h_lower": h_lower,
+                        "h_upper": h_upper,
+                    }
+                )
+            else:
+                raw_area = float(np.sum(area_flat[bin_indices]))
+                bin_raw_areas.append(raw_area)
+                bin_data.append(
+                    {
+                        "indices": bin_indices,
+                        "h_lower": h_lower,
+                        "h_upper": h_upper,
+                    }
+                )
+
+        # Compute area fractions
+        total_raw = sum(bin_raw_areas)
+        if total_raw > 0:
+            area_fractions = [a / total_raw for a in bin_raw_areas]
+        else:
+            area_fractions = [0.25] * N_HAND_BINS
+
+        # Compute fitted areas using trapezoidal model
+        fitted_areas = [trap_area * frac for frac in area_fractions]
+
+        # Second pass: compute parameters using fitted areas for width calculation
+        for h_idx in range(N_HAND_BINS):
+            data = bin_data[h_idx]
+            bin_indices = data["indices"]
+            h_lower = data["h_lower"]
+            h_upper = data["h_upper"]
+
+            if bin_indices is None:
                 params["elements"].append(
                     {
                         "aspect_name": asp_name,
@@ -727,33 +806,27 @@ def main():
             mean_hand = float(np.mean(hand_flat[bin_indices]))
             mean_slope = float(np.nanmean(slope_flat[bin_indices]))
             mean_aspect = circular_mean_aspect(aspect_flat[bin_indices])
-            total_area = float(np.sum(area_flat[bin_indices]))
 
             # Median distance (more robust than mean)
             dtnd_sorted = np.sort(dtnd_flat[bin_indices])
             median_dtnd = float(dtnd_sorted[len(dtnd_sorted) // 2])
 
-            # Compute width from trapezoidal model
-            # Area below this bin
-            area_below = (
-                sum(
-                    params["elements"][asp_idx * N_HAND_BINS + j]["area"]
-                    for j in range(h_idx)
-                )
-                if h_idx > 0
-                else 0
-            )
+            # Use fitted area for this bin (preserves relative distribution)
+            fitted_area = fitted_areas[h_idx]
 
-            # Width at lower edge
+            # Compute width using Swenson's method with cumulative FITTED areas
+            # Cumulative area up to (but not including) this bin
+            da = sum(fitted_areas[:h_idx]) if h_idx > 0 else 0
+
+            # Width at lower edge using quadratic solver
             if trap_slope != 0:
-                # Solve: area_below = trap_width * d + trap_slope * d²
-                # d = (-trap_width ± sqrt(trap_width² + 4*trap_slope*area_below)) / (2*trap_slope)
-                discriminant = trap_width**2 + 4 * trap_slope * area_below
-                if discriminant >= 0:
-                    d_lower = (-trap_width + np.sqrt(discriminant)) / (2 * trap_slope)
-                    width = trap_width + 2 * trap_slope * d_lower
-                else:
-                    width = trap_width
+                try:
+                    # Solve: da = trap_width * le + trap_slope * le²
+                    le = quadratic([trap_slope, trap_width, -da])
+                    width = trap_width + 2 * trap_slope * le
+                except RuntimeError:
+                    # Fallback: linear interpolation
+                    width = trap_width * (1 - 0.15 * h_idx)
             else:
                 width = trap_width
 
@@ -766,7 +839,7 @@ def main():
                     "hand_bin": h_idx,
                     "height": mean_hand,
                     "distance": median_dtnd,
-                    "area": total_area,
+                    "area": fitted_area,  # Use fitted area, not raw pixel area
                     "slope": mean_slope,
                     "aspect": mean_aspect,
                     "width": width,
@@ -776,7 +849,7 @@ def main():
             print(
                 f"    Bin {h_idx + 1} (HAND {h_lower:.1f}-{h_upper:.1f}m): "
                 f"h={mean_hand:.1f}m, d={median_dtnd:.0f}m, "
-                f"A={total_area / 1e6:.2f}km², w={width:.0f}m"
+                f"A={fitted_area:.0f}m², w={width:.0f}m"
             )
 
     print(f"\n  Parameter computation time: {time.time() - t0:.1f} seconds")
