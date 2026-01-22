@@ -1,0 +1,10 @@
+# Large data files - do not commit
+*.nc
+*.tar.gz
+*.tif
+*.flt
+*.hdr
+MERIT_DEM_sample/
+
+# Keep validation outputs
+!validation_comparison.png
