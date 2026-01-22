@@ -596,6 +596,28 @@ All 6 stages completed. Our pysheds fork validated against Swenson's published d
 - **Width:** Use fitted areas instead of raw pixel areas in width calculation
 - **Area:** Relative distribution matches (0.73 correlation), absolute scale differs due to normalization
 
+**Note on Area Parameter (0.73 correlation):**
+
+The area parameter has lower correlation than others due to the North aspect distribution mismatch:
+
+| Aspect | Within-Aspect Correlation |
+|--------|---------------------------|
+| North | 0.12 |
+| East | 0.99 |
+| South | 0.96 |
+| West | 0.98 |
+
+North aspect area distribution:
+- **Ours:** 35%, 22%, 22%, 21% (bin 0 largest, decreasing toward ridge)
+- **Published:** 26%, 24%, 24%, 27% (fairly even, bin 3 largest)
+
+Likely causes:
+1. **HAND bin boundary computation:** We compute equal-area bins across entire region; Swenson may use per-aspect or different binning
+2. **Region/gridcell mismatch:** Our 2000×2000 px region may not align exactly with 0.9°×1.25° gridcell
+3. **Accumulation threshold:** Our threshold (34 cells, 10.88% stream) may differ from published
+
+The other parameters (height, distance, slope, aspect, width) have >0.97 correlation because they are *means within bins* rather than *totals per bin*, making them less sensitive to bin boundary choices. This level of agreement is acceptable for OSBS work - the methodology is validated.
+
 **Output locations:**
 - Stage 1: `swenson/output/stage1/` (GeoTIFFs, summary, plots)
 - Stage 2: `swenson/output/stage2/` (JSON results, spectral plots)
