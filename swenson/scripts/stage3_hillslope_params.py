@@ -43,8 +43,8 @@ sys.path.insert(0, pysheds_fork)
 
 from pysheds.pgrid import Grid
 
-# Local modules
-from spatial_scale import calc_gradient, DTR, RE
+# Local modules - only need constants, not calc_gradient (use pgrid instead)
+from spatial_scale import DTR, RE
 
 try:
     import rasterio
@@ -109,32 +109,10 @@ def print_section(title: str) -> None:
     print(f"{'=' * 60}\n")
 
 
-def compute_slope_aspect(
-    dem: np.ndarray, lon: np.ndarray, lat: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Compute slope and aspect from DEM using gradient method.
-
-    Returns
-    -------
-    slope : array
-        Slope in radians
-    aspect : array
-        Aspect in degrees (0-360, clockwise from North)
-    """
-    # Compute gradients in x and y directions
-    dzdx, dzdy = calc_gradient(dem, lon, lat)
-
-    # Slope magnitude
-    slope = np.sqrt(dzdx**2 + dzdy**2)
-
-    # Aspect (direction of steepest descent)
-    # arctan2(dy, dx) gives angle from +x axis (East)
-    # We want angle from North (clockwise positive)
-    aspect = np.arctan2(-dzdx, -dzdy) / DTR  # Convert to degrees
-    aspect = np.where(aspect < 0, aspect + 360, aspect)
-
-    return slope, aspect
+# Note: compute_slope_aspect() removed in Stage 8 fix.
+# Now using grid.slope_aspect() which uses Horn 1981 method with correct
+# coordinate conventions. Our custom implementation had a Y-axis sign
+# inversion that caused North/South aspect swapping.
 
 
 def compute_gridcell_indices(
@@ -704,7 +682,6 @@ def main():
     # Load DEM using rasterio window for expanded region
     if HAS_RASTERIO:
         with rasterio.open(MERIT_DEM_PATH) as src:
-            src_crs = src.crs
             src_nodata = src.nodata
 
             # Get window for expanded bounds
@@ -803,23 +780,27 @@ def main():
     print(f"  HAND/DTND computation time: {time.time() - t0:.1f} seconds")
 
     # -------------------------------------------------------------------------
-    # Step 4: Compute slope and aspect
+    # Step 4: Compute slope and aspect using pgrid's Horn 1981 method
     # -------------------------------------------------------------------------
     print_section("Step 4: Computing Slope and Aspect")
 
     t0 = time.time()
 
-    # Get coordinate arrays
+    # Get coordinate arrays (still needed for Step 5)
     transform = grid.affine
     nrows, ncols = dem.shape
     lon = np.array([transform.c + transform.a * (i + 0.5) for i in range(ncols)])
     lat = np.array([transform.f + transform.e * (j + 0.5) for j in range(nrows)])
 
-    # Compute slope and aspect
-    slope, aspect = compute_slope_aspect(np.array(dem), lon, lat)
+    # Compute slope and aspect using pgrid's Horn 1981 method
+    # This method uses correct coordinate conventions (fixed Stage 8 N/S swap issue)
+    grid.slope_aspect("dem")
+    slope = np.array(grid.slope)
+    aspect = np.array(grid.aspect)
 
-    print(f"  Slope range: [{np.min(slope):.4f}, {np.max(slope):.4f}]")
-    print(f"  Aspect range: [{np.min(aspect):.1f}, {np.max(aspect):.1f}] degrees")
+    print("  Using pgrid.slope_aspect() (Horn 1981 method)")
+    print(f"  Slope range: [{np.nanmin(slope):.4f}, {np.nanmax(slope):.4f}]")
+    print(f"  Aspect range: [{np.nanmin(aspect):.1f}, {np.nanmax(aspect):.1f}] degrees")
     print(f"  Slope/aspect computation time: {time.time() - t0:.1f} seconds")
 
     # -------------------------------------------------------------------------
