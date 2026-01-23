@@ -475,6 +475,53 @@ def circular_mean_aspect(aspects: np.ndarray) -> float:
     return mean_aspect
 
 
+def compute_pixel_areas(lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
+    """
+    Compute pixel areas using spherical coordinates (Swenson method).
+
+    Formula: A = R² × dθ × dφ × sin(θ)
+    where θ = colatitude (90° - lat), dθ/dφ = grid spacing in radians
+
+    This matches Swenson's representative_hillslope.py lines 1708-1715:
+        phi = dtr * lon
+        th = dtr * (90.0 - lat)
+        dphi = np.abs(phi[1] - phi[0])
+        dth = np.abs(th[0] - th[1])
+        farea = np.tile(np.sin(th), (im, 1)).T
+        self.area = farea * dth * dphi * np.power(re, 2)
+
+    Parameters
+    ----------
+    lon : 1D array
+        Longitude values (degrees)
+    lat : 1D array
+        Latitude values (degrees)
+
+    Returns
+    -------
+    area : 2D array (nrows, ncols)
+        Pixel areas in m²
+    """
+    # Convert to radians
+    phi = DTR * lon  # longitude in radians
+    theta = DTR * (90.0 - lat)  # colatitude in radians
+
+    # Grid spacing in radians
+    dphi = np.abs(phi[1] - phi[0])
+    dtheta = np.abs(theta[0] - theta[1])
+
+    # sin(colatitude) varies with latitude
+    sin_theta = np.sin(theta)
+
+    # Create 2D area grid: each row has same sin(theta), broadcast across columns
+    # Shape: (len(lat), len(lon))
+    ncols = len(lon)
+    area = np.tile(sin_theta.reshape(-1, 1), (1, ncols))
+    area = area * dtheta * dphi * RE**2
+
+    return area
+
+
 def create_diagnostic_plots(
     params: dict,
     dem: np.ndarray,
@@ -793,11 +840,15 @@ def main():
     print(f"  Lon range: [{lon_center[0]:.4f}, {lon_center[-1]:.4f}]")
     print(f"  Lat range: [{lat_center[0]:.4f}, {lat_center[-1]:.4f}]")
 
-    # Compute pixel areas
+    # Compute pixel areas using spherical coordinates (Swenson method)
+    # Each pixel has its own area based on sin(colatitude)
+    pixel_areas = compute_pixel_areas(lon_center, lat_center)
     res_m = np.abs(lat_center[0] - lat_center[1]) * RE * np.pi / 180
-    pixel_area = res_m * res_m * np.cos(DTR * np.mean(lat_center))  # Approximate
     print(f"  Pixel resolution: ~{res_m:.1f} m")
-    print(f"  Pixel area: ~{pixel_area:.0f} m²")
+    print(
+        f"  Pixel area range: [{np.min(pixel_areas):.0f}, {np.max(pixel_areas):.0f}] m²"
+    )
+    print(f"  Pixel area mean: {np.mean(pixel_areas):.0f} m²")
 
     # -------------------------------------------------------------------------
     # Step 6: Compute HAND bins
@@ -809,7 +860,7 @@ def main():
     dtnd_flat = dtnd_center.flatten()
     slope_flat = slope_center.flatten()
     aspect_flat = aspect_center.flatten()
-    area_flat = np.full_like(hand_flat, pixel_area)
+    area_flat = pixel_areas.flatten()
 
     # Filter valid data
     valid = (hand_flat >= 0) & np.isfinite(hand_flat)
