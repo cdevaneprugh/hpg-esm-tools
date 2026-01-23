@@ -776,4 +776,100 @@ The implications are **less severe** for OSBS because:
 
 Apply what we learned to our OSBS dataset.
 
-*(To be planned after Phase 3)*
+### Background Info
+
+#### CTSM Input Data Alignment
+
+CTSM uses **coordinate-based alignment** for input files. All files contain explicit coordinates (`LONGXY`/`LATIXY`), and CTSM uses nearest-neighbor matching to select the same physical location across all files.
+
+**Key input files:**
+
+| File Type | Purpose | Alignment Method |
+|-----------|---------|------------------|
+| Domain file | Defines grid (lat/lon, area, mask) | Coordinates |
+| Surface data (fsurdat) | Land properties, hillslope params | Coordinates |
+| Atmospheric forcing | Boundary conditions | Coordinates |
+
+#### Hillslope Parameters in Surface Dataset
+
+Hillslope parameters are stored in the **surface dataset** (`fsurdat_*.nc`) with these required variables:
+
+| Variable | Dimension | Units | Description |
+|----------|-----------|-------|-------------|
+| `nhillcolumns` | `grlnd` | - | Number of hillslope columns per gridcell |
+| `pct_hillslope` | `grlnd`, `nhillslope` | % | Percent of landunit in each hillslope |
+| `hillslope_index` | `grlnd`, `nmaxhillcol` | - | Hillslope bin index for each column |
+| `column_index` | `grlnd`, `nmaxhillcol` | - | Column within hillslope |
+| `downhill_column_index` | `grlnd`, `nmaxhillcol` | - | Downslope neighbor column |
+| `hillslope_elevation` | `grlnd`, `nmaxhillcol` | m | Height above channel (HAND) |
+| `hillslope_distance` | `grlnd`, `nmaxhillcol` | m | Distance from channel (DTND) |
+| `hillslope_width` | `grlnd`, `nmaxhillcol` | m | Width at downslope edge |
+| `hillslope_area` | `grlnd`, `nmaxhillcol` | m² | Area of each column |
+| `hillslope_slope` | `grlnd`, `nmaxhillcol` | m/m | Slope of each column |
+| `hillslope_aspect` | `grlnd`, `nmaxhillcol` | radians | Azimuthal orientation |
+
+**Code reference:** `$BLUE/ctsm5.3/src/biogeophys/HillslopeHydrologyMod.F90`, subroutine `InitHillslope()` (lines 171-530)
+
+#### Single-Point vs Global Grid
+
+For single-point simulations, alignment simplifies dramatically:
+
+| Aspect | Global Grid | Single-Point |
+|--------|-------------|--------------|
+| Grid definition | 0.9°×1.25° cells | Just one point |
+| Alignment worry | Must match cell boundaries | No boundaries to match |
+| Hillslope meaning | Average over ~100km² | Represents local terrain |
+
+**For OSBS, we're not matching a pre-existing gridcell - we're creating custom hillslope data for a specific location.**
+
+#### Current OSBS Setup
+
+**Existing subset data:** `/blue/gerber/earth_models/shared.subset.data/osbs-cfg.16pfts.PtVeg.no-dompft.1901-1921/`
+
+| Property | Value |
+|----------|-------|
+| Longitude | 278.006569°E (-81.99°W) |
+| Latitude | 29.689282°N |
+| Surface file | `surfdata_OSBS_PtVeg_nourb_1850_16pfts_c250925.nc` |
+| Hillslope variables | **None** (need to add) |
+
+#### Recommended Workflow
+
+```
+1. Define OSBS study region
+   - Center: 278.0066°E, 29.6893°N
+   - Extent: Whatever captures wetland-upland transitions
+     (NEON LIDAR tile extent or watershed boundary)
+                    ↓
+2. Process 1m NEON LIDAR DEM
+   - FFT spatial scale analysis
+   - Stream network delineation
+   - Compute 6 hillslope parameters
+                    ↓
+3. Modify existing surface file
+   - Add hillslope variables to surfdata_OSBS_*.nc
+   - Use NCO or xarray to add variables
+                    ↓
+4. Run CTSM with use_hillslope=.true.
+   - Point to modified surface file
+   - All other inputs remain unchanged
+```
+
+#### Internal Consistency Requirements
+
+For the hillslope simulation to work, the surface file needs internally consistent data:
+
+| Variable | Requirement |
+|----------|-------------|
+| `nhillcolumns` | Must equal actual number of columns (17 for 4×4 + stream) |
+| `pct_hillslope` | Must sum to 100% across all hillslopes |
+| `hillslope_area` | Should sum to reasonable gridcell area |
+| `downhill_column_index` | Must form valid drainage network |
+
+The domain file and forcing data don't need modification - they're already aligned by coordinates.
+
+---
+
+### Implementation Plan
+
+*(To be developed)*
