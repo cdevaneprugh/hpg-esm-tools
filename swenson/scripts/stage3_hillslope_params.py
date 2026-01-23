@@ -48,6 +48,7 @@ from spatial_scale import calc_gradient, DTR, RE
 
 try:
     import rasterio
+    from rasterio.windows import from_bounds
 
     HAS_RASTERIO = True
 except ImportError:
@@ -55,18 +56,10 @@ except ImportError:
 
 try:
     import matplotlib.pyplot as plt
-    from matplotlib.colors import Normalize
 
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-
-try:
-    from scipy import ndimage
-
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
 
 
 # Configuration
@@ -81,6 +74,23 @@ N_ASPECT_BINS = 4  # N, E, S, W
 N_HAND_BINS = 4  # Elevation bins
 LOWEST_BIN_MAX = 2.0  # Maximum HAND for lowest bin (meters)
 
+# Target gridcell boundaries (from published 0.9x1.25 grid)
+# Extracted from hillslopes_0.9x1.25_c240416.nc at lon_idx=214, lat_idx=130
+# Published uses 0-360°E; MERIT DEM uses -180 to 180° (Western Hemisphere negative)
+# 267.5°E = 267.5 - 360 = -92.5°W
+TARGET_GRIDCELL = {
+    "lon_min": -93.1250,  # 266.875°E converted to Western Hemisphere
+    "lon_max": -91.8750,  # 268.125°E converted to Western Hemisphere
+    "lat_min": 32.0419,
+    "lat_max": 32.9843,
+    "center_lon": -92.5000,  # 267.5°E converted
+    "center_lat": 32.5131,
+}
+
+# Expansion factor for flow routing (process larger, extract to gridcell)
+# Flow routing needs buffer to avoid edge effects
+EXPANSION_FACTOR = 1.5  # Process 1.5x gridcell size
+
 # Aspect bin definitions (degrees from North, clockwise)
 # North: ≥315° or <45°, East: ≥45° and <135°, etc.
 ASPECT_BINS = [
@@ -90,9 +100,6 @@ ASPECT_BINS = [
     (225, 315),  # West
 ]
 ASPECT_NAMES = ["North", "East", "South", "West"]
-
-# Use center region for processing (full tile is very slow)
-PROCESS_CENTER_SIZE = 2000  # pixels per side (None for full)
 
 
 def print_section(title: str) -> None:
@@ -130,6 +137,48 @@ def compute_slope_aspect(
     return slope, aspect
 
 
+def compute_gridcell_indices(
+    expanded_transform: rasterio.Affine,
+    expanded_shape: tuple,
+    gridcell: dict,
+) -> tuple[slice, slice]:
+    """
+    Compute row/col slices for extracting gridcell from expanded region.
+
+    Parameters
+    ----------
+    expanded_transform : Affine
+        Affine transform for the expanded region
+    expanded_shape : tuple
+        Shape (rows, cols) of expanded region
+    gridcell : dict
+        Gridcell bounds with lon_min, lon_max, lat_min, lat_max
+
+    Returns
+    -------
+    row_slice, col_slice : tuple of slices
+    """
+    # Get pixel coordinates for gridcell boundaries
+    # For rasterio, pixel (0,0) is at transform.c, transform.f (top-left)
+    # col = (lon - transform.c) / transform.a
+    # row = (lat - transform.f) / transform.e
+
+    col_min = int((gridcell["lon_min"] - expanded_transform.c) / expanded_transform.a)
+    col_max = int((gridcell["lon_max"] - expanded_transform.c) / expanded_transform.a)
+    row_min = int(
+        (gridcell["lat_max"] - expanded_transform.f) / expanded_transform.e
+    )  # Note: lat_max gives row_min
+    row_max = int((gridcell["lat_min"] - expanded_transform.f) / expanded_transform.e)
+
+    # Clamp to valid range
+    col_min = max(0, col_min)
+    col_max = min(expanded_shape[1], col_max)
+    row_min = max(0, row_min)
+    row_max = min(expanded_shape[0], row_max)
+
+    return slice(row_min, row_max), slice(col_min, col_max)
+
+
 def get_aspect_mask(aspect: np.ndarray, aspect_bin: tuple) -> np.ndarray:
     """
     Create mask for pixels within an aspect bin.
@@ -153,13 +202,21 @@ def get_aspect_mask(aspect: np.ndarray, aspect_bin: tuple) -> np.ndarray:
 
 
 def compute_hand_bins(
-    hand: np.ndarray, aspect: np.ndarray, bin1_max: float = 2.0
+    hand: np.ndarray,
+    aspect: np.ndarray,
+    aspect_bins: list,
+    bin1_max: float = 2.0,
+    min_aspect_fraction: float = 0.01,
 ) -> np.ndarray:
     """
-    Compute HAND bin boundaries such that each bin has approximately
-    equal area, with constraint that first bin's upper bound ≤ bin1_max.
+    Compute HAND bin boundaries following Swenson's SpecifyHandBounds().
 
-    Following Swenson & Lawrence (2025) Section 2.3.
+    Algorithm:
+    1. Start with quartiles (25%, 50%, 75%, 100%)
+    2. If Q25 > bin1_max:
+       a. Validate per-aspect: ensure each aspect has ≥1% below bin1_max
+       b. Adjust bin1_max upward only if necessary
+       c. Compute bins 2-4 from points above bin1_max (33%, 66% quantiles)
 
     Parameters
     ----------
@@ -167,8 +224,12 @@ def compute_hand_bins(
         HAND values (flattened)
     aspect : array
         Aspect values (flattened)
+    aspect_bins : list
+        List of (lower, upper) tuples for aspect bins
     bin1_max : float
-        Maximum HAND for lowest bin (meters)
+        Maximum HAND for lowest bin (meters) - MANDATORY constraint
+    min_aspect_fraction : float
+        Minimum fraction of points that must be below bin1_max per aspect
 
     Returns
     -------
@@ -176,45 +237,100 @@ def compute_hand_bins(
         N_HAND_BINS + 1 boundary values
     """
     # Filter valid HAND values
-    valid = (hand >= 0) & np.isfinite(hand)
+    valid = (hand > 0) & np.isfinite(hand)
     hand_valid = hand[valid]
+    aspect_valid = aspect[valid]
 
     if hand_valid.size == 0:
-        return np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, bin1_max * 8])
+        return np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
 
     # Sort HAND values
     hand_sorted = np.sort(hand_valid)
     n = hand_sorted.size
 
-    # Determine bins with equal area
-    # First bin has constraint: upper bound ≤ bin1_max
-    bounds = [0.0]
+    # Initial quartile-based bounds
+    quartiles = [0.25, 0.5, 0.75, 1.0]
+    initial_q25 = hand_sorted[int(0.25 * n) - 1] if n > 0 else 0
 
-    # Find index where hand <= bin1_max
-    idx_bin1 = np.searchsorted(hand_sorted, bin1_max, side="right")
+    print(f"    Initial Q25: {initial_q25:.2f} m, bin1_max target: {bin1_max:.2f} m")
 
-    # If bin1_max covers more than 1/N_HAND_BINS of data, use bin1_max
-    # Otherwise, use quantile
-    if idx_bin1 > n / N_HAND_BINS:
-        bounds.append(bin1_max)
-        remaining = n - idx_bin1
-        # Divide remaining into N_HAND_BINS - 1 equal parts
-        for i in range(1, N_HAND_BINS):
-            if i < N_HAND_BINS - 1:
-                idx = idx_bin1 + int(remaining * i / (N_HAND_BINS - 1))
-                bounds.append(hand_sorted[min(idx, n - 1)])
+    # Check if bin1_max constraint needs to be applied
+    if initial_q25 > bin1_max:
+        print(
+            f"    Q25 ({initial_q25:.2f}m) > bin1_max ({bin1_max}m), applying mandatory 2m constraint"
+        )
+
+        # Per-aspect validation
+        adjusted_bin1_max = bin1_max
+
+        for asp_idx, (asp_low, asp_high) in enumerate(aspect_bins):
+            # Select points for this aspect
+            if asp_low > asp_high:  # North wraps around (315-45)
+                asp_mask = (aspect_valid >= asp_low) | (aspect_valid < asp_high)
             else:
-                bounds.append(hand_sorted[-1] + 1)  # Upper bound
+                asp_mask = (aspect_valid >= asp_low) & (aspect_valid < asp_high)
+
+            hand_asp = hand_valid[asp_mask]
+            if hand_asp.size > 0:
+                hand_asp_sorted = np.sort(hand_asp)
+                # Check fraction below bin1_max
+                below_threshold = (
+                    np.sum(hand_asp_sorted <= bin1_max) / hand_asp_sorted.size
+                )
+
+                if below_threshold < min_aspect_fraction:
+                    # Find the value at min_aspect_fraction quantile
+                    idx_1pct = max(
+                        0, int(min_aspect_fraction * hand_asp_sorted.size) - 1
+                    )
+                    bmin = hand_asp_sorted[idx_1pct]
+                    print(
+                        f"    Warning: Aspect {ASPECT_NAMES[asp_idx]} has only "
+                        f"{below_threshold:.1%} below {bin1_max}m (need {min_aspect_fraction:.0%})"
+                    )
+                    adjusted_bin1_max = max(adjusted_bin1_max, bmin)
+
+        if adjusted_bin1_max != bin1_max:
+            print(f"    Adjusted bin1_max from {bin1_max}m to {adjusted_bin1_max:.2f}m")
+
+        # Compute remaining bins from points ABOVE adjusted_bin1_max
+        above_bin1 = hand_sorted[hand_sorted > adjusted_bin1_max]
+        if above_bin1.size > 0:
+            n_above = above_bin1.size
+            b33 = (
+                above_bin1[int(0.33 * n_above) - 1]
+                if n_above > 0
+                else adjusted_bin1_max * 2
+            )
+            b66 = (
+                above_bin1[int(0.66 * n_above) - 1]
+                if n_above > 0
+                else adjusted_bin1_max * 3
+            )
+            bounds = np.array([0, adjusted_bin1_max, b33, b66, 1e6])
+        else:
+            bounds = np.array(
+                [
+                    0,
+                    adjusted_bin1_max,
+                    adjusted_bin1_max * 2,
+                    adjusted_bin1_max * 4,
+                    1e6,
+                ]
+            )
+
+        print(f"    HAND bins (with 2m constraint): {bounds[:4]} + [max]")
     else:
-        # Use equal-area quantiles
-        for i in range(1, N_HAND_BINS + 1):
-            if i < N_HAND_BINS:
-                idx = int(n * i / N_HAND_BINS)
-                bounds.append(hand_sorted[min(idx, n - 1)])
-            else:
-                bounds.append(hand_sorted[-1] + 1)
+        # Q25 already <= bin1_max, use quartiles directly
+        bounds = [0]
+        for q in quartiles:
+            idx = max(0, int(q * n) - 1)
+            bounds.append(hand_sorted[idx])
+        bounds[-1] = 1e6  # Upper bound set to large value
+        bounds = np.array(bounds)
+        print(f"    HAND bins (quartile-based): {bounds[:4]} + [max]")
 
-    return np.array(bounds)
+    return bounds
 
 
 def fit_trapezoidal_width(
@@ -514,20 +630,71 @@ def main():
     print_section("Step 2: Loading DEM and Computing Flow Routing")
 
     t0 = time.time()
-    grid = Grid.from_raster(MERIT_DEM_PATH, "dem")
+
+    # Calculate expanded bounds for flow routing (need buffer to avoid edge effects)
+    gc = TARGET_GRIDCELL
+    lon_width = gc["lon_max"] - gc["lon_min"]
+    lat_height = gc["lat_max"] - gc["lat_min"]
+
+    expanded_bounds = {
+        "lon_min": gc["center_lon"] - EXPANSION_FACTOR * lon_width / 2,
+        "lon_max": gc["center_lon"] + EXPANSION_FACTOR * lon_width / 2,
+        "lat_min": gc["center_lat"] - EXPANSION_FACTOR * lat_height / 2,
+        "lat_max": gc["center_lat"] + EXPANSION_FACTOR * lat_height / 2,
+    }
+
+    print("  Target gridcell:")
+    print(f"    Lon: [{gc['lon_min']:.4f}, {gc['lon_max']:.4f}] ({lon_width:.4f}°)")
+    print(f"    Lat: [{gc['lat_min']:.4f}, {gc['lat_max']:.4f}] ({lat_height:.4f}°)")
+    print("  Expanded region (for flow routing):")
+    print(
+        f"    Lon: [{expanded_bounds['lon_min']:.4f}, {expanded_bounds['lon_max']:.4f}]"
+    )
+    print(
+        f"    Lat: [{expanded_bounds['lat_min']:.4f}, {expanded_bounds['lat_max']:.4f}]"
+    )
+
+    # Load DEM using rasterio window for expanded region
+    if HAS_RASTERIO:
+        with rasterio.open(MERIT_DEM_PATH) as src:
+            src_crs = src.crs
+            src_nodata = src.nodata
+
+            # Get window for expanded bounds
+            window = from_bounds(
+                expanded_bounds["lon_min"],
+                expanded_bounds["lat_min"],
+                expanded_bounds["lon_max"],
+                expanded_bounds["lat_max"],
+                src.transform,
+            )
+            dem_data = src.read(1, window=window)
+            expanded_transform = src.window_transform(window)
+            print(f"  Loaded DEM window: {dem_data.shape} pixels")
+
+            # Compute gridcell extraction indices
+            gc_row_slice, gc_col_slice = compute_gridcell_indices(
+                expanded_transform, dem_data.shape, gc
+            )
+            print(f"  Gridcell extraction: rows={gc_row_slice}, cols={gc_col_slice}")
+    else:
+        raise RuntimeError("rasterio required for gridcell-based DEM loading")
+
+    # Create pysheds grid from the array with proper affine transform
+    # pgrid expects pyproj.Proj object (not CRS)
+    from pyproj import Proj as PyprojProj
+
+    grid = Grid()
+    grid.add_gridded_data(
+        dem_data,
+        data_name="dem",
+        affine=expanded_transform,
+        crs=PyprojProj("EPSG:4326"),
+        nodata=src_nodata if src_nodata is not None else -9999,
+    )
     dem = grid.dem
 
-    print(f"  Full DEM shape: {dem.shape}")
-
-    # Extract center region for processing
-    if PROCESS_CENTER_SIZE is not None:
-        cy, cx = dem.shape[0] // 2, dem.shape[1] // 2
-        half = PROCESS_CENTER_SIZE // 2
-        y_slice = slice(cy - half, cy + half)
-        x_slice = slice(cx - half, cx + half)
-
-        # We need to process on full grid for flow routing, then extract
-        print(f"  Processing center {PROCESS_CENTER_SIZE}x{PROCESS_CENTER_SIZE} region")
+    print(f"  Expanded DEM shape: {dem.shape}")
 
     # D8 direction map (pysheds convention)
     dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
@@ -541,7 +708,6 @@ def main():
     # Flow direction
     print("  Computing flow direction...")
     grid.flowdir("inflated", out_name="fdir", dirmap=dirmap, routing="d8")
-    fdir = grid.fdir
 
     # Flow accumulation
     print("  Computing flow accumulation...")
@@ -610,26 +776,18 @@ def main():
     print(f"  Slope/aspect computation time: {time.time() - t0:.1f} seconds")
 
     # -------------------------------------------------------------------------
-    # Step 5: Extract center region for parameter computation
+    # Step 5: Extract gridcell region for parameter computation
     # -------------------------------------------------------------------------
-    print_section("Step 5: Extracting Center Region")
+    print_section("Step 5: Extracting Target Gridcell")
 
-    if PROCESS_CENTER_SIZE is not None:
-        dem_center = np.array(dem)[y_slice, x_slice]
-        hand_center = np.array(hand)[y_slice, x_slice]
-        dtnd_center = np.array(dtnd)[y_slice, x_slice]
-        slope_center = slope[y_slice, x_slice]
-        aspect_center = aspect[y_slice, x_slice]
-        lon_center = lon[x_slice]
-        lat_center = lat[y_slice]
-    else:
-        dem_center = np.array(dem)
-        hand_center = np.array(hand)
-        dtnd_center = np.array(dtnd)
-        slope_center = slope
-        aspect_center = aspect
-        lon_center = lon
-        lat_center = lat
+    # Extract arrays to the exact gridcell boundaries
+    dem_center = np.array(dem)[gc_row_slice, gc_col_slice]
+    hand_center = np.array(hand)[gc_row_slice, gc_col_slice]
+    dtnd_center = np.array(dtnd)[gc_row_slice, gc_col_slice]
+    slope_center = slope[gc_row_slice, gc_col_slice]
+    aspect_center = aspect[gc_row_slice, gc_col_slice]
+    lon_center = lon[gc_col_slice]
+    lat_center = lat[gc_row_slice]
 
     print(f"  Region shape: {dem_center.shape}")
     print(f"  Lon range: [{lon_center[0]:.4f}, {lon_center[-1]:.4f}]")
@@ -657,9 +815,12 @@ def main():
     valid = (hand_flat >= 0) & np.isfinite(hand_flat)
     print(f"  Valid pixels: {np.sum(valid)} ({100 * np.sum(valid) / valid.size:.1f}%)")
 
-    # Compute HAND bin boundaries
-    hand_bounds = compute_hand_bins(hand_flat, aspect_flat, bin1_max=LOWEST_BIN_MAX)
-    print(f"  HAND bin boundaries: {hand_bounds}")
+    # Compute HAND bin boundaries (following Swenson's mandatory 2m constraint)
+    print(f"  Computing HAND bins with mandatory {LOWEST_BIN_MAX}m constraint...")
+    hand_bounds = compute_hand_bins(
+        hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
+    )
+    print(f"  Final HAND bin boundaries: {hand_bounds}")
 
     # -------------------------------------------------------------------------
     # Step 7: Compute hillslope parameters by aspect and elevation bin
@@ -681,6 +842,8 @@ def main():
             "region_shape": list(dem_center.shape),
             "lon_range": [float(lon_center[0]), float(lon_center[-1])],
             "lat_range": [float(lat_center[0]), float(lat_center[-1])],
+            "target_gridcell": TARGET_GRIDCELL,
+            "expansion_factor": EXPANSION_FACTOR,
         },
         "elements": [],
     }
@@ -870,9 +1033,15 @@ def main():
     with open(summary_path, "w") as f:
         f.write("Stage 3: Hillslope Parameter Summary\n")
         f.write("=" * 60 + "\n\n")
-        f.write(f"Region: {dem_center.shape[0]}x{dem_center.shape[1]} pixels\n")
-        f.write(f"Lon: [{lon_center[0]:.4f}, {lon_center[-1]:.4f}]\n")
-        f.write(f"Lat: [{lat_center[0]:.4f}, {lat_center[-1]:.4f}]\n")
+        f.write("Target Gridcell (0.9x1.25 grid):\n")
+        f.write(f"  Center: ({gc['center_lon']:.4f}°E, {gc['center_lat']:.4f}°N)\n")
+        f.write(f"  Lon bounds: [{gc['lon_min']:.4f}, {gc['lon_max']:.4f}]\n")
+        f.write(f"  Lat bounds: [{gc['lat_min']:.4f}, {gc['lat_max']:.4f}]\n\n")
+        f.write(
+            f"Extracted region: {dem_center.shape[0]}x{dem_center.shape[1]} pixels\n"
+        )
+        f.write(f"Actual Lon: [{lon_center[0]:.4f}, {lon_center[-1]:.4f}]\n")
+        f.write(f"Actual Lat: [{lat_center[0]:.4f}, {lat_center[-1]:.4f}]\n")
         f.write(f"Accumulation threshold: {accum_threshold} cells\n")
         f.write(f"HAND bin boundaries: {hand_bounds}\n\n")
 
