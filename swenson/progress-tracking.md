@@ -870,6 +870,57 @@ The domain file and forcing data don't need modification - they're already align
 
 ---
 
+### Test Case: osbs2
+
+#### Why This Case
+
+The osbs2 case provides an ideal baseline for validating custom OSBS hillslope data:
+
+1. **Long spinup available** - 860+ years of simulation with hillslope hydrology enabled, providing equilibrated soil carbon and water states
+2. **Uses Swenson's global hillslope data** - Allows direct comparison between global (90m MERIT) and custom (1m LIDAR) hillslope parameters
+3. **Same site coordinates** - 278.0066°E, 29.6893°N matches our OSBS target location
+4. **Branch capability** - Can branch from year 861 to test custom hillslope data without re-running spinup
+
+#### Case History
+
+| Case | Owner | Years | Purpose |
+|------|-------|-------|---------|
+| osbs2 | Dr. Gerber | 0-861 | Original spinup with Swenson hillslopes |
+| osbs2.branch.v2 | cdevaneprugh | 861+ | Branch for hillslope analysis |
+
+#### How Swenson's Hillslope Data Was Extracted
+
+The current hillslope file was extracted from Swenson's published global dataset:
+
+```bash
+# Extract OSBS gridcell from global 0.9°×1.25° dataset
+ncks -d lsmlon,222 -d lsmlat,127 hillslopes_0.9x1.25_c240416.nc hillslopes_osbs_c240416.nc
+
+# Add coordinate variables from surface file
+ncks -A -v LATIXY surfdata_OSBS_hist_1850_78pfts_c251002.nc hillslopes_osbs_c240416.nc
+ncks -A -v LONGXY surfdata_OSBS_hist_1850_78pfts_c251002.nc hillslopes_osbs_c240416.nc
+```
+
+This global data is based on ~90m MERIT DEM and represents average terrain for a ~100km² gridcell.
+
+#### Validation Strategy
+
+When we generate custom OSBS hillslope parameters from 1m LIDAR:
+
+1. **Create test branch** from osbs2 at year 861
+2. **Replace hillslope_file** with our custom parameters
+3. **Run short test** (1-5 years) to verify model stability
+4. **Compare outputs** between Swenson-hillslope and custom-hillslope runs
+5. **Analyze differences** in water table, soil moisture, carbon fluxes
+
+Expected differences with high-resolution LIDAR data:
+- **Finer-scale drainage patterns** - More accurate stream network
+- **Lower HAND values** - Subtle elevation differences in low-relief wetland
+- **Different aspect distribution** - May not have 4 distinct hillslopes if relatively flat
+- **Better TAI representation** - Can capture actual wetland-upland transitions
+
+---
+
 ### Implementation Plan
 
 *(To be developed)*
