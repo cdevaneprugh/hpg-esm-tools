@@ -696,12 +696,69 @@ Three potential causes were investigated in detail.
 
 The other parameters (height, distance, slope, aspect, width) have >0.97 correlation because they are *means within bins* rather than *totals per bin*, making them less sensitive to bin boundary choices. This level of agreement is acceptable for OSBS work - the methodology is validated.
 
-### Recommendations for OSBS Implementation
+### Recommendations
 
-1. **Ensure exact region alignment** with target gridcell boundaries
-2. **Enforce bin1_max = 2m** as mandatory (per paper requirement)
-3. **Add per-aspect validation** for HAND bin boundaries
-4. **Document spatial extent** in output metadata
+#### How to Ensure Region Alignment
+
+For our MERIT validation, the mismatch occurred because we processed a 2000×2000 pixel region (~1.67°×1.67°) while the published data uses a 0.9°×1.25° gridcell grid that doesn't align with our region center.
+
+**To fix this:**
+
+1. **Define exact target bounds first:**
+   ```python
+   # Published gridcell bounds (from NetCDF file)
+   target_lon_min, target_lon_max = 266.875, 268.125  # 1.25° width
+   target_lat_min, target_lat_max = 32.042, 32.984    # 0.94° height
+   ```
+
+2. **Extract only matching DEM pixels:**
+   ```python
+   import rasterio
+   from rasterio.windows import from_bounds
+
+   with rasterio.open(dem_path) as src:
+       # Get window that exactly matches target bounds
+       window = from_bounds(
+           target_lon_min, target_lat_min,
+           target_lon_max, target_lat_max,
+           src.transform
+       )
+       dem = src.read(1, window=window)
+   ```
+
+3. **Process only that clipped region** through the entire pipeline (flow direction, accumulation, HAND, binning).
+
+#### Implications of Incorrect Region Alignment
+
+**Physical problems:**
+
+1. **Area fractions are skewed** - Our southern extension included extra low-lying terrain, inflating Bin 0 (lowest HAND) by 9 percentage points. This directly affects lateral water redistribution in CTSM.
+
+2. **Aspect-dependent bias** - The direction of the mismatch matters. We extended south, and north-facing slopes drain southward, so North aspect was disproportionately affected (0.12 correlation vs 0.96+ for others).
+
+3. **Parameters don't represent the target gridcell** - The 6 geomorphic parameters are supposed to characterize a specific piece of landscape. Including terrain from outside means your parameters describe a different (mixed) landscape.
+
+**Model behavior impacts:**
+
+| Parameter | CTSM Use | Effect of Wrong Value |
+|-----------|----------|----------------------|
+| Area | Determines mass/energy partitioning | Wrong flux distribution between columns |
+| Height | Drives hydraulic gradients | Incorrect lateral flow rates |
+| Width | Scales lateral flux exchange | Wrong conductance between columns |
+
+#### For OSBS Implementation
+
+The implications are **less severe** for OSBS because:
+- We're creating custom data, not validating against published
+- We define the target region ourselves
+- The key is **internal consistency** - same boundaries throughout the pipeline
+
+**Checklist:**
+1. **Define OSBS processing boundary explicitly** (0.9°×1.25° gridcell, single-point domain, or custom NEON site boundary)
+2. **Document the boundary** in output metadata
+3. **Use exact bounds for all stages** of the pipeline
+4. **Enforce bin1_max = 2m** as mandatory (per paper requirement)
+5. **Add per-aspect validation** for HAND bin boundaries
 
 **Output locations:**
 - Stage 1: `swenson/output/stage1/` (GeoTIFFs, summary, plots)
