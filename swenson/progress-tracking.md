@@ -1225,13 +1225,69 @@ Merged 233 NEON DTM tiles into single GeoTIFF.
 
 **Status:** [ ] Pending (requires user input)
 
-The full mosaic includes some urban territory that should be excluded before hillslope processing. User will provide explicit coordinates or tile list to define the study region boundary.
+The full mosaic includes some urban territory at the edges that should be excluded before hillslope processing. NEON extended data collection beyond the actual OSBS site boundary to ensure full coverage, so edge tiles often contain urban areas from nearby towns.
+
+**Key finding:** Interior tiles are 100% complete with no internal holes. All nodata is at the irregular outer boundary of the tile coverage.
+
+---
+
+#### Tile Reference System
+
+**Grid dimensions:** 17 rows × 19 columns (233 tiles of 323 possible = 72% coverage)
+
+**Reference format:** `R{row}C{col}` (e.g., R5C7 = row 5, column 7)
+
+**Reference maps:**
+- `output/full_mosaic/tile_grid_reference.png` - Grid overlaid on elevation
+- `output/full_mosaic/tile_grid_simple.png` - Simple grid diagram
+
+**Tile grid (X = tile exists, . = no tile):**
+
+```
+        Columns:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18
+                 (W) ──────────────────────────────────────────────> (E)
+                 394k                                              412k
+      Row  0 (N) .  .  .  .  .  .  .  .  .  .  X  X  X  X  X  .  .  .  .   3292k
+      Row  1     .  .  .  .  .  .  .  .  .  .  X  X  X  X  X  .  .  .  .   3291k
+      Row  2     .  .  .  .  X  X  .  .  .  .  X  X  X  X  X  .  .  .  .   3290k
+      Row  3     .  .  .  .  X  X  X  X  X  X  X  X  X  X  X  X  X  .  .   3289k
+      Row  4     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  .  .   3288k
+      Row  5     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  .  .   3287k
+      Row  6     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  .  .   3286k
+      Row  7     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  .  .   3285k
+      Row  8     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  .  .   3284k
+      Row  9     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X   3283k
+      Row 10     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X   3282k
+      Row 11     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X   3281k
+      Row 12     X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X   3280k
+      Row 13     .  .  .  .  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X   3279k
+      Row 14     .  .  .  .  X  X  X  X  X  X  X  X  X  .  .  .  .  .  .   3278k
+      Row 15     .  .  .  .  X  X  X  X  X  X  X  X  X  .  .  .  .  .  .   3277k
+      Row 16 (S) .  .  .  .  X  X  X  X  X  X  X  X  X  .  .  .  .  .  .   3276k
+```
+
+**Coordinate mapping:**
+
+| Column | UTM Easting | Row | UTM Northing |
+|--------|-------------|-----|--------------|
+| C0 | 394000 | R0 | 3292000 |
+| C1 | 395000 | R1 | 3291000 |
+| C2 | 396000 | R2 | 3290000 |
+| ... | +1000/col | ... | -1000/row |
+| C18 | 412000 | R16 | 3276000 |
+
+**Usage examples:**
+- Single tile: `R5C7`
+- Rectangular range: `R4-12,C4-16` (rows 4-12, columns 4-16)
+- Specific list: `R5C7, R5C8, R6C7`
+- Exclude tiles: "Remove R0-3,C0-9" (northwest corner)
+- Interior only: `R4-12,C4-16` (fully surrounded tiles)
 
 **To do:**
-- [ ] Identify tiles/coordinates containing urban areas
-- [ ] Define study region boundary (user input required)
-- [ ] Create trimmed mosaic excluding urban territory
-- [ ] Document final study region extent
+- [ ] User identifies tiles to exclude (urban areas at edges)
+- [ ] Create trimmed mosaic from selected tiles
+- [ ] Re-run pipeline on trimmed data
+- [ ] Document final study region
 
 ---
 
@@ -1859,12 +1915,31 @@ The full mosaic has higher stream coverage due to the lower accumulation thresho
 | `scripts/run_full_mosaic_pipeline.py` | ~1300 | Process full mosaic with subsampling and edge handling |
 | `scripts/extract_smoke_test_subset.py` | ~150 | Extract test region from mosaic using coordinates |
 | `scripts/run_full_mosaic.sh` | ~30 | SLURM job script with resource allocation |
+| `scripts/export_tile_grid_kml.py` | ~170 | Export tile grid to KML for Google Earth viewing |
 
 **Supporting modules:**
 
 | Module | Purpose | Key Functions |
 |--------|---------|---------------|
 | `scripts/spatial_scale.py` | FFT spectral analysis | `identify_spatial_scale_utm()`, `fit_spectral_peak()` |
+
+---
+
+#### Tile Grid Reference
+
+For PI meetings and tile selection, a KML export is available for viewing in Google Earth.
+
+**Script:** `scripts/export_tile_grid_kml.py`
+
+**Output:** `output/full_mosaic/osbs_tile_grid.kml`
+
+**Features:**
+- 19×17 grid with row/column labels (R0C0, R5C7, etc.)
+- Green tiles = data exists (233 tiles)
+- Red tiles = no NEON data (90 tiles in bounding box)
+- Two toggleable folders: "Tile Outlines" and "Tile Labels"
+
+**Note:** The red tiles are purely for reference grid completeness. The pipeline handles missing tiles automatically by extracting the largest connected component of valid data - no need to fill gaps with placeholders.
 
 ---
 

@@ -23,8 +23,25 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 swenson/
 ├── CLAUDE.md              # This file - context loader
 ├── progress-tracking.md   # Progress tracking and reference docs
-└── scripts/               # Processing scripts
+├── scripts/               # Processing scripts
+├── data/                  # Input data (NEON tiles, mosaics)
+└── output/                # Pipeline outputs and visualizations
 ```
+
+## Output Files
+
+Key outputs in `output/full_mosaic/`:
+
+| File | Purpose |
+|------|---------|
+| `osbs_tile_grid.kml` | Google Earth tile grid with row/col labels |
+| `tile_grid_reference.png` | PNG reference grid for quick viewing |
+| `stream_network.png` | Delineated stream network visualization |
+| `hand_map.png` | Height Above Nearest Drainage map |
+| `hillslope_params.json` | Computed hillslope parameters |
+| `hillslope_params.png` | Hillslope parameter summary plot |
+
+**Tile Grid (KML):** Use `scripts/export_tile_grid_kml.py` to regenerate. Green = existing tiles, red = missing. Two toggleable layers for outlines and labels.
 
 ## pysheds Setup
 
