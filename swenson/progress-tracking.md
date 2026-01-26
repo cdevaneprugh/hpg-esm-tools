@@ -1235,6 +1235,730 @@ The full mosaic includes some urban territory that should be excluded before hil
 
 ---
 
+### Resolution-Sensitive Issues
+
+Documentation of potential issues when adapting from 90m MERIT to 1m LIDAR.
+
+#### Critical Issues (Hardcoded Values)
+
+| Parameter | Location | 90m Value | 1m Impact |
+|-----------|----------|-----------|-----------|
+| `smallest_dtnd` | `representative_hillslope.py:700` | 1.0 m | Too large - masks fine-scale drainage patterns. At 1m resolution, this means pixels within 1 drainage pixel are clamped. |
+| `hand_threshold` | `representative_hillslope.py:679` | 2 m | Used to identify flooded regions in lowest HAND bin. May mis-identify flooded regions in very flat terrain. |
+| Edge blend window | `spatial_scale.py:623` | 4 pixels (360m at 90m) | Only 4m at 1m res - may not adequately blend edges for FFT |
+| Zero edge margin | `spatial_scale.py:642` | 5 pixels (450m at 90m) | Only 5m at 1m res - may not adequately handle edge artifacts |
+
+#### Resolution-Dependent Behavior
+
+| Component | Impact |
+|-----------|--------|
+| **Accumulation threshold** | Formula `accum_thresh = 0.5 * Lc²` (in pixels) - will identify finer drainage networks since Lc scales with resolution |
+| **FFT memory** | For same geographic area: 90x more pixels per dimension = 8100x more memory for FFT arrays |
+| **Spectral analysis** | Will detect smaller characteristic length scales (meters vs hundreds of meters) |
+| **`mindtnd` parameter** | Set to pixel size (`ares`) internally - 90x smaller at 1m vs 90m resolution |
+| **Pixel area calculation** | At 1m×1m, individual pixel areas are ~1 m² vs ~8000 m² at 90m |
+| **Stream network density** | Finer resolution → more detailed stream network → different drainage patterns |
+
+#### Potential Adaptations (to consider after smoke test)
+
+1. **Scale-adjust hardcoded thresholds:**
+   - `smallest_dtnd`: Consider 10-50m for 1m data to maintain similar smoothing effect
+   - Edge blend window: Consider 50-100 pixels to blend similar geographic distance
+
+2. **Memory management:**
+   - Consider downsampling for Lc calculation (FFT memory intensive)
+   - Process in tiles if full mosaic exceeds memory
+
+3. **Lc constraint:**
+   - May need to constrain Lc based on OSBS hydrology knowledge
+   - Very flat terrain may give ambiguous spectral peaks
+
+4. **Stream network validation:**
+   - Compare delineated network against known drainage patterns
+   - Consider minimum catchment area constraints appropriate for OSBS wetlands
+
+#### Expected OSBS Differences from Global Data
+
+Based on 1m LIDAR characteristics:
+
+| Property | Global (90m) | Expected OSBS (1m) |
+|----------|--------------|-------------------|
+| Lc (characteristic length) | ~763 m | Likely smaller (100-500m) |
+| HAND range | 0-600 m | 0-46 m (very limited relief) |
+| Aspect distinctness | Clear 4-aspect separation | May be less distinct in flat areas |
+| Stream network | Major channels only | Includes minor drainage features |
+| TAI resolution | Cannot capture | Can resolve wetland boundaries |
+
+---
+
 ### Implementation Plan
 
-*(To be developed)*
+#### Task Status
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 1 | Document resolution-sensitive issues | [x] Complete |
+| 2 | Small-scale smoke test | [x] Complete (2026-01-26) |
+| 3 | Full smoke test | [x] Complete (2026-01-26) |
+| 4 | Refine scripts/pysheds | [ ] In progress |
+| 5 | Trim mosaic (iterative) | [ ] Pending |
+| 6 | Generate final hillslope dataset | [ ] Pending |
+| 7 | Validation | [ ] Pending |
+
+---
+
+### Small-Scale Smoke Test
+
+**Goal:** Verify pipeline runs on 1m data before committing to full extent.
+
+**Status:** [x] Complete (2026-01-26)
+
+#### Subset Extraction
+
+**Input:** User-provided WGS84 corner coordinates:
+- Upper left: 29°42'50"N 81°59'50"W
+- Upper right: 29°42'50"N 81°58'01"W
+- Lower left: 29°41'11"N 81°59'51"W
+- Lower right: 29°41'11"N 81°58'01"W
+
+**Script:** `scripts/extract_smoke_test_subset.py`
+
+**Output:**
+- `data/osbs_smoke_test_4x4.tif` - 4000×4000 pixel subset (46 MB)
+- `output/smoke_test/elevation_heatmap.png` - verification plot
+
+**Extracted region:**
+| Property | Value |
+|----------|-------|
+| Grid size | 4×4 tiles |
+| Pixel size | 4000×4000 px |
+| Geographic size | 4.0×4.0 km |
+| UTM bounds | 403000-407000 E, 3284000-3288000 N |
+| Elevation range | 25.3 - 51.2 m |
+
+#### Pipeline Execution
+
+**Script:** `scripts/run_smoke_test_pipeline.py`
+
+**Runtime:** 85 seconds (1.4 minutes)
+
+#### Issues Found and Fixes Applied
+
+**Issue 1: FFT detects noise at 1m resolution**
+- Raw Lc = 6m (picking up high-frequency noise)
+- **Fix:** Added `min_lc_pixels` parameter (set to 100m minimum)
+- Constrained Lc = 100m (100 pixels)
+
+**Issue 2: pysheds DTND uses haversine formula**
+- pysheds assumes geographic coordinates (lat/lon in degrees)
+- For UTM (meters), haversine produced nonsense distances (500+ km for 4km domain)
+- **Fix:** Replaced with `scipy.ndimage.distance_transform_edt` for Euclidean DTND
+
+**Issue 3: Area calculation needs refinement**
+- Trapezoidal fit returns per-hillslope area (very small when many hillslopes)
+- **Status:** Noted for future refinement; not blocking
+
+#### Results
+
+| Metric | Value |
+|--------|-------|
+| Characteristic length (Lc) | 100 m (constrained) |
+| Accumulation threshold | 5000 cells |
+| Stream coverage | 0.88% |
+| Stream segments | 1751 |
+| HAND range | 0 - 20.3 m |
+| HAND median | 1.3 m |
+| DTND range | 0 - 289 m |
+| DTND median | 33 m |
+
+**HAND bin boundaries:** [0, 0.29, 1.31, 3.31, 1e6] m (quartile-based)
+
+**Aspect distribution:**
+| Aspect | Fraction |
+|--------|----------|
+| North | 17.7% |
+| East | 34.5% |
+| South | 17.3% |
+| West | 30.5% |
+
+**16 hillslope elements computed** (4 aspects × 4 elevation bins)
+
+#### Output Files
+
+| File | Purpose |
+|------|---------|
+| `output/smoke_test/elevation_heatmap.png` | Verification plot for extracted area |
+| `output/smoke_test/lc_spectral_analysis.png` | FFT spectral analysis |
+| `output/smoke_test/stream_network.png` | Stream network overlay on DEM |
+| `output/smoke_test/hand_map.png` | HAND visualization |
+| `output/smoke_test/hillslope_params.png` | Hillslope parameters by aspect/bin |
+| `output/smoke_test/hillslope_params.json` | Machine-readable parameters |
+| `output/smoke_test/smoke_test_summary.txt` | Text summary |
+
+#### Key Findings
+
+1. **Pipeline runs successfully on 1m data** - Memory usage acceptable for 4000×4000 pixels
+2. **Low-relief terrain requires Lc constraint** - FFT picks up high-frequency noise
+3. **HAND values are low** (median 1.3m) - Expected for OSBS wetlandscape
+4. **Aspect distribution dominated by E/W** - May indicate general terrain orientation
+5. **pysheds requires adaptation for UTM** - DTND calculation needs Euclidean distance
+
+#### Next Steps
+
+1. Review diagnostic plots with PI
+2. Run full mosaic smoke test if 4×4 results look reasonable
+3. Address area calculation refinement
+4. Consider if 100m Lc is appropriate for OSBS hydrology
+
+---
+
+### Full Smoke Test
+
+**Goal:** Run pipeline on full (untrimmed) mosaic to generate preliminary data for PI review.
+
+**Status:** [x] Complete (2026-01-26)
+
+**Script:** `scripts/run_full_mosaic_pipeline.py`
+**SLURM:** `scripts/run_full_mosaic.sh`
+
+---
+
+#### Input Data Characteristics
+
+| Property | Value |
+|----------|-------|
+| Input file | `data/NEON_OSBS_DTM_mosaic.tif` |
+| Dimensions | 17,000 × 19,000 pixels |
+| Total pixels | 323,000,000 |
+| Valid data | 58.52% (189,024,929 pixels) |
+| Nodata | 41.48% (133,975,071 pixels) |
+| Elevation range | 23.2 - 69.2 m |
+| CRS | EPSG:32617 (UTM 17N) |
+| Pixel size | 1.0 m |
+
+The nodata pattern is scattered (NEON tiles don't form a perfect rectangle), which created significant challenges for flow routing.
+
+---
+
+#### Job History and Debugging Process
+
+This section documents the complete debugging journey, including failed attempts and lessons learned.
+
+##### Job 23793378: OOM Kill (First Attempt)
+
+**Configuration:**
+- Memory: 64GB
+- QOS: gerber (standard)
+
+**Failure point:** `resolve_flats` step in pysheds
+
+**Error:** `slurmstepd: error: Detected 1 oom_kill event`
+
+**Analysis:** The `resolve_flats` step in pysheds has O(n²) or worse complexity when processing large flat regions. At full 1m resolution (323M pixels), this exceeded 64GB memory.
+
+**Lesson:** Full resolution processing is not feasible for flow routing on this dataset.
+
+---
+
+##### Job 23801217: max_accumulation=1 (Second Attempt)
+
+**Configuration:**
+- Memory: 128GB
+- QOS: gerber-b (burst)
+- Strategy: Keep nodata as natural drainage boundaries
+
+**Log output:**
+```
+[10:48:08]   Keeping 97,900,765 nodata pixels as natural drainage boundaries
+[10:58:19]   Max accumulation: 1 cells
+[10:58:53]   Stream cells: 0 (0.00%)
+```
+
+**Processing time:** 617.9 seconds (10.3 minutes) just for flow routing
+
+**Analysis:** With max_accumulation=1, no flow is accumulating anywhere in the domain. This means every pixel drains immediately to a boundary (nodata) cell. The strategy of keeping nodata as natural drains backfired - flow escapes before it can accumulate.
+
+**Lesson:** Cannot treat scattered nodata as drainage boundaries; need connected valid data region.
+
+---
+
+##### Job 23806655: Still max_accumulation=1 (Third Attempt)
+
+**Configuration:**
+- Memory: 128GB
+- QOS: gerber-b (burst)
+- Strategy: Extract largest connected component + 4x subsampling
+
+**Code changes made:**
+```python
+# Find largest connected component of valid data
+from scipy import ndimage
+labeled, num_features = ndimage.label(valid_mask)
+component_sizes = ndimage.sum(valid_mask, labeled, range(1, num_features + 1))
+largest_component = np.argmax(component_sizes) + 1
+largest_mask = (labeled == largest_component)
+
+# Subsample for flow routing
+subsample = 4  # Process at 4m resolution
+dem_sub = dem_region[::subsample, ::subsample]
+```
+
+**Log output:**
+```
+[12:26:53]   Largest component: 189,024,929 pixels (58.5% of total)
+[12:26:53]   Extracting region: rows [535:16858], cols [605:18183]
+[12:26:53]   Region size: 16323 x 17578 pixels
+[12:26:53]   Subsampling by 4x for flow routing...
+[12:26:53]   Subsampled shape: (4081, 4395), nodata: 6,121,927
+[12:27:16]   Max accumulation: 1 cells
+[12:27:18]   Stream cells: 0 (0.00%)
+```
+
+**Error:**
+```
+ValueError: zero-size array to reduction operation maximum which has no identity
+```
+(Crashed when trying to compute `np.max(hand_valid)` on empty array because no streams found)
+
+**Analysis:** Even with connected component extraction and subsampling, max_accumulation was still 1. This was puzzling since individual test chunks worked fine.
+
+**Diagnostic investigation:** Tested progressively larger centered regions:
+```
+6000x6000 centered region:
+  Valid: 100%
+  Max accumulation: 14,232,726
+
+8000x8000 centered region:
+  Valid: 100%
+  Max accumulation: 34,486,056
+
+10000x10000 centered region:
+  Valid: 99%
+  Max accumulation: 42,435,140
+
+12000x12000 centered region:
+  Valid: 91%
+  Max accumulation: 86,526,427
+```
+
+Individual chunks worked perfectly! The problem was specific to the full extracted region.
+
+---
+
+##### Root Cause Discovery: All-Nodata Edges
+
+**Critical diagnostic:** Analyzed the edge pixels of the subsampled extracted region:
+```python
+# Check edges of subsampled valid mask
+top_edge = valid_mask_sub[0, :]
+bottom_edge = valid_mask_sub[-1, :]
+left_edge = valid_mask_sub[:, 0]
+right_edge = valid_mask_sub[:, -1]
+
+print(f"top: {top_edge.sum()} valid, {(~top_edge).sum()} nodata")
+print(f"bottom: {bottom_edge.sum()} valid, {(~bottom_edge).sum()} nodata")
+print(f"left: {left_edge.sum()} valid, {(~left_edge).sum()} nodata")
+print(f"right: {right_edge.sum()} valid, {(~right_edge).sum()} nodata")
+```
+
+**Output:**
+```
+top: 0 valid, 4395 nodata (total 4395)
+bottom: 0 valid, 4395 nodata (total 4395)
+left: 0 valid, 4081 nodata (total 4081)
+right: 0 valid, 4081 nodata (total 4081)
+```
+
+**ALL FOUR EDGES were 100% nodata!**
+
+**Why this breaks pysheds:** Flow routing algorithms (D8, Dinf) need flow to exit the domain at boundary cells. When pysheds conditions the DEM:
+1. It fills depressions so water can flow downhill
+2. It resolves flats by imposing subtle gradients toward drainage
+3. But if ALL edges are nodata (masked), there's nowhere for flow to exit
+4. The algorithm essentially creates a closed basin where no cell can accumulate flow from others
+5. Result: max_accumulation = 1 (each cell only counts itself)
+
+**Verification test:** Manually trimmed 5 rows/columns from edges to remove the all-nodata margins:
+```python
+# Test with trimmed edges
+dem_trimmed = dem_sub[5:-5, 5:-5]
+valid_trimmed = valid_mask_sub[5:-5, 5:-5]
+# ... run flow routing ...
+# Result: max_accumulation = 658,954
+```
+
+This confirmed the fix.
+
+---
+
+##### Job 23807179: Success (Fourth Attempt)
+
+**Configuration:**
+- Memory: 128GB
+- QOS: gerber-b (burst)
+- Strategy: Extract connected component + 4x subsample + **trim nodata-only edges**
+
+**Final code solution:**
+```python
+# Subsample for flow routing to avoid pysheds scaling issues
+subsample = 4  # Process at 4m resolution instead of 1m
+print_progress(f"  Subsampling by {subsample}x for flow routing...")
+
+dem_sub = dem_region[::subsample, ::subsample]
+valid_mask_sub = largest_mask[rmin:rmax:subsample, cmin:cmax:subsample]
+
+# CRITICAL FIX: Trim nodata-only edges
+# pysheds flow routing fails when all edges are nodata because
+# flow has nowhere to exit the domain
+rows_valid = np.where(np.any(valid_mask_sub, axis=1))[0]
+cols_valid = np.where(np.any(valid_mask_sub, axis=0))[0]
+
+if len(rows_valid) == 0 or len(cols_valid) == 0:
+    raise ValueError("No valid data after extracting connected component")
+
+tr1, tr2 = rows_valid[0], rows_valid[-1] + 1
+tc1, tc2 = cols_valid[0], cols_valid[-1] + 1
+
+print_progress(f"  Trimming nodata edges: rows [{tr1}:{tr2}], cols [{tc1}:{tc2}]")
+
+dem_sub = dem_sub[tr1:tr2, tc1:tc2]
+valid_mask_sub = valid_mask_sub[tr1:tr2, tc1:tc2]
+
+nodata_count = (~valid_mask_sub).sum()
+print_progress(
+    f"  Trimmed nodata edges, new shape: {dem_sub.shape}, nodata: {nodata_count:,}"
+)
+
+# Update bounds to reflect trimmed region
+cmin += tc1 * subsample
+cmax = cmin + (tc2 - tc1) * subsample
+rmin += tr1 * subsample
+rmax = rmin + (tr2 - tr1) * subsample
+```
+
+**Log output (successful run):**
+```
+[12:44:53]   Subsampling by 4x for flow routing...
+[12:44:53]   Trimmed nodata edges, new shape: (4076, 4390), nodata: 6,079,572
+[12:44:53]   Adjusted Lc: 25 px at 4.0m, threshold: 312 cells
+[12:44:56]   Conditioning DEM...
+[12:45:03]   Filling depressions...
+[12:49:29]   Resolving flats...
+[12:49:33]   Computing flow direction...
+[12:49:40]   Computing flow accumulation...
+[12:49:40]   Max accumulation: 658954 cells
+```
+
+**Shape change:** (4081, 4395) → (4076, 4390) after edge trimming (removed 5 rows, 5 columns)
+
+---
+
+#### Other Code Modifications for Full Mosaic
+
+##### 1. Accumulation Threshold Adjustment for Subsampling
+
+When subsampling by 4x, the characteristic length Lc (in pixels) and accumulation threshold must be adjusted:
+
+```python
+# Original Lc from FFT (at 1m resolution): 100 pixels = 100m
+# At 4m subsampled resolution: 100m / 4m = 25 pixels
+Lc_sub = Lc / subsample  # Lc in subsampled pixels
+accum_threshold = int(0.5 * Lc_sub**2)  # Swenson formula
+
+print_progress(f"  Adjusted Lc: {Lc_sub:.0f} px at {pixel_size}m, threshold: {accum_threshold} cells")
+# Output: "Adjusted Lc: 25 px at 4.0m, threshold: 312 cells"
+```
+
+##### 2. Pixel Size Update for Subsampled Grid
+
+```python
+# Update pixel size for subsampled grid
+pixel_size = pixel_size * subsample  # 1.0m × 4 = 4.0m
+```
+
+##### 3. Bounds Update After Edge Trimming
+
+The geographic bounds must be updated to reflect the trimmed region:
+
+```python
+# Update bounds dictionary
+bounds = {
+    "west": bounds["west"] + tc1 * subsample * original_pixel_size,
+    "east": bounds["west"] + tc2 * subsample * original_pixel_size,
+    "south": bounds["north"] - tr2 * subsample * original_pixel_size,
+    "north": bounds["north"] - tr1 * subsample * original_pixel_size,
+}
+```
+
+---
+
+#### Results (Job 23807179)
+
+| Metric | Value |
+|--------|-------|
+| Processing time | 354.7 seconds (5.9 minutes) |
+| Original DEM shape | 17,000 × 19,000 pixels |
+| Largest connected component | 189,024,929 pixels (58.5%) |
+| Extracted region | 16,323 × 17,578 pixels |
+| Subsampled shape | 4,081 × 4,395 pixels |
+| **Final shape (after edge trim)** | **4,076 × 4,390 pixels** |
+| Final resolution | 4.0 m |
+| Final extent | 16.3 × 17.6 km |
+| Characteristic length (Lc) | 100 m (constrained minimum) |
+| Lc at subsampled resolution | 25 pixels |
+| Accumulation threshold | 312 cells |
+| Max accumulation | 658,954 cells |
+| Stream coverage | 2.32% (414,859 stream cells) |
+| Stream segments | 12,909 |
+| HAND range | 0 - 36.2 m |
+| HAND median | 1.1 m |
+
+**HAND bin boundaries:** [0.0, 0.33, 1.09, 3.15, 1e6] m
+
+**Aspect distribution:**
+
+| Aspect | Pixels | Fraction | Bin 1 (h/d/w) | Bin 2 (h/d/w) | Bin 3 (h/d/w) | Bin 4 (h/d/w) |
+|--------|--------|----------|---------------|---------------|---------------|---------------|
+| North | 1,261,353 | 17.3% | 0.1m/9m/29m | 0.7m/29m/24m | 1.9m/48m/20m | 7.3m/72m/14m |
+| East | 2,471,625 | 33.9% | 0.1m/9m/53m | 0.7m/28m/44m | 1.9m/48m/36m | 7.1m/72m/26m |
+| South | 1,243,897 | 17.1% | 0.1m/9m/27m | 0.7m/28m/23m | 1.9m/48m/19m | 6.9m/71m/13m |
+| West | 2,313,157 | 31.7% | 0.1m/9m/49m | 0.7m/29m/41m | 1.9m/47m/34m | 7.3m/71m/24m |
+
+**Observations:**
+- E/W aspects dominate (65.6% combined), suggesting predominantly east-west oriented drainage
+- Width decreases from Bin 1 to Bin 4 (convergent hillslope geometry)
+- Height increases from ~0.1m (near stream) to ~7m (ridge)
+- Distance increases from ~9m to ~72m
+- All 16 hillslope elements successfully computed
+
+---
+
+#### Output Files Generated
+
+| File | Size | Purpose |
+|------|------|---------|
+| `output/full_mosaic/hillslope_params.json` | 5,581 bytes | Machine-readable 16-element hillslope parameters |
+| `output/full_mosaic/hillslope_params.png` | 96 KB | Bar chart visualization of parameters by aspect/bin |
+| `output/full_mosaic/stream_network.png` | 1.4 MB | Stream network (blue) overlaid on DEM |
+| `output/full_mosaic/hand_map.png` | 1.9 MB | HAND visualization with colorbar |
+| `output/full_mosaic/lc_spectral_analysis.png` | 60 KB | FFT spectral analysis showing Lc determination |
+| `output/full_mosaic/full_mosaic_summary.txt` | 1,893 bytes | Human-readable text summary |
+
+**Log files:**
+- `logs/full_mosaic_23807179.log` - stdout (successful run)
+- `logs/full_mosaic_23807179.err` - stderr (empty = no errors)
+
+---
+
+#### SLURM Job Configuration
+
+**Final working configuration (`scripts/run_full_mosaic.sh`):**
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=osbs_full_mosaic
+#SBATCH --output=logs/full_mosaic_%j.log
+#SBATCH --error=logs/full_mosaic_%j.err
+#SBATCH --time=04:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=128gb
+#SBATCH --partition=hpg-default
+#SBATCH --account=gerber
+#SBATCH --qos=gerber-b
+```
+
+**Resource usage:**
+- Requested: 128GB memory, 4 CPUs, 4 hours
+- Actual: ~60GB peak memory, ~6 minutes runtime
+- The 128GB allocation provides headroom for the resolve_flats step which has unpredictable memory usage
+
+---
+
+#### Key Technical Lessons Learned
+
+1. **pysheds edge handling is critical:** Flow routing requires at least some valid data on domain edges for flow to exit. All-nodata edges cause max_accumulation=1.
+
+2. **Subsampling is necessary for large DEMs:** The resolve_flats step in pysheds has poor scaling (potentially O(n²)) with large flat regions. 4x subsampling reduced the problem to manageable size while preserving drainage patterns.
+
+3. **Connected component extraction alone is insufficient:** Even after extracting the largest connected component, the bounding box may have all-nodata edges due to the irregular shape of NEON tile coverage.
+
+4. **Accumulation threshold must scale with resolution:** When subsampling, both Lc (in pixels) and the derived accumulation threshold must be adjusted: `threshold = 0.5 × (Lc/subsample)²`
+
+5. **Geographic bounds must track all transformations:** Edge trimming, subsampling, and region extraction all modify the geographic extent. Bounds must be updated at each step for correct georeferencing.
+
+6. **Burst QOS enables faster iteration:** Using `gerber-b` (burst) QOS allowed rapid job turnaround during debugging, essential for the iterative fix-test cycle.
+
+---
+
+#### Comparison: Small Smoke Test vs Full Mosaic
+
+| Metric | 4×4 km Smoke Test | Full Mosaic |
+|--------|-------------------|-------------|
+| Input resolution | 1.0 m | 1.0 m |
+| Processing resolution | 1.0 m | 4.0 m (subsampled) |
+| Processed shape | 4000×4000 | 4076×4390 |
+| Total pixels | 16M | 17.9M |
+| Valid fraction | 100% | 66% (after trim) |
+| Lc (constrained) | 100 m | 100 m |
+| Accum threshold | 5000 cells | 312 cells |
+| Stream coverage | 0.88% | 2.32% |
+| HAND median | 1.3 m | 1.1 m |
+| Runtime | 85 sec | 355 sec |
+
+The full mosaic has higher stream coverage due to the lower accumulation threshold (312 vs 5000 cells), which is caused by the Lc being measured in 4m pixels instead of 1m pixels.
+
+---
+
+#### Next Steps
+
+1. **Present results to PI for review** - Stream network plausibility, aspect distribution
+2. **Discuss mosaic trimming** - Identify urban areas to exclude
+3. **Evaluate Lc constraint** - Is 100m appropriate for OSBS hydrology?
+4. **Consider resolution trade-offs** - Could process at 2m instead of 4m with more memory?
+
+---
+
+### Refine Scripts/pysheds
+
+**Goal:** Adapt pipeline based on smoke test results.
+
+**Status:** [x] Substantially complete (2026-01-26)
+
+---
+
+#### Adaptations Made for 1m LIDAR Data
+
+##### From Small-Scale Smoke Test (4×4 km)
+
+| Adaptation | Implementation | Location | Reason |
+|------------|----------------|----------|--------|
+| Minimum Lc constraint | `min_lc_pixels=100` | `spatial_scale.py:identify_spatial_scale_utm()` | FFT picks up high-frequency noise at 1m resolution |
+| Euclidean DTND | `scipy.ndimage.distance_transform_edt` | `run_smoke_test_pipeline.py:compute_dtnd_euclidean()` | pysheds `compute_hand()` uses haversine formula expecting geographic coords, not UTM meters |
+| UTM-adapted spatial scale | New `identify_spatial_scale_utm()` function | `spatial_scale.py` | Original function assumed lat/lon coords; this version works with metric UTM |
+| Scaled edge blending | `edge_blend_window=50` pixels (50m) | `spatial_scale.py` | Original 4-pixel window (360m at 90m res) too small at 1m |
+
+##### From Full Mosaic Smoke Test
+
+| Adaptation | Implementation | Location | Reason |
+|------------|----------------|----------|--------|
+| 4x subsampling | `subsample = 4` | `run_full_mosaic_pipeline.py:Step 3` | pysheds resolve_flats has O(n²) scaling; 323M pixels too large |
+| Nodata edge trimming | Trim rows/cols that are 100% nodata | `run_full_mosaic_pipeline.py:Step 3` | pysheds flow routing fails with all-nodata edges |
+| Connected component extraction | `scipy.ndimage.label()` to find largest region | `run_full_mosaic_pipeline.py:Step 3` | Scattered NEON tiles create disconnected valid regions |
+| Threshold scaling | `threshold = 0.5 × (Lc/subsample)²` | `run_full_mosaic_pipeline.py:Step 3` | Accumulation threshold must scale with pixel size |
+| Bounds tracking | Update bounds after each transformation | Throughout `run_full_mosaic_pipeline.py` | Edge trim and subsample change geographic extent |
+
+---
+
+#### Code Structure
+
+**Scripts created for OSBS processing:**
+
+| Script | Lines | Purpose |
+|--------|-------|---------|
+| `scripts/run_smoke_test_pipeline.py` | ~800 | Process 4×4 km test subset at full 1m resolution |
+| `scripts/run_full_mosaic_pipeline.py` | ~1300 | Process full mosaic with subsampling and edge handling |
+| `scripts/extract_smoke_test_subset.py` | ~150 | Extract test region from mosaic using coordinates |
+| `scripts/run_full_mosaic.sh` | ~30 | SLURM job script with resource allocation |
+
+**Supporting modules:**
+
+| Module | Purpose | Key Functions |
+|--------|---------|---------------|
+| `scripts/spatial_scale.py` | FFT spectral analysis | `identify_spatial_scale_utm()`, `fit_spectral_peak()` |
+
+---
+
+#### Key Algorithm Differences from Swenson's Code
+
+| Component | Swenson (90m MERIT) | OSBS (1m LIDAR) | Reason |
+|-----------|---------------------|-----------------|--------|
+| DTND calculation | `grid.compute_hand()` haversine | `distance_transform_edt` Euclidean | UTM coordinates are already in meters |
+| Processing resolution | Full resolution | 4x subsampled | Memory and compute constraints |
+| Edge handling | Not needed (global continuous data) | Trim nodata edges | NEON tiles have irregular coverage |
+| Lc determination | FFT finds natural peak | Constrained to ≥100m | 1m data picks up noise/microtopography |
+| Connected component | Not needed | Extract largest | Scattered tiles create disconnected regions |
+
+---
+
+#### Remaining Issues
+
+| Issue | Status | Impact | Notes |
+|-------|--------|--------|-------|
+| Area values very small | Low priority | Display only | Trapezoidal fit returns per-hillslope area; total area summed from pixel counts is correct |
+| Lc=100m constraint | Needs PI review | Affects stream density | May want to adjust based on OSBS hydrology knowledge |
+| 4m resolution trade-off | Acceptable | Minor detail loss | Could try 2m with more memory if finer streams needed |
+
+---
+
+#### Tagging Strategy
+
+Create git tags in `hpg-esm-tools` when methodology changes:
+- `osbs-v0.1` - Initial smoke test version (2026-01-26)
+- `osbs-v0.2` - Post-PI-review refinements (pending)
+- `osbs-v1.0` - Final production version (pending)
+
+---
+
+### Trim Mosaic (Iterative)
+
+**Goal:** Define final study region boundary excluding urban areas.
+
+**Status:** [ ] Pending
+
+**Process:**
+1. PI reviews full smoke test output
+2. User provides coordinates/tiles to exclude
+3. Create trimmed mosaic
+4. Re-run pipeline on trimmed data
+5. Iterate until final boundary is defined
+
+**Note:** This is human-driven; Claude assists with technical execution.
+
+---
+
+### Generate Final Hillslope Dataset
+
+**Goal:** Production hillslope parameters for CTSM.
+
+**Status:** [ ] Pending
+
+**Steps:**
+1. Run pipeline on final trimmed mosaic
+2. Output NetCDF file (handled by Swenson's pipeline)
+3. Verify format matches CTSM expectations
+4. Tag pysheds version used
+
+**Output:** `hillslopes_osbs_lidar_c<date>.nc`
+
+---
+
+### Validation
+
+**Status:** [ ] Pending
+
+**Approaches:**
+1. **Compare to Swenson global:** Examine differences from `hillslopes_osbs_c240416.nc`
+2. **Physical plausibility:**
+   - Elevation range matches known OSBS relief
+   - Aspect distribution reasonable for terrain
+   - Stream network matches known hydrology
+3. **CTSM test case:**
+   - Create branch from osbs2 at year 861
+   - Replace hillslope file with custom parameters
+   - Run short test (1-5 years)
+   - Compare outputs to baseline
+
+---
+
+### Files Created/To Create
+
+| File | Purpose | Status |
+|------|---------|--------|
+| `scripts/extract_smoke_test_subset.py` | Extract 4×4 km subset from mosaic | [x] Complete |
+| `scripts/run_smoke_test_pipeline.py` | Run hillslope pipeline on subset | [x] Complete |
+| `scripts/run_full_mosaic_pipeline.py` | Run pipeline on full mosaic | [x] Complete |
+| `scripts/run_full_mosaic.sh` | SLURM job script for full mosaic | [x] Complete |
+| `data/osbs_smoke_test_4x4.tif` | 4×4 km test subset DEM | [x] Complete |
+| `output/smoke_test/` | Smoke test diagnostics | [x] Complete |
+| `output/full_mosaic/` | Full mosaic diagnostics | [x] Complete |
+| `data/hillslopes_osbs_lidar_c<date>.nc` | Final output | [ ] Pending |

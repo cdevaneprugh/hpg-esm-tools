@@ -1,7 +1,14 @@
 # Data files (large NetCDF files should not be on GitHub)
 *.nc
+*.tif
+*.tiff
 scripts/hillslope.analysis/data/
 scripts/case.analyzer/analysis/
+
+# Swenson hillslope implementation (large GeoTIFFs, outputs, logs)
+swenson/data/
+swenson/output/
+swenson/logs/
 
 # Papers (PDFs only - keep .md summaries)
 docs/papers/*.pdf
