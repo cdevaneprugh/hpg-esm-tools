@@ -1036,6 +1036,25 @@ The implications are **less severe** for OSBS because:
 
 Apply what we learned to our OSBS dataset.
 
+### NEON LIDAR Data Download
+
+**Dataset:** NEON DP3.30024.001 (Elevation - LiDAR)
+**Site:** OSBS (Ordway-Swisher Biological Station)
+**Collection:** 2023-05
+**Release:** RELEASE-2026 (DOI: 10.48443/sxrt-ne87)
+
+| Property | Value |
+|----------|-------|
+| Files | 233 DTM tiles |
+| Total size | 554 MB |
+| Resolution | 1.0 m |
+| CRS | EPSG:32617 (UTM 17N) |
+| Tile size | 1000 × 1000 px (1 km²) |
+
+**Location:** `swenson/data/NEON_OSBS_DTM/`
+
+---
+
 ### Background Info
 
 #### CTSM Input Data Alignment
@@ -1178,6 +1197,41 @@ Expected differences with high-resolution LIDAR data:
 - **Lower HAND values** - Subtle elevation differences in low-relief wetland
 - **Different aspect distribution** - May not have 4 distinct hillslopes if relatively flat
 - **Better TAI representation** - Can capture actual wetland-upland transitions
+
+---
+
+### DEM Preprocessing
+
+#### Mosaic Creation
+
+**Status:** [x] Complete (2026-01-25)
+
+Merged 233 NEON DTM tiles into single GeoTIFF.
+
+| Property | Value |
+|----------|-------|
+| Output | `data/NEON_OSBS_DTM_mosaic.tif` |
+| Dimensions | 19,000 × 17,000 pixels |
+| Extent | 19 × 17 km (323 km²) |
+| Elevation range | 23.2 - 69.2 m |
+| Mean elevation | 38.4 m |
+| File size | 545 MB |
+
+**Visualization:** `output/osbs_dtm_elevation.png`
+
+**Note:** The low relief (~46 m total) confirms this is a low-relief wetlandscape where 1m LIDAR captures subtle topography that 90m MERIT would miss.
+
+#### Mosaic Trimming
+
+**Status:** [ ] Pending (requires user input)
+
+The full mosaic includes some urban territory that should be excluded before hillslope processing. User will provide explicit coordinates or tile list to define the study region boundary.
+
+**To do:**
+- [ ] Identify tiles/coordinates containing urban areas
+- [ ] Define study region boundary (user input required)
+- [ ] Create trimmed mosaic excluding urban territory
+- [ ] Document final study region extent
 
 ---
 
