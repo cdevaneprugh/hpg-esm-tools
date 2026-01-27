@@ -3,8 +3,8 @@
 Mosaic NEON OSBS DTM tiles and generate elevation heatmap.
 
 Creates:
-- data/NEON_OSBS_DTM_mosaic.tif - merged DEM
-- output/osbs_dtm_elevation.png - elevation visualization
+- data/mosaics/OSBS_full.tif - merged DEM from all tiles
+- output/osbs/elevation_heatmap.png - elevation visualization
 """
 
 import glob
@@ -17,12 +17,12 @@ from rasterio.merge import merge
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
-BASE_DIR = SCRIPT_DIR.parent
+BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR = BASE_DIR / "output" / "osbs"
 
-DTM_DIR = DATA_DIR / "NEON_OSBS_DTM"
-MOSAIC_PATH = DATA_DIR / "NEON_OSBS_DTM_mosaic.tif"
+DTM_DIR = DATA_DIR / "tiles"
+MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
 PLOT_PATH = OUTPUT_DIR / "osbs_dtm_elevation.png"
 
 

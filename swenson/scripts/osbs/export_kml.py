@@ -17,12 +17,11 @@ from pyproj import Transformer
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
-BASE_DIR = SCRIPT_DIR.parent
+BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output" / "full_mosaic"
 
-DTM_DIR = DATA_DIR / "NEON_OSBS_DTM"
-OUTPUT_KML = OUTPUT_DIR / "osbs_tile_grid.kml"
+DTM_DIR = DATA_DIR / "tiles"
+OUTPUT_KML = BASE_DIR / "osbs_tile_grid.kml"  # Root for easy access
 
 # Tile size in meters
 TILE_SIZE = 1000
@@ -303,9 +302,6 @@ def main():
 """
 
     kml_content += generate_kml_footer()
-
-    # Ensure output directory exists
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Save KML
     print(f"Writing KML to {OUTPUT_KML}...")

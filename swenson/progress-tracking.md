@@ -1103,13 +1103,13 @@ For single-point simulations, alignment simplifies dramatically:
 
 #### Current OSBS Setup
 
-**Existing subset data:** `/blue/gerber/earth_models/shared.subset.data/osbs-cfg.16pfts.PtVeg.no-dompft.1901-1921/`
+**Existing subset data:** `/blue/gerber/earth_models/shared.subset.data/osbs-cfg.78pfts.hist.no-dompft.1901-1921/`
 
 | Property | Value |
 |----------|-------|
 | Longitude | 278.006569°E (-81.99°W) |
 | Latitude | 29.689282°N |
-| Surface file | `surfdata_OSBS_PtVeg_nourb_1850_16pfts_c250925.nc` |
+| Surface file | `surfdata_OSBS_hist_1850_78pfts_c251002.nc` |
 | Hillslope variables | **None** (need to add) |
 
 #### Recommended Workflow

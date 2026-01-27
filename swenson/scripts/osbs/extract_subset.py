@@ -20,12 +20,12 @@ from rasterio.windows import Window
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
-BASE_DIR = SCRIPT_DIR.parent
+BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output" / "smoke_test"
+OUTPUT_DIR = BASE_DIR / "output" / "osbs"
 
-MOSAIC_PATH = DATA_DIR / "NEON_OSBS_DTM_mosaic.tif"
-SUBSET_PATH = DATA_DIR / "osbs_smoke_test_4x4.tif"
+MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
+SUBSET_PATH = DATA_DIR / "mosaics" / "OSBS_smoke_test_4x4.tif"
 HEATMAP_PATH = OUTPUT_DIR / "elevation_heatmap.png"
 
 # User-provided corner coordinates (WGS84)

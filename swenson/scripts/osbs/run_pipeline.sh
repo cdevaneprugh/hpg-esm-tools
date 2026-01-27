@@ -37,7 +37,7 @@ mkdir -p logs
 
 # Run the pipeline
 echo "Starting pipeline..."
-python scripts/run_full_mosaic_pipeline.py
+python scripts/osbs/run_pipeline.py
 
 # Print completion info
 echo ""

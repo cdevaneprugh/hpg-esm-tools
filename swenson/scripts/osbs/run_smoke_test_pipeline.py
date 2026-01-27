@@ -44,11 +44,11 @@ from pysheds.pgrid import Grid  # noqa: E402 (must import after sys.path modific
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
-BASE_DIR = SCRIPT_DIR.parent
+BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output" / "smoke_test"
+OUTPUT_DIR = BASE_DIR / "output" / "osbs" / "smoke_test"
 
-SUBSET_PATH = DATA_DIR / "osbs_smoke_test_4x4.tif"
+SUBSET_PATH = DATA_DIR / "mosaics" / "OSBS_smoke_test_4x4.tif"
 
 # Analysis parameters
 N_ASPECT_BINS = 4

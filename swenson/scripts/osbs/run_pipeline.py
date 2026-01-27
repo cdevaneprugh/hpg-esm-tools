@@ -42,11 +42,15 @@ from pysheds.pgrid import Grid  # noqa: E402
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
-BASE_DIR = SCRIPT_DIR.parent
+BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output" / "full_mosaic"
 
-MOSAIC_PATH = DATA_DIR / "NEON_OSBS_DTM_mosaic.tif"
+# Output directory uses timestamp + descriptor (set via environment or default)
+OUTPUT_DESCRIPTOR = os.environ.get("OUTPUT_DESCRIPTOR", "full")
+OUTPUT_TIMESTAMP = time.strftime("%Y-%m-%d")
+OUTPUT_DIR = BASE_DIR / "output" / "osbs" / f"{OUTPUT_TIMESTAMP}_{OUTPUT_DESCRIPTOR}"
+
+MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
 
 # Analysis parameters
 N_ASPECT_BINS = 4
@@ -888,8 +892,7 @@ def main():
             f"  Trimmed nodata edges, new shape: {dem_sub.shape}, nodata: {nodata_count:,}"
         )
 
-        # Store original valid_mask for later use, use subsampled for routing
-        valid_mask_orig = valid_mask
+        # Use subsampled valid_mask for routing
         valid_mask = valid_mask_sub
         dem_for_routing = dem_sub
 
@@ -1268,7 +1271,7 @@ def main():
         f"Total processing time: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)"
     )
     print_progress(f"\nOutputs saved to: {OUTPUT_DIR}")
-    print_progress(f"\nKey results:")
+    print_progress("\nKey results:")
     print_progress(f"  Characteristic length (Lc): {Lc_m:.0f} m")
     print_progress(f"  Accumulation threshold: {accum_threshold} cells")
     print_progress(f"  Stream coverage: {stream_frac:.2%}")
