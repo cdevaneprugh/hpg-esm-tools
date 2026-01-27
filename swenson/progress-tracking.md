@@ -2037,3 +2037,77 @@ Create git tags in `hpg-esm-tools` when methodology changes:
 | `output/smoke_test/` | Smoke test diagnostics | [x] Complete |
 | `output/full_mosaic/` | Full mosaic diagnostics | [x] Complete |
 | `data/hillslopes_osbs_lidar_c<date>.nc` | Final output | [ ] Pending |
+
+---
+
+### Directory Reorganization
+
+**Date:** 2026-01-27
+
+**Commit:** `56e0a54` - "Reorganize swenson directory structure for clarity"
+
+**Motivation:** As the project grew, the flat `scripts/` directory became cluttered with both MERIT validation scripts (stage1-9) and OSBS production scripts. Similarly, `data/` and `output/` lacked clear organization.
+
+**Changes Made:**
+
+| Old Location | New Location | Purpose |
+|--------------|--------------|---------|
+| `scripts/stage*.py` | `scripts/merit_validation/` | Separate validation work from production |
+| `scripts/run_stage*.sh` | `scripts/merit_validation/` | Keep SLURM scripts with their Python scripts |
+| `scripts/run_full_mosaic_pipeline.py` | `scripts/osbs/run_pipeline.py` | Clearer naming |
+| `scripts/run_full_mosaic.sh` | `scripts/osbs/run_pipeline.sh` | Clearer naming |
+| `scripts/mosaic_osbs_dtm.py` | `scripts/osbs/stitch_mosaic.py` | Clearer naming |
+| `scripts/extract_smoke_test_subset.py` | `scripts/osbs/extract_subset.py` | Group OSBS scripts |
+| `scripts/export_tile_grid_kml.py` | `scripts/osbs/export_kml.py` | Group OSBS scripts |
+| `output/full_mosaic/osbs_tile_grid.kml` | `swenson/osbs_tile_grid.kml` | Root for easy access |
+| (new) | `swenson/tile_grid.md` | Tile reference at root |
+
+**New Directory Structure:**
+
+```
+swenson/
+├── CLAUDE.md                  # Context loader
+├── progress-tracking.md       # This file
+├── tile_grid.md               # Tile reference (R#C# format)
+├── osbs_tile_grid.kml         # Google Earth tile grid
+│
+├── scripts/
+│   ├── merit_validation/      # Stage 1-9 (MERIT DEM validation)
+│   ├── osbs/                  # OSBS processing scripts
+│   │   ├── run_pipeline.py    # Main hillslope pipeline
+│   │   ├── run_pipeline.sh    # SLURM wrapper
+│   │   ├── stitch_mosaic.py   # Create mosaic from tiles
+│   │   ├── extract_subset.py  # Extract subset regions
+│   │   └── export_kml.py      # Export to Google Earth
+│   └── spatial_scale.py       # Shared FFT utilities
+│
+├── data/
+│   ├── tiles/                 # Raw NEON DTM tiles (233 tiles)
+│   ├── mosaics/               # Generated mosaics (OSBS_full.tif, etc.)
+│   ├── merit/                 # MERIT DEM for validation
+│   └── reference/             # Reference datasets
+│
+├── output/
+│   ├── merit_validation/      # Stage 1-9 results
+│   └── osbs/                  # OSBS pipeline runs
+│       └── YYYY-MM-DD_<desc>/ # Timestamped output directories
+│
+└── logs/                      # SLURM job logs
+```
+
+**Output Directory Naming:**
+
+Pipeline runs now use timestamped directories: `output/osbs/YYYY-MM-DD_<descriptor>/`
+
+Examples:
+- `output/osbs/2026-01-26_full/` - Full mosaic run
+- `output/osbs/2026-01-27_interior/` - Interior tiles only
+- `output/osbs/2026-01-28_wetlands_v1/` - Wetland focus area
+
+Set descriptor via environment variable before running:
+```bash
+export OUTPUT_DESCRIPTOR=interior
+sbatch scripts/osbs/run_pipeline.sh
+```
+
+**Bug Fix:** Also corrected `osbs-cfg.16pfts` → `osbs-cfg.78pfts` typo in the Test Case Setup section (line 1106)
