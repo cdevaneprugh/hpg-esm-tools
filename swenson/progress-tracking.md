@@ -2111,3 +2111,264 @@ sbatch scripts/osbs/run_pipeline.sh
 ```
 
 **Bug Fix:** Also corrected `osbs-cfg.16pfts` → `osbs-cfg.78pfts` typo in the Test Case Setup section (line 1106)
+
+---
+
+### Interior Tile Selection and NetCDF Output
+
+**Date:** 2026-01-27
+
+**Commits:**
+- `7ca1430` - "Add interior tile selection and CTSM-compatible NetCDF output"
+- `9dee602` - "Fix slope calculation: use original DEM, not pysheds-processed"
+
+---
+
+#### Overview
+
+Implemented tile selection mode to process a subset of interior tiles (excluding edge tiles), and added CTSM-compatible NetCDF output format. This enables:
+1. Processing only the well-covered interior region (150 tiles vs 233 total)
+2. Generating NetCDF files that can be used directly with CTSM hillslope hydrology
+
+---
+
+#### Tile Selection Implementation
+
+**Environment Variables:**
+| Variable | Values | Default | Purpose |
+|----------|--------|---------|---------|
+| `TILE_SELECTION_MODE` | `all`, `interior` | `all` | Which tiles to process |
+| `OUTPUT_DESCRIPTOR` | any string | `full` | Added to output directory name |
+
+**Interior Tile Selection (150 tiles):**
+```
+R1C11-R1C13     (3 tiles)
+R2C11-R2C13     (3 tiles)
+R3C11-R3C13     (3 tiles)
+R4C5-R4C14      (10 tiles)
+R5C1-R5C14      (14 tiles)
+R6C1-R6C14      (14 tiles)
+R7C1-R7C14      (14 tiles)
+R8C1-R8C14      (14 tiles)
+R9C1-R9C14      (14 tiles)
+R10C1-R10C16    (16 tiles)
+R11C5-R11C16    (12 tiles)
+R12C5-R12C16    (12 tiles)
+R13C5-R13C11    (7 tiles)
+R14C5-R14C11    (7 tiles)
+R15C5-R15C11    (7 tiles)
+```
+
+**Tile Coordinate Mapping:**
+```python
+easting = 394000 + col * 1000
+northing = 3292000 - row * 1000
+```
+
+---
+
+#### NetCDF Output Format
+
+The pipeline now outputs CTSM-compatible NetCDF files with all required hillslope variables.
+
+**File Naming:** `hillslopes_osbs_<descriptor>_c<YYMMDD>.nc`
+
+**Dimensions:**
+| Dimension | Size | Description |
+|-----------|------|-------------|
+| `lsmlat` | 1 | Single gridcell latitude |
+| `lsmlon` | 1 | Single gridcell longitude |
+| `nhillslope` | 4 | Aspect bins (N, E, S, W) |
+| `nmaxhillcol` | 16 | Total hillslope columns (4 aspects × 4 elevation bins) |
+
+**Variables:**
+| Variable | Shape | Units | Description |
+|----------|-------|-------|-------------|
+| `LATIXY` | (1,1) | degrees_north | Center latitude |
+| `LONGXY` | (1,1) | degrees_east | Center longitude (0-360) |
+| `AREA` | (1,1) | km^2 | Total gridcell area |
+| `nhillcolumns` | (1,1) | unitless | Number of columns (16) |
+| `pct_hillslope` | (4,1,1) | percent | Percent area per aspect |
+| `hillslope_index` | (16,1,1) | unitless | Aspect index (1-4) |
+| `column_index` | (16,1,1) | unitless | Column index (1-16) |
+| `downhill_column_index` | (16,1,1) | unitless | Downhill neighbor (-9999 for lowest) |
+| `hillslope_elevation` | (16,1,1) | m | Height above stream (HAND) |
+| `hillslope_distance` | (16,1,1) | m | Distance from stream (DTND) |
+| `hillslope_width` | (16,1,1) | m | Hillslope width |
+| `hillslope_area` | (16,1,1) | m^2 | Hillslope area |
+| `hillslope_slope` | (16,1,1) | m/m | Topographic slope |
+| `hillslope_aspect` | (16,1,1) | radians | Aspect (0-2π, clockwise from N) |
+| `hillslope_bedrock_depth` | (16,1,1) | m | Bedrock depth (1e6 placeholder) |
+| `hillslope_stream_depth` | (1,1) | m | Stream bankfull depth (0.3m) |
+| `hillslope_stream_width` | (1,1) | m | Stream bankfull width (5.0m) |
+| `hillslope_stream_slope` | (1,1) | m/m | Stream channel slope |
+
+**Key Conversions:**
+- Aspect: degrees → radians (`* np.pi / 180`)
+- Longitude: -82° → 278° (0-360 convention)
+
+---
+
+#### Bug Fix: Slope Calculation
+
+**Issue:** Initial runs produced impossible slope values (up to 783 million m/m).
+
+**Root Cause Analysis:**
+
+1. **First attempt:** Used pysheds `slope_aspect()` function
+   - Problem: Assumes geographic (lat/lon) coordinates, not UTM meters
+   - Result: Completely wrong slopes
+
+2. **Second attempt:** Used `calc_gradient_utm()` from `spatial_scale.py`
+   - Problem: This function uses Horn 1981 averaging designed for FFT spectral analysis, not slope calculation
+   - Result: Slopes still ~1800 m/m (wrong)
+
+3. **Third attempt:** Used simple `np.gradient()` on pysheds-processed DEM
+   - Problem: Pysheds DEM conditioning replaces nodata with `max + 1` (very high values) to prevent flow through gaps
+   - Result: Massive false gradients at nodata boundaries
+
+**Final Solution:**
+```python
+# Keep original DEM (before pysheds processing) for slope calculation
+# Pysheds replaces nodata with high values which creates false gradients
+dem_for_slope = dem_sub.copy().astype(float)
+dem_for_slope[~valid_mask] = np.nan
+
+# ... later in Step 5 ...
+
+# Use simple numpy gradient for slope calculation
+# Use dem_for_slope which has nodata as NaN (not the pysheds-processed DEM)
+dzdy, dzdx = np.gradient(dem_for_slope, pixel_size)
+slope = np.sqrt(dzdx**2 + dzdy**2)  # Now NaN at nodata boundaries
+```
+
+This stores the original DEM with nodata as NaN before pysheds processing, then uses it for slope calculation. NaN values propagate correctly through gradient calculation, preventing false gradients at boundaries.
+
+---
+
+#### Pipeline Run Results
+
+##### Job 23900855: Full Mosaic (all 233 tiles)
+
+**Configuration:**
+- `TILE_SELECTION_MODE=all`
+- `OUTPUT_DESCRIPTOR=full`
+- Memory: 128GB, QOS: gerber-b
+
+**Results:**
+| Metric | Value |
+|--------|-------|
+| Processing time | 374.7 seconds (6.2 minutes) |
+| DEM shape | 17,000 × 19,000 pixels |
+| Valid data | 58.52% |
+| Largest component | 189,024,929 pixels |
+| Processing resolution | 4.0 m (4x subsampled) |
+| Characteristic length (Lc) | 100 m (constrained minimum) |
+| Accumulation threshold | 312 cells |
+| Stream coverage | 2.32% |
+| Stream segments | 12,909 |
+| HAND range | 0 - 36.2 m |
+| HAND median | 1.1 m |
+
+**Hillslope Slopes (m/m):**
+| Aspect | Bin 1 | Bin 2 | Bin 3 | Bin 4 |
+|--------|-------|-------|-------|-------|
+| North | 0.011 | 0.014 | 0.026 | 0.056 |
+| East | 0.011 | 0.013 | 0.025 | 0.054 |
+| South | 0.010 | 0.014 | 0.026 | 0.059 |
+| West | 0.011 | 0.015 | 0.027 | 0.058 |
+
+**Output Files:**
+- `output/osbs/2026-01-27_full/hillslopes_osbs_full_c260127.nc`
+- `output/osbs/2026-01-27_full/hillslope_params.json`
+- `output/osbs/2026-01-27_full/hillslope_params.png`
+- `output/osbs/2026-01-27_full/stream_network.png`
+- `output/osbs/2026-01-27_full/hand_map.png`
+- `output/osbs/2026-01-27_full/lc_spectral_analysis.png`
+- `output/osbs/2026-01-27_full/full_summary.txt`
+
+---
+
+##### Job 23900856: Interior Tiles (150 tiles)
+
+**Configuration:**
+- `TILE_SELECTION_MODE=interior`
+- `OUTPUT_DESCRIPTOR=interior`
+- Memory: 128GB, QOS: gerber-b
+
+**Results:**
+| Metric | Value |
+|--------|-------|
+| Processing time | 175.6 seconds (2.9 minutes) |
+| DEM shape | 15,000 × 16,000 pixels |
+| Valid data | 62.50% |
+| Largest component | 150,000,000 pixels |
+| Processing resolution | 4.0 m (4x subsampled) |
+| Characteristic length (Lc) | 166 m (FFT-derived) |
+| Accumulation threshold | 864 cells |
+| Stream coverage | 1.44% |
+| Stream segments | 5,124 |
+| HAND range | 0 - 38.3 m |
+| HAND median | 1.8 m |
+
+**Hillslope Parameters (h=height, d=distance, w=width in meters):**
+| Aspect | Fraction | Bin 1 (h/d/w) | Bin 2 (h/d/w) | Bin 3 (h/d/w) | Bin 4 (h/d/w) |
+|--------|----------|---------------|---------------|---------------|---------------|
+| North | 24.4% | 0.2/20/64 | 1.1/48/54 | 3.0/70/44 | 8.8/102/31 |
+| East | 25.7% | 0.2/20/68 | 1.1/48/58 | 3.0/72/47 | 8.7/102/33 |
+| South | 25.9% | 0.2/20/65 | 1.1/48/56 | 3.0/71/46 | 9.2/100/32 |
+| West | 24.0% | 0.2/22/61 | 1.1/50/52 | 3.0/72/42 | 9.2/103/30 |
+
+**Output Files:**
+- `output/osbs/2026-01-27_interior/hillslopes_osbs_interior_c260127.nc`
+- `output/osbs/2026-01-27_interior/hillslope_params.json`
+- `output/osbs/2026-01-27_interior/hillslope_params.png`
+- `output/osbs/2026-01-27_interior/stream_network.png`
+- `output/osbs/2026-01-27_interior/hand_map.png`
+- `output/osbs/2026-01-27_interior/lc_spectral_analysis.png`
+- `output/osbs/2026-01-27_interior/interior_summary.txt`
+
+---
+
+#### Comparison: Full vs Interior
+
+| Metric | Full (233 tiles) | Interior (150 tiles) |
+|--------|------------------|----------------------|
+| Processing time | 6.2 min | 2.9 min |
+| DEM shape | 17k × 19k | 15k × 16k |
+| Valid data | 58.5% | 62.5% |
+| Characteristic Lc | 100 m (constrained) | 166 m (FFT-derived) |
+| Accum threshold | 312 cells | 864 cells |
+| Stream coverage | 2.32% | 1.44% |
+| HAND median | 1.1 m | 1.8 m |
+
+**Key Observations:**
+- Interior tiles produce a larger Lc (166m vs 100m) because edge effects/noise are reduced
+- Higher Lc → higher accumulation threshold → sparser stream network (1.44% vs 2.32%)
+- More uniform aspect distribution in interior (24-26% each vs 17-34% for full)
+- Slightly higher HAND median in interior (1.8m vs 1.1m)
+
+---
+
+#### New Scripts Created
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/osbs/run_pipeline.sh` | SLURM wrapper for interior tiles |
+| `scripts/osbs/run_pipeline_all.sh` | SLURM wrapper for all tiles |
+
+**SLURM Configuration (both scripts):**
+```bash
+#SBATCH --mem=128gb
+#SBATCH --time=04:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --qos=gerber-b
+```
+
+---
+
+#### Next Steps
+
+1. **Verify NetCDF with CTSM** - Create branch case with custom hillslope file
+2. **Compare to reference** - Examine differences from `hillslopes_osbs_c240416.nc`
+3. **PI review** - Present interior vs full results for decision on study region
