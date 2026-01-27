@@ -21,8 +21,10 @@ Expected runtime: ~30-60 minutes on 4 cores with 64GB RAM
 
 import json
 import os
+import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib
@@ -51,6 +53,38 @@ OUTPUT_TIMESTAMP = time.strftime("%Y-%m-%d")
 OUTPUT_DIR = BASE_DIR / "output" / "osbs" / f"{OUTPUT_TIMESTAMP}_{OUTPUT_DESCRIPTOR}"
 
 MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
+
+# Tile selection mode: "all" uses full mosaic, "interior" uses selected tiles
+TILE_SELECTION_MODE = os.environ.get("TILE_SELECTION_MODE", "all")
+
+# Interior tile selection (excludes edge tiles to avoid boundary effects)
+# Format: list of "R#C#-R#C#" range strings
+INTERIOR_TILE_RANGES = [
+    "R1C11-R1C13",  # 3 tiles
+    "R2C11-R2C13",  # 3 tiles
+    "R3C11-R3C13",  # 3 tiles
+    "R4C5-R4C14",  # 10 tiles
+    "R5C1-R5C14",  # 14 tiles
+    "R6C1-R6C14",  # 14 tiles
+    "R7C1-R7C14",  # 14 tiles
+    "R8C1-R8C14",  # 14 tiles
+    "R9C1-R9C14",  # 14 tiles
+    "R10C1-R10C16",  # 16 tiles
+    "R11C5-R11C16",  # 12 tiles
+    "R12C5-R12C16",  # 12 tiles
+    "R13C5-R13C11",  # 7 tiles
+    "R14C5-R14C11",  # 7 tiles
+    "R15C5-R15C11",  # 7 tiles
+]
+
+# Tile grid parameters (from tile_grid.md)
+TILE_GRID_ORIGIN_EASTING = 394000  # UTM easting for column 0
+TILE_GRID_ORIGIN_NORTHING = 3292000  # UTM northing for row 0
+TILE_SIZE = 1000  # meters per tile
+
+# OSBS center coordinates (from reference file)
+OSBS_CENTER_LAT = 29.689282
+OSBS_CENTER_LON_360 = 278.006569  # 0-360 convention (= -81.993431 + 360)
 
 # Analysis parameters
 N_ASPECT_BINS = 4
@@ -84,6 +118,163 @@ def print_progress(msg: str) -> None:
     timestamp = time.strftime("%H:%M:%S")
     print(f"[{timestamp}] {msg}")
     sys.stdout.flush()
+
+
+# =============================================================================
+# Tile Selection and Mosaic Creation
+# =============================================================================
+
+
+def parse_tile_range(range_str: str) -> list[tuple[int, int]]:
+    """
+    Parse a tile range string into (row, col) tuples.
+
+    Supported formats:
+    - "R5C7" -> [(5, 7)]
+    - "R5C7-R5C9" -> [(5, 7), (5, 8), (5, 9)]
+    - "R4C5-R4C14" -> [(4, 5), (4, 6), ..., (4, 14)]
+    """
+    # Single tile: R#C#
+    single_match = re.match(r"^R(\d+)C(\d+)$", range_str)
+    if single_match:
+        return [(int(single_match.group(1)), int(single_match.group(2)))]
+
+    # Range: R#C#-R#C#
+    range_match = re.match(r"^R(\d+)C(\d+)-R(\d+)C(\d+)$", range_str)
+    if range_match:
+        r1, c1, r2, c2 = map(int, range_match.groups())
+        tiles = []
+        for r in range(min(r1, r2), max(r1, r2) + 1):
+            for c in range(min(c1, c2), max(c1, c2) + 1):
+                tiles.append((r, c))
+        return tiles
+
+    raise ValueError(f"Invalid tile range format: {range_str}")
+
+
+def parse_all_tile_ranges(ranges: list[str]) -> list[tuple[int, int]]:
+    """Parse all tile ranges and return unique (row, col) tuples."""
+    tiles = []
+    for range_str in ranges:
+        tiles.extend(parse_tile_range(range_str))
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_tiles = []
+    for tile in tiles:
+        if tile not in seen:
+            seen.add(tile)
+            unique_tiles.append(tile)
+    return unique_tiles
+
+
+def tile_to_filepath(row: int, col: int) -> Path:
+    """
+    Convert (row, col) to tile filepath.
+
+    Tile naming: NEON_D03_OSBS_DP3_{easting}_{northing}_DTM.tif
+    """
+    easting = TILE_GRID_ORIGIN_EASTING + col * TILE_SIZE
+    northing = TILE_GRID_ORIGIN_NORTHING - row * TILE_SIZE
+    filename = f"NEON_D03_OSBS_DP3_{easting}_{northing}_DTM.tif"
+    return DATA_DIR / "tiles" / filename
+
+
+def create_custom_mosaic(
+    tile_coords: list[tuple[int, int]], output_path: Path
+) -> tuple[Path, int]:
+    """
+    Create mosaic from selected tiles using rasterio.merge.
+
+    Returns (mosaic_path, tile_count).
+    """
+    from rasterio.merge import merge
+
+    # Check which tiles exist
+    existing_tiles = []
+    missing_tiles = []
+
+    for row, col in tile_coords:
+        filepath = tile_to_filepath(row, col)
+        if filepath.exists():
+            existing_tiles.append((row, col, filepath))
+        else:
+            missing_tiles.append((row, col))
+
+    if missing_tiles:
+        print_progress(f"  Warning: {len(missing_tiles)} tiles not found:")
+        for row, col in missing_tiles[:10]:  # Show first 10
+            print_progress(f"    R{row}C{col}: {tile_to_filepath(row, col).name}")
+        if len(missing_tiles) > 10:
+            print_progress(f"    ... and {len(missing_tiles) - 10} more")
+
+    if not existing_tiles:
+        raise RuntimeError("No tiles found for mosaic creation")
+
+    print_progress(f"  Found {len(existing_tiles)} of {len(tile_coords)} tiles")
+
+    # Reuse existing mosaic if present
+    if output_path.exists():
+        print_progress(f"  Reusing existing mosaic: {output_path}")
+        return output_path, len(existing_tiles)
+
+    # Open all tiles
+    print_progress(f"  Opening {len(existing_tiles)} tiles...")
+    src_files = []
+    for row, col, filepath in existing_tiles:
+        src_files.append(rasterio.open(filepath))
+
+    # Merge
+    print_progress("  Merging tiles...")
+    mosaic, mosaic_transform = merge(src_files)
+
+    # Get profile from first file
+    profile = src_files[0].profile.copy()
+    profile.update(
+        driver="GTiff",
+        height=mosaic.shape[1],
+        width=mosaic.shape[2],
+        transform=mosaic_transform,
+        compress="lzw",
+    )
+
+    # Write mosaic
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    print_progress(f"  Writing mosaic to {output_path}...")
+    with rasterio.open(output_path, "w", **profile) as dst:
+        dst.write(mosaic)
+
+    # Close source files
+    for src in src_files:
+        src.close()
+
+    print_progress(f"  Mosaic created: {mosaic.shape[1]} x {mosaic.shape[2]} pixels")
+    return output_path, len(existing_tiles)
+
+
+def generate_mosaic_heatmap(mosaic_path: Path, output_path: Path) -> None:
+    """Generate elevation heatmap of mosaic for tile selection verification."""
+    print_progress(f"  Generating mosaic heatmap: {output_path.name}")
+
+    with rasterio.open(mosaic_path) as src:
+        dem = src.read(1)
+        bounds = src.bounds
+
+    # Mask nodata
+    dem_masked = np.ma.masked_less_equal(dem, -9000)
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+    im = ax.imshow(
+        dem_masked,
+        cmap="terrain",
+        aspect="equal",
+        extent=[bounds.left, bounds.right, bounds.bottom, bounds.top],
+    )
+    plt.colorbar(im, ax=ax, label="Elevation (m)")
+    ax.set_title(f"Interior Mosaic Elevation\n{dem.shape[1]} x {dem.shape[0]} pixels")
+    ax.set_xlabel("Easting (m UTM 17N)")
+    ax.set_ylabel("Northing (m UTM 17N)")
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
 
 
 # =============================================================================
@@ -462,7 +653,13 @@ def compute_hand_bins(
             bounds = np.array([0, adjusted_bin1_max, b33, b66, 1e6])
         else:
             bounds = np.array(
-                [0, adjusted_bin1_max, adjusted_bin1_max * 2, adjusted_bin1_max * 4, 1e6]
+                [
+                    0,
+                    adjusted_bin1_max,
+                    adjusted_bin1_max * 2,
+                    adjusted_bin1_max * 4,
+                    1e6,
+                ]
             )
     else:
         bounds = [0]
@@ -543,7 +740,9 @@ def quadratic(coefs, root=0, eps=1e-6):
             ck = bk**2 / (4 * ak) * (1 - eps)
             discriminant = bk**2 - 4 * ak * ck
         else:
-            raise RuntimeError(f"Cannot solve quadratic: discriminant={discriminant:.2f}")
+            raise RuntimeError(
+                f"Cannot solve quadratic: discriminant={discriminant:.2f}"
+            )
 
     roots = [
         (-bk + np.sqrt(discriminant)) / (2 * ak),
@@ -738,6 +937,271 @@ def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
 
 
 # =============================================================================
+# NetCDF Output for CTSM
+# =============================================================================
+
+
+def write_hillslope_netcdf(
+    params: dict,
+    output_path: Path,
+    center_lon: float,
+    center_lat: float,
+    total_area_km2: float,
+) -> None:
+    """
+    Write hillslope parameters to CTSM-compatible NetCDF file.
+
+    Parameters
+    ----------
+    params : dict
+        Hillslope parameters from pipeline
+    output_path : Path
+        Output NetCDF file path
+    center_lon : float
+        Center longitude in 0-360 convention
+    center_lat : float
+        Center latitude in degrees north
+    total_area_km2 : float
+        Total area in km^2
+    """
+    import netCDF4 as nc
+
+    elements = params["elements"]
+
+    # Extract arrays from elements (16 elements: 4 aspects x 4 bins)
+    n_columns = 16
+    n_aspects = 4
+    n_bins = 4
+
+    # Initialize arrays
+    elevation = np.zeros(n_columns)
+    distance = np.zeros(n_columns)
+    width = np.zeros(n_columns)
+    area = np.zeros(n_columns)
+    slope = np.zeros(n_columns)
+    aspect = np.zeros(n_columns)  # will convert to radians
+    hillslope_index = np.zeros(n_columns, dtype=np.int32)
+    column_index = np.zeros(n_columns, dtype=np.int32)
+    downhill_column_index = np.zeros(n_columns, dtype=np.int32)
+
+    # Fill arrays from elements
+    # Elements are ordered: N bin0, N bin1, N bin2, N bin3, E bin0, ...
+    for i, elem in enumerate(elements):
+        elevation[i] = elem["height"]
+        distance[i] = elem["distance"]
+        width[i] = elem["width"]
+        area[i] = elem["area"]
+        slope[i] = elem["slope"]
+        aspect[i] = elem["aspect"] * np.pi / 180  # Convert degrees to radians
+
+        # Aspect index (1-4 for N, E, S, W)
+        asp_idx = i // n_bins
+        hillslope_index[i] = asp_idx + 1
+
+        # Column index (1-16)
+        column_index[i] = i + 1
+
+        # Downhill column index
+        # For lowest bin (bin 0), set to -9999 (no downhill neighbor)
+        # For higher bins, point to the bin below
+        bin_idx = i % n_bins
+        if bin_idx == 0:
+            downhill_column_index[i] = -9999
+        else:
+            downhill_column_index[i] = i  # Points to i (which is column i+1 - 1 = i)
+
+    # Calculate pct_hillslope (percent of area per aspect)
+    pct_hillslope = np.zeros(n_aspects)
+    total_area_m2 = sum(elem["area"] for elem in elements)
+    for asp_idx in range(n_aspects):
+        asp_area = sum(elements[asp_idx * n_bins + j]["area"] for j in range(n_bins))
+        if total_area_m2 > 0:
+            pct_hillslope[asp_idx] = 100.0 * asp_area / total_area_m2
+        else:
+            pct_hillslope[asp_idx] = 25.0  # Default equal distribution
+
+    # Stream channel parameters (estimates)
+    # Stream depth: typical small stream depth ~0.3m
+    stream_depth = 0.3
+    # Stream width: typical small stream ~5m
+    stream_width = 5.0
+    # Stream slope: use mean of lowest-bin slopes * 0.5
+    lowest_bin_slopes = [
+        elements[asp_idx * n_bins]["slope"] for asp_idx in range(n_aspects)
+    ]
+    stream_slope = np.mean(lowest_bin_slopes) * 0.5 if any(lowest_bin_slopes) else 0.002
+
+    # Bedrock depth: use large placeholder value (effectively infinite)
+    bedrock_depth = np.full(n_columns, 1e6)
+
+    # Create NetCDF file
+    print_progress(f"  Writing NetCDF: {output_path.name}")
+
+    with nc.Dataset(output_path, "w", format="NETCDF4") as ds:
+        # Global attributes
+        ds.creation_date = datetime.now().strftime("%Y-%m-%d")
+        ds.source = "OSBS 1m NEON LIDAR processed with hpg-esm-tools/swenson pipeline"
+        ds.conventions = "CF-1.6"
+
+        # Create dimensions
+        ds.createDimension("lsmlat", 1)
+        ds.createDimension("lsmlon", 1)
+        ds.createDimension("nhillslope", n_aspects)
+        ds.createDimension("nmaxhillcol", n_columns)
+
+        # Coordinate variables
+        var_lsmlat = ds.createVariable("lsmlat", "f8", ("lsmlat",))
+        var_lsmlat[:] = center_lat
+
+        var_lsmlon = ds.createVariable("lsmlon", "f8", ("lsmlon",))
+        var_lsmlon[:] = center_lon
+
+        # 2D coordinate variables
+        var_latixy = ds.createVariable("LATIXY", "f8", ("lsmlat", "lsmlon"))
+        var_latixy.units = "degrees north"
+        var_latixy.long_name = "latitude"
+        var_latixy[:] = center_lat
+
+        var_longxy = ds.createVariable("LONGXY", "f8", ("lsmlat", "lsmlon"))
+        var_longxy.units = "degrees east"
+        var_longxy.long_name = "longitude"
+        var_longxy[:] = center_lon
+
+        # Area
+        var_area = ds.createVariable("AREA", "f8", ("lsmlat", "lsmlon"))
+        var_area.units = "km^2"
+        var_area.long_name = "area"
+        var_area[:] = total_area_km2
+
+        # Number of hillslope columns
+        var_nhillcol = ds.createVariable("nhillcolumns", "i4", ("lsmlat", "lsmlon"))
+        var_nhillcol.units = "unitless"
+        var_nhillcol.long_name = "number of columns per landunit"
+        var_nhillcol[:] = n_columns
+
+        # Percent hillslope
+        var_pcthillslope = ds.createVariable(
+            "pct_hillslope", "f8", ("nhillslope", "lsmlat", "lsmlon")
+        )
+        var_pcthillslope.units = "per cent"
+        var_pcthillslope.long_name = "percent hillslope of landunit"
+        var_pcthillslope[:, 0, 0] = pct_hillslope
+
+        # Hillslope index
+        var_hillndx = ds.createVariable(
+            "hillslope_index", "i4", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_hillndx.units = "unitless"
+        var_hillndx.long_name = "hillslope_index"
+        var_hillndx[:, 0, 0] = hillslope_index
+
+        # Column index
+        var_colndx = ds.createVariable(
+            "column_index", "i4", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_colndx.units = "unitless"
+        var_colndx.long_name = "column index"
+        var_colndx[:, 0, 0] = column_index
+
+        # Downhill column index
+        var_dcolndx = ds.createVariable(
+            "downhill_column_index", "i4", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_dcolndx.units = "unitless"
+        var_dcolndx.long_name = "downhill column index"
+        var_dcolndx[:, 0, 0] = downhill_column_index
+
+        # Hillslope elevation (HAND)
+        var_elev = ds.createVariable(
+            "hillslope_elevation", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_elev.units = "m"
+        var_elev.long_name = "hillslope elevation above channel"
+        var_elev[:, 0, 0] = elevation
+
+        # Hillslope distance (DTND)
+        var_dist = ds.createVariable(
+            "hillslope_distance", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_dist.units = "m"
+        var_dist.long_name = "hillslope distance from channel"
+        var_dist[:, 0, 0] = distance
+
+        # Hillslope width
+        var_width = ds.createVariable(
+            "hillslope_width", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_width.units = "m"
+        var_width.long_name = "hillslope width"
+        var_width[:, 0, 0] = width
+
+        # Hillslope area
+        var_harea = ds.createVariable(
+            "hillslope_area", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_harea.units = "m2"
+        var_harea.long_name = "hillslope area"
+        var_harea[:, 0, 0] = area
+
+        # Hillslope slope
+        var_slope = ds.createVariable(
+            "hillslope_slope", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_slope.units = "m/m"
+        var_slope.long_name = "hillslope slope"
+        var_slope[:, 0, 0] = slope
+
+        # Hillslope aspect (in radians)
+        var_aspect = ds.createVariable(
+            "hillslope_aspect", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_aspect.units = "radians"
+        var_aspect.long_name = "hillslope aspect (clockwise from North)"
+        var_aspect[:, 0, 0] = aspect
+
+        # Hillslope bedrock depth
+        var_bedrock = ds.createVariable(
+            "hillslope_bedrock_depth", "f8", ("nmaxhillcol", "lsmlat", "lsmlon")
+        )
+        var_bedrock.units = "meters"
+        var_bedrock.long_name = "hillslope bedrock depth"
+        var_bedrock[:, 0, 0] = bedrock_depth
+
+        # Stream channel parameters
+        var_sdepth = ds.createVariable(
+            "hillslope_stream_depth", "f8", ("lsmlat", "lsmlon")
+        )
+        var_sdepth.units = "meters"
+        var_sdepth.long_name = "stream channel bankfull depth"
+        var_sdepth[:] = stream_depth
+
+        var_swidth = ds.createVariable(
+            "hillslope_stream_width", "f8", ("lsmlat", "lsmlon")
+        )
+        var_swidth.units = "meters"
+        var_swidth.long_name = "stream channel bankfull width"
+        var_swidth[:] = stream_width
+
+        var_sslope = ds.createVariable(
+            "hillslope_stream_slope", "f8", ("lsmlat", "lsmlon")
+        )
+        var_sslope.units = "m/m"
+        var_sslope.long_name = "stream channel slope"
+        var_sslope[:] = stream_slope
+
+    print_progress(f"  NetCDF written: {output_path}")
+
+    # Print summary
+    print_progress("  NetCDF summary:")
+    print_progress(f"    Location: {center_lat:.4f}N, {center_lon:.4f}E (0-360)")
+    print_progress(f"    Area: {total_area_km2:.2f} km^2")
+    print_progress(f"    pct_hillslope: {pct_hillslope}")
+    print_progress(
+        f"    Stream: depth={stream_depth:.2f}m, width={stream_width:.1f}m, slope={stream_slope:.6f}"
+    )
+
+
+# =============================================================================
 # Main Pipeline
 # =============================================================================
 
@@ -746,20 +1210,45 @@ def main():
     """Main processing function."""
     start_time = time.time()
 
-    print_section("OSBS Full Mosaic Pipeline")
+    print_section("OSBS Hillslope Pipeline")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not MOSAIC_PATH.exists():
-        print(f"ERROR: Mosaic file not found: {MOSAIC_PATH}")
-        sys.exit(1)
+    # -------------------------------------------------------------------------
+    # Step 0: Determine Mosaic Source
+    # -------------------------------------------------------------------------
+    print_section("Step 0: Mosaic Selection")
+
+    print_progress(f"  Tile selection mode: {TILE_SELECTION_MODE}")
+
+    if TILE_SELECTION_MODE == "interior":
+        # Create custom mosaic from interior tiles
+        print_progress("  Parsing interior tile selection...")
+        tile_coords = parse_all_tile_ranges(INTERIOR_TILE_RANGES)
+        print_progress(f"  Selected {len(tile_coords)} tiles")
+
+        mosaic_path = DATA_DIR / "mosaics" / "OSBS_interior.tif"
+        mosaic_path, tile_count = create_custom_mosaic(tile_coords, mosaic_path)
+
+        # Generate verification heatmap
+        heatmap_path = OUTPUT_DIR / "mosaic_heatmap.png"
+        if not heatmap_path.exists():
+            generate_mosaic_heatmap(mosaic_path, heatmap_path)
+            print_progress(f"  Saved: {heatmap_path}")
+    else:
+        # Use full mosaic
+        mosaic_path = MOSAIC_PATH
+        if not mosaic_path.exists():
+            print(f"ERROR: Mosaic file not found: {mosaic_path}")
+            sys.exit(1)
+        print_progress(f"  Using full mosaic: {mosaic_path}")
 
     # -------------------------------------------------------------------------
     # Step 1: Load DEM
     # -------------------------------------------------------------------------
     print_section("Step 1: Loading DEM")
 
-    with rasterio.open(MOSAIC_PATH) as src:
+    with rasterio.open(mosaic_path) as src:
         dem = src.read(1)
         transform = src.transform
         crs = src.crs
@@ -779,7 +1268,9 @@ def main():
     print_progress(f"  CRS: {crs}")
     print_progress(f"  Pixel size: {pixel_size} m")
     print_progress(f"  Bounds: {bounds_dict}")
-    print_progress(f"  Elevation range: {dem_valid.min():.1f} - {dem_valid.max():.1f} m")
+    print_progress(
+        f"  Elevation range: {dem_valid.min():.1f} - {dem_valid.max():.1f} m"
+    )
     print_progress(f"  Memory: {dem.nbytes / 1e9:.2f} GB")
 
     # -------------------------------------------------------------------------
@@ -862,9 +1353,7 @@ def main():
         print_progress(
             f"  Extracting region: rows [{rmin}:{rmax}], cols [{cmin}:{cmax}]"
         )
-        print_progress(
-            f"  Region size: {rmax - rmin} x {cmax - cmin} pixels"
-        )
+        print_progress(f"  Region size: {rmax - rmin} x {cmax - cmin} pixels")
 
         # Extract the region
         dem_region = dem[rmin:rmax, cmin:cmax].copy()
@@ -904,8 +1393,12 @@ def main():
 
         # Update transform for the subsampled region
         region_transform = rasterio.Affine(
-            transform.a * subsample, transform.b, transform.c + cmin * transform.a,
-            transform.d, transform.e * subsample, transform.f + rmin * transform.e
+            transform.a * subsample,
+            transform.b,
+            transform.c + cmin * transform.a,
+            transform.d,
+            transform.e * subsample,
+            transform.f + rmin * transform.e,
         )
 
         # Update bounds (same as original region)
@@ -923,7 +1416,9 @@ def main():
         # Recalculate accumulation threshold for subsampled resolution
         Lc_sub = Lc / subsample  # Lc in subsampled pixels
         accum_threshold = int(0.5 * Lc_sub**2)
-        print_progress(f"  Adjusted Lc: {Lc_sub:.0f} px at {pixel_size}m, threshold: {accum_threshold} cells")
+        print_progress(
+            f"  Adjusted Lc: {Lc_sub:.0f} px at {pixel_size}m, threshold: {accum_threshold} cells"
+        )
     else:
         dem_for_routing = dem
         transform_for_routing = transform
@@ -1109,7 +1604,9 @@ def main():
         )
 
         hillslope_frac = np.sum(area_flat[asp_indices]) / np.sum(area_flat[valid])
-        print_progress(f"    Pixels: {len(asp_indices):,}, Fraction: {hillslope_frac:.1%}")
+        print_progress(
+            f"    Pixels: {len(asp_indices):,}, Fraction: {hillslope_frac:.1%}"
+        )
 
         trap = fit_trapezoidal_width(
             dtnd_flat[asp_indices], area_flat[asp_indices], n_hillslopes, min_dtnd=1.0
@@ -1128,7 +1625,9 @@ def main():
 
             if len(bin_indices) == 0:
                 bin_raw_areas.append(0)
-                bin_data.append({"indices": None, "h_lower": h_lower, "h_upper": h_upper})
+                bin_data.append(
+                    {"indices": None, "h_lower": h_lower, "h_upper": h_upper}
+                )
             else:
                 raw_area = float(np.sum(area_flat[bin_indices]))
                 bin_raw_areas.append(raw_area)
@@ -1138,7 +1637,9 @@ def main():
 
         total_raw = sum(bin_raw_areas)
         area_fractions = (
-            [a / total_raw for a in bin_raw_areas] if total_raw > 0 else [0.25] * N_HAND_BINS
+            [a / total_raw for a in bin_raw_areas]
+            if total_raw > 0
+            else [0.25] * N_HAND_BINS
         )
         fitted_areas = [trap["area"] * frac for frac in area_fractions]
 
@@ -1214,11 +1715,30 @@ def main():
     create_hillslope_params_plot(params, OUTPUT_DIR / "hillslope_params.png")
     print_progress(f"  Saved: {OUTPUT_DIR / 'hillslope_params.png'}")
 
-    summary_path = OUTPUT_DIR / "full_mosaic_summary.txt"
+    # Write CTSM-compatible NetCDF file
+    timetag = datetime.now().strftime("%y%m%d")
+    nc_filename = f"hillslopes_osbs_{OUTPUT_DESCRIPTOR}_c{timetag}.nc"
+    nc_path = OUTPUT_DIR / nc_filename
+
+    # Calculate total area from elements (in km^2)
+    total_area_m2 = sum(elem["area"] for elem in params["elements"])
+    total_area_km2 = total_area_m2 / 1e6
+
+    write_hillslope_netcdf(
+        params=params,
+        output_path=nc_path,
+        center_lon=OSBS_CENTER_LON_360,
+        center_lat=OSBS_CENTER_LAT,
+        total_area_km2=total_area_km2,
+    )
+
+    # Write summary text file
+    summary_path = OUTPUT_DIR / f"{OUTPUT_DESCRIPTOR}_summary.txt"
     with open(summary_path, "w") as f:
-        f.write("OSBS Full Mosaic Pipeline Summary\n")
+        f.write(f"OSBS Hillslope Pipeline Summary ({OUTPUT_DESCRIPTOR})\n")
         f.write("=" * 60 + "\n\n")
-        f.write(f"Input: {MOSAIC_PATH}\n")
+        f.write(f"Tile selection mode: {TILE_SELECTION_MODE}\n")
+        f.write(f"Input: {mosaic_path}\n")
         f.write(
             f"Processed region shape: {dem_for_routing.shape} pixels "
             f"({dem_for_routing.shape[0] * pixel_size / 1000:.1f} x {dem_for_routing.shape[1] * pixel_size / 1000:.1f} km)\n"
@@ -1257,14 +1777,15 @@ def main():
                 f"{elem['area'] / 1e6:<10.3f} {elem['width']:<8.0f}\n"
             )
 
-        f.write(f"\nTotal processing time: {time.time() - start_time:.1f} seconds\n")
+        f.write(f"\nNetCDF output: {nc_filename}\n")
+        f.write(f"Total processing time: {time.time() - start_time:.1f} seconds\n")
 
     print_progress(f"  Saved: {summary_path}")
 
     # -------------------------------------------------------------------------
     # Summary
     # -------------------------------------------------------------------------
-    print_section("Full Mosaic Pipeline Complete")
+    print_section("Pipeline Complete")
 
     total_time = time.time() - start_time
     print_progress(
@@ -1276,6 +1797,7 @@ def main():
     print_progress(f"  Accumulation threshold: {accum_threshold} cells")
     print_progress(f"  Stream coverage: {stream_frac:.2%}")
     print_progress(f"  HAND range: 0 - {np.max(hand_valid):.1f} m")
+    print_progress(f"\nCTSM-compatible NetCDF: {nc_path}")
 
 
 if __name__ == "__main__":
