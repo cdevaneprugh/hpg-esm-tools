@@ -1385,6 +1385,11 @@ def main():
         valid_mask = valid_mask_sub
         dem_for_routing = dem_sub
 
+        # Keep original DEM (before pysheds processing) for slope calculation
+        # Pysheds replaces nodata with high values which creates false gradients
+        dem_for_slope = dem_sub.copy().astype(float)
+        dem_for_slope[~valid_mask] = np.nan
+
         # Adjust region bounds for trimmed edges
         cmin += tc1 * subsample
         cmax = cmin + (tc2 - tc1) * subsample
@@ -1422,6 +1427,9 @@ def main():
     else:
         dem_for_routing = dem
         transform_for_routing = transform
+        # Keep original DEM for slope calculation
+        dem_for_slope = dem.copy().astype(float)
+        dem_for_slope[dem <= -9000] = np.nan
 
     grid = Grid()
     grid.add_gridded_data(
@@ -1513,10 +1521,25 @@ def main():
 
     t0 = time.time()
 
-    print_progress("  Computing slope and aspect...")
-    grid.slope_aspect("dem")
-    slope = np.array(grid.slope)
-    aspect = np.array(grid.aspect)
+    # Use simple numpy gradient for slope calculation (pysheds assumes geographic coords)
+    # np.gradient with spacing argument returns gradient in correct units (m/m)
+    # Use dem_for_slope which has nodata as NaN (not the pysheds-processed DEM)
+    print_progress("  Computing slope and aspect (UTM-aware)...")
+    dzdy, dzdx = np.gradient(dem_for_slope, pixel_size)
+
+    # Slope magnitude (m/m)
+    slope = np.sqrt(dzdx**2 + dzdy**2)
+
+    # Aspect (degrees from North, clockwise)
+    # Steepest descent is along the negative of the gradient
+    # Note: numpy y-axis increases downward (row index), x-axis increases rightward (col index)
+    # For geographic North (up on map), we need -dzdy for the y component
+    aspect = np.degrees(np.arctan2(-dzdx, -dzdy))
+    aspect[aspect < 0] += 360  # Convert to 0-360
+
+    # Mask invalid areas
+    slope[~valid_mask] = np.nan
+    aspect[~valid_mask] = np.nan
 
     print_progress(f"  Slope range: {np.nanmin(slope):.4f} - {np.nanmax(slope):.4f}")
     print_progress(
