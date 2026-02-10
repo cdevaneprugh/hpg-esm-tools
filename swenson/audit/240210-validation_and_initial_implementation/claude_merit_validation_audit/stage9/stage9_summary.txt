@@ -1,0 +1,25 @@
+Stage 9: Accumulation Threshold Sensitivity Analysis
+============================================================
+
+Purpose: Test if different accumulation thresholds can improve
+the area fraction correlation (currently 0.82).
+
+Results:
+------------------------------------------
+Threshold    Correlation    
+------------------------------------------
+20           0.8346          *
+34           0.8003         
+50           0.6780         
+100          -0.0109        
+200          -0.4428        
+------------------------------------------
+* Best threshold
+
+Best threshold: 20 cells
+Best correlation: 0.8346
+Baseline (34 cells): 0.8003
+
+Recommendation: Marginal improvement possible
+
+Total processing time: 125.1 seconds

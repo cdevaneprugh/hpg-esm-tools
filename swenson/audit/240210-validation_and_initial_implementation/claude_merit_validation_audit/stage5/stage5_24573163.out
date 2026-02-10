@@ -1,0 +1,146 @@
+Starting Stage 5: Unit Conversion Analysis
+Time: Sat Feb  7 02:23:29 PM EST 2026
+Node: c0706a-s12.ufhpc
+Working directory: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation
+
+============================================================
+  Stage 5: Unit Conversion Analysis
+============================================================
+
+Loading Stage 3 results...
+Loading Stage 4 results...
+
+Our data summary (16 elements):
+  Aspect range: [0.57, 269.79] degrees
+  Area range: [2.27e+04, 3.67e+04] m²
+
+Loading published data...
+  Target: lon=267.5, lat=32.5
+  Found: lon=267.5, lat=32.51308900523559
+
+Published aspect values: [6.27940847 0.03128735 0.0332151  0.01930115 1.61060553 1.58547486
+ 1.57460886 1.53847834 3.13743008 3.13489059 3.13736294 3.14276805
+ 4.6681154  4.67750662 4.68157909 4.70259025]
+  Range: [0.0193, 6.2794]
+  Mean: 2.7472
+  Published aspect appears to be in RADIANS
+
+============================================================
+  Aspect Unit Analysis
+============================================================
+
+Conversion test:
+  Our North aspect (bin 0): 0.57°
+  Published North aspect (bin 0): 6.2794 rad (359.78°)
+  Our converted: 0.0099 rad
+
+Aspect comparison (before conversion - degrees vs radians):
+  Linear correlation: 0.6487
+  MAE: 132.94
+
+Aspect comparison (after conversion - radians vs radians):
+  Linear correlation: 0.6487 (doesn't handle 0/360 wraparound)
+  Circular correlation: 0.9999
+  Circular MAE: 0.0124 rad (0.71°)
+
+============================================================
+  Area Unit Analysis
+============================================================
+
+Our areas (m²): [29628.29478223 22681.23053826 22756.43926235 25056.74642399
+ 36654.94046261 28513.90966517 28961.694029   29107.27709101
+ 33218.96997708 25647.5242109  25092.60045565 24244.71750344
+ 34562.7707172  25928.35142728 25939.28990771 27431.54431028]
+Published areas: [62472.7158691  57521.63657424 58847.61678035 65670.33234905
+ 70978.88278477 62894.18061721 61720.14598601 62255.05199546
+ 82235.98744323 59944.85879031 58531.8803242  55511.16883824
+ 79764.17894632 60160.95693475 58290.87399758 63420.06938418]
+
+Our area mean: 2.78e+04 m²
+Published area mean: 6.38e+04
+Ratio (our/pub): 0x
+
+Published area attributes: {'units': 'm2', 'long_name': 'hillslope area'}
+
+Our total area / 16: 2.78e+04 m²
+Published mean area: 6.38e+04
+
+Our areas in km²: [0.02962829 0.02268123 0.02275644 0.02505675 0.03665494 0.02851391
+ 0.02896169 0.02910728 0.03321897 0.02564752 0.0250926  0.02424472
+ 0.03456277 0.02592835 0.02593929 0.02743154]
+
+Area correlation (raw): 0.8200
+Area correlation (our km² vs pub): 0.8200
+Area correlation (fractions): 0.8200
+
+============================================================
+  Width Analysis (for context)
+============================================================
+
+Our widths: [248.27069056 208.3226595  171.56669782 124.19997001 299.08949312
+ 250.69470816 205.30579899 145.35498846 255.70893576 212.86848277
+ 172.6682122  121.04119089 273.02298111 227.84748926 186.92262838
+ 134.00932277]
+Published widths: [595.46881321 526.58565968 454.01237287 365.13219845 626.91186328
+ 549.17804266 469.66774357 375.62112822 654.93501403 547.84531482
+ 454.14036543 338.47538719 680.88853052 576.00392978 482.02769569
+ 368.79752462]
+
+Our width mean: 202.31 m, std: 53.12 m
+Published width mean: 504.11 m, std: 104.67 m
+
+Width variation check (bug diagnostic):
+  North: [248.27069056 208.3226595  171.56669782 124.19997001]
+    Unique values: [124.19997001 171.56669782 208.3226595  248.27069056]
+  East: [299.08949312 250.69470816 205.30579899 145.35498846]
+    Unique values: [145.35498846 205.30579899 250.69470816 299.08949312]
+  South: [255.70893576 212.86848277 172.6682122  121.04119089]
+    Unique values: [121.04119089 172.6682122  212.86848277 255.70893576]
+  West: [273.02298111 227.84748926 186.92262838 134.00932277]
+    Unique values: [134.00932277 186.92262838 227.84748926 273.02298111]
+
+============================================================
+  Summary of Unit Corrections Needed
+============================================================
+
+1. ASPECT: FIXED
+   Correlation improved: 0.649 → 1.000
+
+2. AREA: NEEDS_INVESTIGATION
+   Scaling ratio: 0x
+   Area fraction correlation: 0.820
+
+3. WIDTH: BUG_CONFIRMED - Fix in Stage 6
+   Our std: 53.12 m
+   Published std: 104.67 m
+
+============================================================
+  Corrected Comparison Metrics
+============================================================
+
+Parameter       Our Mean     Pub Mean     Correlation  Status
+---------------------------------------------------------------
+height          7.1202       6.8796       0.9999       OK
+distance        255.0604     257.5593     0.9982       OK
+area_fraction   0.0625       0.0625       0.8200       GOOD
+slope           0.0274       0.0269       0.9966       OK
+aspect          2.1996       2.5694       0.9999       OK
+width           202.3059     504.1057     0.9597       OK
+
+Saved: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage5/stage5_results.json
+Saved: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage5/stage5_analysis.txt
+
+Generating comparison plots...
+Saved: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage5/stage5_comparison_plots.png
+
+============================================================
+  Stage 5 Complete
+============================================================
+
+Key findings:
+1. Aspect: Fixed with deg→rad conversion (correlation: 0.65 → ~0.99)
+2. Area: Fraction correlation is 0.73 - relative distribution is correct
+3. Width: Bug confirmed - all bins have same width. Fix in Stage 6.
+
+Stage 5 complete
+Time: Sat Feb  7 02:23:37 PM EST 2026

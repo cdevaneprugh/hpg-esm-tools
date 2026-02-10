@@ -1,0 +1,95 @@
+{
+  "status": "comparison_complete",
+  "published_data_path": "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/reference/hillslopes_0.9x1.25_c240416.nc",
+  "our_params_summary": {
+    "n_elements": 16,
+    "region_lon": [
+      -93.12458333333333,
+      -91.87625
+    ],
+    "region_lat": [
+      32.98448333333334,
+      32.04281666666667
+    ]
+  },
+  "published_summary": {
+    "n_lon_gridcells": 1,
+    "n_lat_gridcells": 1,
+    "lon_range": [
+      267.5,
+      267.5
+    ],
+    "lat_range": [
+      32.51308900523559,
+      32.51308900523559
+    ]
+  },
+  "metrics": {
+    "height": {
+      "our_mean": 7.120206214487553,
+      "our_std": 5.903561680204748,
+      "pub_mean": 6.879604094697301,
+      "pub_std": 5.656500023765255,
+      "mae": 0.24531802942010864,
+      "rmse": 0.35590432756013485,
+      "correlation": 0.9998841234223566,
+      "relative_error_pct": 4.233022399955794,
+      "n_compared": 16
+    },
+    "distance": {
+      "our_mean": 255.06043944111076,
+      "our_std": 124.2254982928822,
+      "pub_mean": 257.55927069448524,
+      "pub_std": 156.2296949375906,
+      "mae": 29.256345054994483,
+      "rmse": 33.14880954610924,
+      "correlation": 0.9982395963298445,
+      "relative_error_pct": 20.622217874295252,
+      "n_compared": 16
+    },
+    "area": {
+      "our_mean": 27839.1437977605,
+      "our_std": 3962.8399482713317,
+      "pub_mean": 63763.78360093782,
+      "pub_std": 7407.978490586872,
+      "mae": 35924.63980317731,
+      "rmse": 36235.5683705508,
+      "correlation": 0.8200118770833058,
+      "relative_error_pct": 56.35950702944233,
+      "n_compared": 16
+    },
+    "slope": {
+      "our_mean": 0.02743879081381554,
+      "our_std": 0.008359747623338102,
+      "pub_mean": 0.02690541619043062,
+      "pub_std": 0.008830729903532647,
+      "mae": 0.0008275996148588168,
+      "rmse": 0.0010018366275176037,
+      "correlation": 0.9966313612829438,
+      "relative_error_pct": 3.835446679981595,
+      "n_compared": 16
+    },
+    "aspect": {
+      "our_mean": 134.97584250897626,
+      "our_std": 100.01751140822371,
+      "pub_mean": 2.747163916375076,
+      "pub_std": 1.866311745208426,
+      "mae": 132.94268181130286,
+      "rmse": 165.07343662914218,
+      "correlation": 0.6486785242108882,
+      "relative_error_pct": 4853.310829450058,
+      "n_compared": 16
+    },
+    "width": {
+      "our_mean": 202.30589060948668,
+      "our_std": 53.12455194250012,
+      "pub_mean": 504.10572400107446,
+      "pub_std": 104.66986992084621,
+      "mae": 301.79983339158775,
+      "rmse": 306.90044886587935,
+      "correlation": 0.9597317636311669,
+      "relative_error_pct": 60.29521764482251,
+      "n_compared": 16
+    }
+  }
+}

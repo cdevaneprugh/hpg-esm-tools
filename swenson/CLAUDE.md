@@ -10,9 +10,8 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 
 | Resource | Location |
 |----------|----------|
-| Progress tracking | `progress-tracking.md` |
+| Project status | `STATUS.md` |
 | Tile grid reference | `tile_grid.md` |
-| Google Earth grid | `osbs_tile_grid.kml` |
 | Paper summary | `../docs/papers/Swenson_2025_Hillslope_Dataset_Summary.md` |
 | Swenson's codebase | `/blue/gerber/cdevaneprugh/Representative_Hillslopes/` |
 | Our pysheds fork | `$BLUE/pysheds_fork` |
@@ -23,34 +22,46 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 ```
 swenson/
 ├── CLAUDE.md                  # This file
-├── progress-tracking.md       # Progress tracking and reference docs
+├── STATUS.md                  # Living project status document
 ├── tile_grid.md               # Tile reference system (R#C# format)
-├── osbs_tile_grid.kml         # Google Earth tile grid
+│
+├── audit/
+│   └── 240210-validation_and_initial_implementation/
+│       ├── audit-summary-240210.md         # Frozen snapshot of STATUS.md at audit time
+│       ├── claude-audit.md                 # Personal audit notes
+│       ├── osbs_pipeline_audit.md          # Issue catalog
+│       ├── flow-routing-resolution.md      # Testing plan
+│       ├── progress-tracking.md            # Historical implementation log
+│       ├── claude_merit_validation_audit/  # Audit re-run results
+│       └── logs/                           # Historical SLURM logs
+│
+├── data/
+│   ├── neon/
+│   │   ├── dtm/               # 233 NEON DTM tiles (1m, EPSG:32617)
+│   │   └── README.md          # NEON data product catalog
+│   ├── mosaics/               # Generated mosaics (OSBS_full.tif, OSBS_interior.tif)
+│   ├── merit/                 # MERIT DEM for validation
+│   ├── reference/             # Swenson published data
+│   └── .gitignore             # Ignores *.tif, *.nc
+│
+├── output/
+│   ├── google-earth/          # KML files for Google Earth
+│   ├── osbs/                  # Pipeline runs (YYYY-MM-DD_<desc>/)
+│   └── plots/                 # Comparison plots
 │
 ├── scripts/
-│   ├── merit_validation/      # Stage 1-9 scripts (MERIT DEM validation)
-│   ├── osbs/                  # OSBS processing scripts
+│   ├── spatial_scale.py       # Shared FFT module
+│   ├── merit_validation/      # Stages 1-9 (MERIT DEM validation)
+│   ├── osbs/                  # Pipeline scripts
 │   │   ├── run_pipeline.py    # Main hillslope pipeline
 │   │   ├── run_pipeline.sh    # SLURM job wrapper
 │   │   ├── stitch_mosaic.py   # Create mosaic from tiles
-│   │   ├── extract_subset.py  # Extract subset regions
-│   │   └── export_kml.py      # Export to Google Earth
-│   └── spatial_scale.py       # Shared FFT utilities
+│   │   └── extract_subset.py  # Extract subset regions
+│   └── visualization/         # KML generation scripts
+│       ├── export_kml.py      # Tile grid KML
+│       └── export_perimeter_kml.py  # Selection perimeter KML
 │
-├── data/
-│   ├── tiles/                 # Raw NEON DTM tiles (233 tiles)
-│   ├── mosaics/               # Generated mosaics
-│   │   ├── OSBS_full.tif      # All 233 tiles stitched
-│   │   └── OSBS_*.tif         # Custom selections
-│   ├── merit/                 # MERIT DEM for validation
-│   └── reference/             # Reference datasets (Swenson global)
-│
-├── output/
-│   ├── merit_validation/      # Stage 1-9 results (validation)
-│   └── osbs/                  # OSBS pipeline runs
-│       └── YYYY-MM-DD_<desc>/ # Timestamped output directories
-│
-└── logs/                      # SLURM job logs
+└── logs/                      # Future SLURM output
 ```
 
 ## Running the Pipeline

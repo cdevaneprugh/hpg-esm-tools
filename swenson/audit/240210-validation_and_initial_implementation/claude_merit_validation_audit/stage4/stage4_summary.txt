@@ -1,0 +1,58 @@
+Stage 4: Comparison Results Summary
+============================================================
+
+Published data: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/reference/hillslopes_0.9x1.25_c240416.nc
+Our region: lon [-93.12458333333333, -91.87625], lat [32.98448333333334, 32.04281666666667]
+
+Comparison Metrics:
+----------------------------------------
+
+HEIGHT:
+  Our mean ± std: 7.12 ± 5.90
+  Published mean ± std: 6.88 ± 5.66
+  MAE: 0.25
+  RMSE: 0.36
+  Correlation: 1.000
+  Relative error: 4.2%
+
+DISTANCE:
+  Our mean ± std: 255.06 ± 124.23
+  Published mean ± std: 257.56 ± 156.23
+  MAE: 29.26
+  RMSE: 33.15
+  Correlation: 0.998
+  Relative error: 20.6%
+
+AREA:
+  Our mean ± std: 27839.14 ± 3962.84
+  Published mean ± std: 63763.78 ± 7407.98
+  MAE: 35924.64
+  RMSE: 36235.57
+  Correlation: 0.820
+  Relative error: 56.4%
+
+SLOPE:
+  Our mean ± std: 0.03 ± 0.01
+  Published mean ± std: 0.03 ± 0.01
+  MAE: 0.00
+  RMSE: 0.00
+  Correlation: 0.997
+  Relative error: 3.8%
+
+ASPECT:
+  Our mean ± std: 134.98 ± 100.02
+  Published mean ± std: 2.75 ± 1.87
+  MAE: 132.94
+  RMSE: 165.07
+  Correlation: 0.649
+  Relative error: 4853.3%
+
+WIDTH:
+  Our mean ± std: 202.31 ± 53.12
+  Published mean ± std: 504.11 ± 104.67
+  MAE: 301.80
+  RMSE: 306.90
+  Correlation: 0.960
+  Relative error: 60.3%
+
+Total processing time: 0.8 seconds

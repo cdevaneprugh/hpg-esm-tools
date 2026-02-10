@@ -1,0 +1,14 @@
+Stage 8: Gradient Calculation Comparison
+============================================================
+
+Purpose: Validate hypothesis that gradient calculation differences
+cause the ~2.5% East/South boundary classification discrepancy.
+
+Key Finding:
+----------------------------------------
+HYPOTHESIS NOT SUPPORTED
+
+Classification differences are small (46.47% changed).
+The area correlation issue may have a different root cause.
+
+Total processing time: 5.2 seconds

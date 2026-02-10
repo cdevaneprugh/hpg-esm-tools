@@ -21,7 +21,7 @@ BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "output" / "osbs"
 
-DTM_DIR = DATA_DIR / "tiles"
+DTM_DIR = DATA_DIR / "neon" / "dtm"
 MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
 PLOT_PATH = OUTPUT_DIR / "osbs_dtm_elevation.png"
 

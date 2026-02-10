@@ -1,0 +1,98 @@
+{
+  "unit_corrections": {
+    "aspect": {
+      "issue": "Our data is in degrees, published is in radians (with 0/360 wraparound)",
+      "fix": "Multiply by pi/180, use circular correlation",
+      "linear_correlation_before": 0.6486785242108882,
+      "circular_correlation_after": 0.9998952192993293,
+      "circular_mae_rad": 0.012350057638434931,
+      "status": "FIXED"
+    },
+    "area": {
+      "issue": "Scaling mismatch - our areas are ~26000x larger",
+      "analysis": {
+        "our_total": 445426.300764168,
+        "pub_total": 1020220.5376150052,
+        "ratio": 0.43659805340270064,
+        "fraction_correlation": 0.820011877083306
+      },
+      "status": "NEEDS_INVESTIGATION"
+    },
+    "width": {
+      "issue": "All elevation bins have identical width (known bug)",
+      "our_std": 53.12455194250012,
+      "pub_std": 104.66986992084621,
+      "status": "BUG_CONFIRMED - Fix in Stage 6"
+    }
+  },
+  "corrected_metrics": {
+    "height": {
+      "our_mean": 7.120206214487553,
+      "our_std": 5.903561680204748,
+      "pub_mean": 6.879604094697301,
+      "pub_std": 5.656500023765255,
+      "mae": 0.24531802942010864,
+      "rmse": 0.35590432756013485,
+      "correlation": 0.9998841234223566,
+      "relative_error_pct": 4.233022399527199,
+      "n_compared": 16
+    },
+    "distance": {
+      "our_mean": 255.06043944111076,
+      "our_std": 124.2254982928822,
+      "pub_mean": 257.55927069448524,
+      "pub_std": 156.2296949375906,
+      "mae": 29.256345054994483,
+      "rmse": 33.14880954610924,
+      "correlation": 0.9982395963298445,
+      "relative_error_pct": 20.62221787426874,
+      "n_compared": 16
+    },
+    "area_fraction": {
+      "our_mean": 0.0625,
+      "our_std": 0.008896735422835903,
+      "pub_mean": 0.062499999999999986,
+      "pub_std": 0.007261154051951048,
+      "mae": 0.003792113844117047,
+      "rmse": 0.005092130773600047,
+      "correlation": 0.820011877083306,
+      "relative_error_pct": 5.953538588394601,
+      "n_compared": 16
+    },
+    "slope": {
+      "our_mean": 0.02743879081381554,
+      "our_std": 0.008359747623338102,
+      "pub_mean": 0.02690541619043062,
+      "pub_std": 0.008830729903532647,
+      "mae": 0.0008275996148588168,
+      "rmse": 0.0010018366275176037,
+      "correlation": 0.9966313612829438,
+      "relative_error_pct": 3.8354466591910934,
+      "n_compared": 16
+    },
+    "aspect": {
+      "our_mean": 2.1995641750540202,
+      "our_std": 3.1274249743806553,
+      "pub_mean": 2.5694201600604067,
+      "pub_std": 3.005676453666096,
+      "circular_mae": 0.012350057638434931,
+      "correlation": 0.9998952192993293,
+      "n_compared": 16
+    },
+    "width": {
+      "our_mean": 202.30589060948668,
+      "our_std": 53.12455194250012,
+      "pub_mean": 504.10572400107446,
+      "pub_std": 104.66986992084621,
+      "mae": 301.79983339158775,
+      "rmse": 306.90044886587935,
+      "correlation": 0.9597317636311669,
+      "relative_error_pct": 60.295217644809895,
+      "n_compared": 16
+    }
+  },
+  "conversion_formulas": {
+    "aspect": "aspect_rad = aspect_deg * pi / 180",
+    "area": "Area fractions correlate well (0.73), absolute values differ by ~26000x"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "input_dem": "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif",
+  "max_hillslope_length_m": 10000,
+  "nlambda": 30,
+  "results": [
+    {
+      "label": "500x500 region",
+      "region_size": 500,
+      "model": "lognormal",
+      "spatial_scale_px": 8.264671453825263,
+      "spatial_scale_m": 765.8246133803989,
+      "resolution_m": 92.66243887117142,
+      "accum_threshold_cells": 34.1523971198371
+    },
+    {
+      "label": "1000x1000 region",
+      "region_size": 1000,
+      "model": "lognormal",
+      "spatial_scale_px": 8.197234775904422,
+      "spatial_scale_m": 759.5757663284076,
+      "resolution_m": 92.66243887038134,
+      "accum_threshold_cells": 33.5973289856484
+    },
+    {
+      "label": "3000x3000 region",
+      "region_size": 3000,
+      "model": "lognormal",
+      "spatial_scale_px": 8.140256938083404,
+      "spatial_scale_m": 754.296060914351,
+      "resolution_m": 92.66243887038134,
+      "accum_threshold_cells": 33.131891509007495
+    },
+    {
+      "label": "Full tile (4x subsampled)",
+      "region_size": "full",
+      "model": "lognormal",
+      "spatial_scale_px": 28.9060456197462,
+      "spatial_scale_m": 2678.5046852241867,
+      "resolution_m": 92.66243887038134,
+      "accum_threshold_cells": 417.77973668542427
+    }
+  ],
+  "best_estimate": {
+    "spatial_scale_px": 8.230953114864842,
+    "spatial_scale_m": 762.7001898544032,
+    "accum_threshold_cells": 33.874294589551624
+  }
+}

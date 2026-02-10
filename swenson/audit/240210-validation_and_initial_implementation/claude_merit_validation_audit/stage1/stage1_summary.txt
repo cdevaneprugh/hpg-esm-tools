@@ -1,0 +1,25 @@
+Stage 1: pgrid Validation Summary
+==================================================
+
+Input DEM: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif
+DEM shape: (6000, 6000)
+DEM range: [-19.78, 818.39] m
+
+Accumulation threshold: 1000 cells
+Stream cells: 782051 (2.17%)
+
+HAND Statistics:
+  Range: [-54.05, 619.06] m
+  Mean: 13.79 m
+  Median: 6.85 m
+  Std: 22.59 m
+  95th percentile: 43.85 m
+
+DTND Statistics:
+  Range: [0, 22931] m
+  Mean: 1.51 km
+  Median: 1.30 km
+  Std: 1.14 km
+  95th percentile: 3.56 km
+
+Total processing time: 200.7 seconds

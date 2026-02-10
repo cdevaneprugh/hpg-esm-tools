@@ -1,0 +1,243 @@
+{
+  "metadata": {
+    "n_aspect_bins": 4,
+    "n_hand_bins": 4,
+    "aspect_bins": [
+      [
+        315,
+        45
+      ],
+      [
+        45,
+        135
+      ],
+      [
+        135,
+        225
+      ],
+      [
+        225,
+        315
+      ]
+    ],
+    "aspect_names": [
+      "North",
+      "East",
+      "South",
+      "West"
+    ],
+    "hand_bounds": [
+      0.0,
+      2.0,
+      5.569587707519531,
+      10.61172866821289,
+      1000000.0
+    ],
+    "accum_threshold": 33,
+    "spatial_scale_m": 762.7001898544032,
+    "region_shape": [
+      1131,
+      1499
+    ],
+    "lon_range": [
+      -93.12458333333333,
+      -91.87625
+    ],
+    "lat_range": [
+      32.98448333333334,
+      32.04281666666667
+    ],
+    "target_gridcell": {
+      "lon_min": -93.125,
+      "lon_max": -91.875,
+      "lat_min": 32.0419,
+      "lat_max": 32.9843,
+      "center_lon": -92.5,
+      "center_lat": 32.5131
+    },
+    "expansion_factor": 1.5
+  },
+  "elements": [
+    {
+      "aspect_name": "North",
+      "aspect_bin": 0,
+      "hand_bin": 0,
+      "height": 0.5754151344299316,
+      "distance": 92.66243887038134,
+      "area": 72356.03666768545,
+      "slope": 0.014962713642925288,
+      "aspect": 0.5673827235537542,
+      "width": 595.4688132069031
+    },
+    {
+      "aspect_name": "North",
+      "aspect_bin": 0,
+      "hand_bin": 1,
+      "height": 3.697118043899536,
+      "distance": 201.1431600740493,
+      "area": 55390.428661424026,
+      "slope": 0.025319575214319674,
+      "aspect": 0.9080325925886427,
+      "width": 532.660845159635
+    },
+    {
+      "aspect_name": "North",
+      "aspect_bin": 0,
+      "hand_bin": 2,
+      "height": 7.908895492553711,
+      "distance": 288.78605881724974,
+      "area": 55574.097861348375,
+      "slope": 0.03237933231690091,
+      "aspect": 0.972133412681876,
+      "width": 479.0467858403707
+    },
+    {
+      "aspect_name": "North",
+      "aspect_bin": 0,
+      "hand_bin": 3,
+      "height": 16.532690048217773,
+      "distance": 431.8727965146908,
+      "area": 61191.73838228166,
+      "slope": 0.03675482316729427,
+      "aspect": 0.8577733580876213,
+      "width": 418.4067515914439
+    },
+    {
+      "aspect_name": "East",
+      "aspect_bin": 1,
+      "hand_bin": 0,
+      "height": 0.5884366631507874,
+      "distance": 92.66243887038134,
+      "area": 76692.4680564967,
+      "slope": 0.015350868696060718,
+      "aspect": 90.86194806677548,
+      "width": 626.9118632848737
+    },
+    {
+      "aspect_name": "East",
+      "aspect_bin": 1,
+      "hand_bin": 1,
+      "height": 3.696869134902954,
+      "distance": 201.22227701068823,
+      "area": 59659.136764719085,
+      "slope": 0.02627177408219684,
+      "aspect": 90.7298928845437,
+      "width": 559.2085840953728
+    },
+    {
+      "aspect_name": "East",
+      "aspect_bin": 1,
+      "hand_bin": 2,
+      "height": 7.908743858337402,
+      "distance": 298.90345478558294,
+      "area": 60596.02787915801,
+      "slope": 0.03292858228245234,
+      "aspect": 90.35540805958279,
+      "width": 500.24544006667986
+    },
+    {
+      "aspect_name": "East",
+      "aspect_bin": 1,
+      "hand_bin": 3,
+      "height": 16.12378692626953,
+      "distance": 432.00082100972753,
+      "area": 60900.62868307343,
+      "slope": 0.03719308809009533,
+      "aspect": 89.36084279208082,
+      "width": 432.1987352736729
+    },
+    {
+      "aspect_name": "South",
+      "aspect_bin": 2,
+      "hand_bin": 0,
+      "height": 0.5806443691253662,
+      "distance": 92.66243887038134,
+      "area": 78661.68224277809,
+      "slope": 0.013689205442306599,
+      "aspect": 179.06036816866848,
+      "width": 654.9350140283993
+    },
+    {
+      "aspect_name": "South",
+      "aspect_bin": 2,
+      "hand_bin": 1,
+      "height": 3.6936213970184326,
+      "distance": 201.22479643649547,
+      "area": 60732.689821016276,
+      "slope": 0.024250503308836435,
+      "aspect": 179.45775467092398,
+      "width": 573.1741979414056
+    },
+    {
+      "aspect_name": "South",
+      "aspect_bin": 2,
+      "hand_bin": 2,
+      "height": 7.8861870765686035,
+      "distance": 298.77732211049766,
+      "area": 59418.64437846417,
+      "slope": 0.030645112722464143,
+      "aspect": 179.39759342783395,
+      "width": 501.0027060890664
+    },
+    {
+      "aspect_name": "South",
+      "aspect_bin": 2,
+      "hand_bin": 3,
+      "height": 16.10157012939453,
+      "distance": 439.12634691252515,
+      "area": 57410.878953718486,
+      "slope": 0.03463458683098062,
+      "aspect": 179.8192219331682,
+      "width": 418.51658715392335
+    },
+    {
+      "aspect_name": "West",
+      "aspect_bin": 3,
+      "hand_bin": 0,
+      "height": 0.5855425000190735,
+      "distance": 92.66243887038134,
+      "area": 79419.57180254815,
+      "slope": 0.015464943648621842,
+      "aspect": 269.4259287781296,
+      "width": 680.8885305222057
+    },
+    {
+      "aspect_name": "West",
+      "aspect_bin": 3,
+      "hand_bin": 1,
+      "height": 3.690577745437622,
+      "distance": 201.21779717419582,
+      "area": 59579.09407060446,
+      "slope": 0.026614394897293947,
+      "aspect": 269.0424212906182,
+      "width": 599.1989473412484
+    },
+    {
+      "aspect_name": "West",
+      "aspect_bin": 3,
+      "hand_bin": 2,
+      "height": 7.908285140991211,
+      "distance": 298.0511643219357,
+      "area": 59604.22890250795,
+      "slope": 0.03379280296270109,
+      "aspect": 269.00706757736555,
+      "width": 529.7103349489605
+    },
+    {
+      "aspect_name": "West",
+      "aspect_bin": 3,
+      "hand_bin": 3,
+      "height": 16.444915771484375,
+      "distance": 417.9912804086087,
+      "area": 63033.18448718072,
+      "slope": 0.03876834571559865,
+      "aspect": 269.78971040701754,
+      "width": 449.57046721142143
+    }
+  ],
+  "correction_notes": {
+    "width_bug_fixed": true,
+    "method": "Swenson quadratic solver with estimated trap_slope",
+    "area_normalized": true
+  }
+}

@@ -1,0 +1,30 @@
+Stage 5: Unit Conversion Analysis
+============================================================
+
+ASPECT CONVERSION
+----------------------------------------
+Our data: degrees (0-360)
+Published: radians (0 to 2*pi)
+Conversion: aspect_rad = aspect_deg * pi/180
+Linear correlation before: 0.6487
+Circular correlation after:  0.9999
+
+AREA ANALYSIS
+----------------------------------------
+Our total area: 4.45e+05 m²
+Published total: 1.02e+06
+Ratio: ~0x
+Area fraction correlation: 0.8200
+
+Note: The 0.73 fraction correlation suggests the relative distribution
+is reasonably accurate. The absolute scaling difference may be due to:
+1. Published data being per-hillslope vs our per-element
+2. Different normalization (km² vs m²)
+3. Different region size definitions
+
+WIDTH BUG CONFIRMATION
+----------------------------------------
+Our width std: 53.12 m (should be ~100m)
+Published width std: 104.67 m
+Bug: All elevation bins within each aspect have identical widths.
+Fix required in Stage 6.

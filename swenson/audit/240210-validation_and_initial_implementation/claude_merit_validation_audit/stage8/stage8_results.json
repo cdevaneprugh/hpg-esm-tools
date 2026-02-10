@@ -1,0 +1,89 @@
+{
+  "summary": {
+    "dem_shape": [
+      1131,
+      1500
+    ],
+    "valid_pixels": 1691241,
+    "total_pixels": 1696500
+  },
+  "aspect_difference_stats": {
+    "mean": 0.37828637596042136,
+    "std": 100.5752347376873,
+    "min": -179.99995199681823,
+    "max": 179.99958595073952,
+    "median": 0.610169271418826
+  },
+  "classification_comparison": {
+    "North": {
+      "ours": 407466,
+      "pgrid": 378450,
+      "diff": 29016,
+      "pct_diff": 1.7156632319107685,
+      "ours_pct": 24.09272244464272,
+      "pgrid_pct": 22.377059212731954
+    },
+    "East": {
+      "ours": 470263,
+      "pgrid": 470262,
+      "diff": 1,
+      "pct_diff": 5.9128178656974374e-05,
+      "ours_pct": 27.80579467976474,
+      "pgrid_pct": 27.805735551586086
+    },
+    "South": {
+      "ours": 378450,
+      "pgrid": 407468,
+      "diff": -29018,
+      "pct_diff": -1.7157814882680824,
+      "ours_pct": 22.377059212731954,
+      "pgrid_pct": 24.092840701000036
+    },
+    "West": {
+      "ours": 435062,
+      "pgrid": 435061,
+      "diff": 1,
+      "pct_diff": 5.9128178656974374e-05,
+      "ours_pct": 25.724423662860588,
+      "pgrid_pct": 25.72436453468193
+    }
+  },
+  "transitions": {
+    "North->East": {
+      "count": 1,
+      "pct": 5.9128178656974374e-05
+    },
+    "North->South": {
+      "count": 407465,
+      "pct": 24.092663316464066
+    },
+    "East->South": {
+      "count": 2,
+      "pct": 0.00011825635731394875
+    },
+    "South->North": {
+      "count": 378450,
+      "pct": 22.377059212731954
+    },
+    "West->South": {
+      "count": 1,
+      "pct": 5.9128178656974374e-05
+    }
+  },
+  "changed_pixels": {
+    "count": 785919,
+    "percent": 46.46995904191064
+  },
+  "boundary_analysis": {
+    "margin_degrees": 5,
+    "pixels_near_135": 95231,
+    "changed_near_135": 46747
+  },
+  "hypothesis_validation": {
+    "expected": "~2.5% of pixels at E/S boundary classified differently",
+    "observed_E_diff_pct": 5.9128178656974374e-05,
+    "observed_S_diff_pct": -1.7157814882680824,
+    "total_changed_pct": 46.46995904191064,
+    "hypothesis_supported": false
+  }
+}
