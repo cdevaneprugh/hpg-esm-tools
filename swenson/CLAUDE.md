@@ -5,6 +5,24 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 ## Background
 
 @../docs/papers/Swenson_2025_Hillslope_Dataset_Summary.md
+@STATUS.md
+
+## Pipeline Orientation
+
+The central technical problem is that pysheds assumes a geographic CRS while our NEON LIDAR data is in UTM (EPSG:32617). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The validation pipeline in `scripts/merit_validation/` shares methodology; code duplication between the two is being resolved in Phase D.
+
+## Phase Workflow
+
+Work is organized into phases A-F, tracked in `phases/`. Each phase file has a `Status:` header, task checkboxes, and a `## Log` section.
+
+**When working on a phase, update its tracking file:**
+
+- **Starting work:** Set `Status: In progress`, add a dated log entry describing what you're doing.
+- **During work:** Check off tasks as completed. Add dated log entries with results, decisions, and issues encountered.
+- **Finishing:** Set `Status: Complete`, write a summary log entry.
+- **Scope changes:** If work reveals new problems or changes scope, update the phase file AND STATUS.md.
+
+Phase files are the **primary record** of what was done and why. After completing a phase, update STATUS.md to reflect the new project state.
 
 ## Key Resources
 
@@ -24,6 +42,14 @@ swenson/
 ├── CLAUDE.md                  # This file
 ├── STATUS.md                  # Living project status document
 ├── tile_grid.md               # Tile reference system (R#C# format)
+│
+├── phases/                    # Phase tracking files (A-F)
+│   ├── A-pysheds-utm.md       # Fix pysheds for UTM CRS
+│   ├── B-flow-resolution.md   # Resolve flow routing resolution
+│   ├── C-characteristic-length.md  # Establish trustworthy Lc
+│   ├── D-rebuild-pipeline.md  # Rebuild pipeline with fixes
+│   ├── E-complete-parameters.md    # Complete the parameter set
+│   └── F-validate-deploy.md   # Validate and deploy
 │
 ├── audit/
 │   └── 240210-validation_and_initial_implementation/

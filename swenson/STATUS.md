@@ -233,6 +233,8 @@ The middle layer is what's missing. The quadratic solver, trapezoidal fitting, H
 
 ## Work Flow: What Needs to Happen and In What Order
 
+**Phase tracking files:** `phases/` — one file per phase with tasks, results, and decisions.
+
 ### Phase A: Fix pysheds for UTM (blocks everything)
 
 Both the DTND problem (#1) and the slope/aspect problem (#4) stem from the same root cause: pysheds assumes geographic coordinates. Fixing pysheds once resolves both.
