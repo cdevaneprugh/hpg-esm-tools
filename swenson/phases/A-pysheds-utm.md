@@ -1,6 +1,6 @@
 # Phase A: Fix pysheds for UTM
 
-Status: Not started
+Status: In progress
 Depends on: None
 Blocks: Phase D
 
@@ -23,7 +23,7 @@ Both the DTND problem (STATUS.md #1) and the slope/aspect problem (#4) stem from
 
 ## Tasks
 
-- [ ] Fix 33 deprecation warnings in `pgrid.py` (clean working state before making changes)
+- [x] Fix deprecation warnings in `pgrid.py` (clean working state before making changes)
 - [ ] Modify `compute_hand()` to detect UTM CRS and use Euclidean distance for DTND
 - [ ] Modify `slope_aspect()` / `_gradient_horn_1981()` to use uniform pixel spacing for UTM
 - [ ] Test both changes against MERIT validation (geographic CRS — should reproduce existing results)
@@ -35,3 +35,22 @@ pysheds fork that correctly handles both geographic and UTM CRS for HAND/DTND co
 
 ## Log
 
+### 2026-02-10: Task 0 — Fix deprecation warnings
+
+Fixed all deprecation warnings in `pgrid.py`. Five changes total:
+
+| Line | Change | Reason |
+|------|--------|--------|
+| 9 | `from distutils.version` → `from looseversion` | `distutils` removed in Python 3.12 |
+| 1271 | `np.in1d` → `np.isin` | `np.in1d` deprecated in NumPy |
+| 3050 | `np.in1d` → `np.isin` | same |
+| 3063 | `np.in1d` → `np.isin` | same |
+| 3876 | `Series._append()` → `pd.concat()` | `_append()` removed in pandas 2.0 |
+
+The `_append` fix was critical — it crashed `resolve_flats()` and caused 11 of 15 tests to fail.
+
+Previous sessions had already fixed 27 warnings (12x `np.warnings` → `warnings`, 13x `np.bool` → `bool`, 2x `np.float` → `np.float64`). STATUS.md's "33 deprecation warnings" count was outdated — the actual remaining count was 36 (3 from `np.in1d` x 11 tests + 1 from `distutils` + 1 from `_append` crash + 1 from `looseversion`).
+
+Result: `pytest tests/test_hillslope.py -v` — 15/15 passed, 0 warnings. Strict mode (`-W error::DeprecationWarning`) also passes.
+
+`ruff check` shows 30 pre-existing lint issues (bare excepts, unused variables, etc.) from Swenson's original code — out of scope for this task.
