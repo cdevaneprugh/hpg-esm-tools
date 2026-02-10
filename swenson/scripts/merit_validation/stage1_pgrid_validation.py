@@ -14,10 +14,10 @@ This script:
 6. Generates diagnostic plots
 
 Data paths:
-- Input: /blue/gerber/cdevaneprugh/Representative_Hillslopes/topo_data/n30w095_dem.tif
-- Output: swenson/output/stage1/
+- Input: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif
+- Output: swenson/output/merit_validation/stage1/
 
-Expected runtime: ~30-60 minutes on 4 cores with 32GB RAM
+Expected runtime: ~5 minutes on 4 cores with 32GB RAM
 """
 
 import os
@@ -51,9 +51,9 @@ except ImportError:
 
 # Configuration
 MERIT_DEM_PATH = (
-    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
+    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif"
 )
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage1"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage1"
 
 # Accumulation threshold for stream network
 # Paper uses A_thresh = 0.5 * Lc^2 where Lc is characteristic length

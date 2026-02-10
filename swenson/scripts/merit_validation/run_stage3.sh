@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48GB
 #SBATCH --time=04:00:00
-#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/logs/stage3_%j.log
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage3/stage3_%j.log
 
 # Stage 3: Hillslope Parameter Computation
 # Computes the 6 geomorphic parameters for each hillslope element
@@ -33,7 +33,7 @@ echo "Verifying pysheds import..."
 python -c "from pysheds.pgrid import Grid; print('pysheds.pgrid import: OK')"
 
 # Script directory (absolute path)
-SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts"
+SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation"
 cd "$SCRIPT_DIR"
 
 # Run the stage 3 script

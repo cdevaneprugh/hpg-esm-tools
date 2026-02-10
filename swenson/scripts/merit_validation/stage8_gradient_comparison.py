@@ -32,6 +32,9 @@ import numpy as np
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
 sys.path.insert(0, pysheds_fork)
 
+# Add parent directory for local imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from pysheds.pgrid import Grid
 
 # Local modules (for our method)
@@ -53,8 +56,8 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 # Configuration
-MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage8"
+MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage8"
 
 # Target gridcell boundaries (same as stage3)
 TARGET_GRIDCELL = {

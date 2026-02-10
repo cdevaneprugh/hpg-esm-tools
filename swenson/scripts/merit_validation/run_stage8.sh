@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16GB
 #SBATCH --time=00:30:00
-#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/logs/stage8_%j.log
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage8/stage8_%j.log
 
 # Stage 8: Gradient Calculation Comparison
 # Validates hypothesis that gradient differences cause E/S classification issue
@@ -33,11 +33,8 @@ echo "Verifying pysheds import..."
 python -c "from pysheds.pgrid import Grid; print('pysheds.pgrid import: OK')"
 
 # Script directory (absolute path)
-SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts"
+SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation"
 cd "$SCRIPT_DIR"
-
-# Ensure output directory exists
-mkdir -p /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage8
 
 # Run the stage 8 script
 echo ""

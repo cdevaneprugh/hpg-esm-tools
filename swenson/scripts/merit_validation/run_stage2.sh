@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32GB
 #SBATCH --time=01:00:00
-#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/logs/stage2_%j.log
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage2/stage2_%j.log
 
 # Stage 2: Spatial Scale Analysis using FFT
 # Determines characteristic length scale from DEM Laplacian
@@ -28,7 +28,7 @@ export PYSHEDS_FORK="/blue/gerber/cdevaneprugh/pysheds_fork"
 export PYTHONPATH="${PYSHEDS_FORK}:${PYTHONPATH}"
 
 # Script directory (absolute path)
-SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts"
+SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation"
 cd "$SCRIPT_DIR"
 
 # Run the stage 2 script

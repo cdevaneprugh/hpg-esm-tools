@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=stage5_units
-#SBATCH --output=../output/stage5/stage5_%j.out
-#SBATCH --error=../output/stage5/stage5_%j.err
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage5/stage5_%j.out
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8gb
@@ -20,9 +19,6 @@ echo "Time: $(date)"
 echo "Node: $(hostname)"
 echo "Working directory: $(pwd)"
 
-# Create output directory
-mkdir -p ../output/stage5
-
 # Load conda environment
 module load conda
 conda activate ctsm
@@ -33,3 +29,4 @@ python stage5_unit_fix.py
 echo ""
 echo "Stage 5 complete"
 echo "Time: $(date)"
+

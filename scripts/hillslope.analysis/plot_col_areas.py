@@ -84,8 +84,9 @@ def plot_column_areas(input_file: str, output_file: str) -> None:
     ds = xr.open_dataset(input_file)
 
     # Extract hillslope geometry (exclude stream column 16)
-    hillslope_idx = ds["hillslope_index"].values[0:N_HILLSLOPE_COLS]
-    areas = ds["hillslope_area"].values[0:N_HILLSLOPE_COLS]
+    # Squeeze to handle both 1D and 3D arrays (e.g., shape (16,) or (16,1,1))
+    hillslope_idx = ds["hillslope_index"].values[0:N_HILLSLOPE_COLS].squeeze()
+    areas = ds["hillslope_area"].values[0:N_HILLSLOPE_COLS].squeeze()
 
     ds.close()
 

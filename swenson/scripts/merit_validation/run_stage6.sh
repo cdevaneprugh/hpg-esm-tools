@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=stage6_width
-#SBATCH --output=../output/stage6/stage6_%j.out
-#SBATCH --error=../output/stage6/stage6_%j.err
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage6/stage6_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8gb
@@ -19,9 +18,6 @@ echo "Starting Stage 6: Width Bug Fix"
 echo "Time: $(date)"
 echo "Node: $(hostname)"
 echo "Working directory: $(pwd)"
-
-# Create output directory
-mkdir -p ../output/stage6
 
 # Load conda environment
 module load conda

@@ -37,10 +37,10 @@ except ImportError:
 
 
 # Paths
-STAGE3_JSON = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage3/stage3_hillslope_params.json"
-STAGE4_JSON = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage4/stage4_results.json"
-PUBLISHED_NC = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/hillslopes_0.9x1.25_c240416.nc"
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage5"
+STAGE3_JSON = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage3/stage3_hillslope_params.json"
+STAGE4_JSON = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage4/stage4_results.json"
+PUBLISHED_NC = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/reference/hillslopes_0.9x1.25_c240416.nc"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage5"
 
 
 def print_section(title: str) -> None:

@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """
-Extract a 4x4 km smoke test subset from the OSBS DTM mosaic.
+Extract a rectangular subset from the OSBS DTM mosaic.
 
-Uses user-provided WGS84 corner coordinates to identify the 4x4 tile grid,
+Uses user-provided WGS84 corner coordinates to identify the tile grid,
 then extracts from the mosaic and generates a verification heatmap.
-
-Creates:
-- data/osbs_smoke_test_4x4.tif - 4000x4000 pixel subset DEM
-- output/smoke_test/elevation_heatmap.png - verification plot
 """
 
 from pathlib import Path
@@ -25,7 +21,7 @@ DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "output" / "osbs"
 
 MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
-SUBSET_PATH = DATA_DIR / "mosaics" / "OSBS_smoke_test_4x4.tif"
+SUBSET_PATH = DATA_DIR / "mosaics" / "OSBS_subset.tif"
 HEATMAP_PATH = OUTPUT_DIR / "elevation_heatmap.png"
 
 # User-provided corner coordinates (WGS84)
@@ -134,7 +130,7 @@ def generate_heatmap(dem: np.ndarray, bounds: dict, output_path: Path):
 
     # Labels
     ax.set_title(
-        f"OSBS Smoke Test Subset (1m NEON LIDAR)\n"
+        f"OSBS Subset (1m NEON LIDAR)\n"
         f"Extent: {extent_e:.1f} x {extent_n:.1f} km | "
         f"Elevation: {elev_min:.1f} - {elev_max:.1f} m | "
         f"Shape: {dem.shape[1]} x {dem.shape[0]} px",
@@ -172,7 +168,7 @@ def generate_heatmap(dem: np.ndarray, bounds: dict, output_path: Path):
 def main():
     """Main entry point."""
     print("=" * 60)
-    print("OSBS Smoke Test Subset Extraction")
+    print("OSBS Subset Extraction")
     print("=" * 60)
 
     # Step 1: Convert corners to UTM

@@ -29,6 +29,9 @@ import numpy as np
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
 sys.path.insert(0, pysheds_fork)
 
+# Add parent directory for local imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from pysheds.pgrid import Grid
 
 # Local modules
@@ -58,9 +61,9 @@ except ImportError:
 
 
 # Configuration
-MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
-PUBLISHED_NC = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/hillslopes_0.9x1.25_c240416.nc"
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage9"
+MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif"
+PUBLISHED_NC = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/reference/hillslopes_0.9x1.25_c240416.nc"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage9"
 
 # Thresholds to test
 THRESHOLDS = [20, 34, 50, 100, 200]

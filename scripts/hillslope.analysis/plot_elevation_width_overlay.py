@@ -79,10 +79,17 @@ def plot_overlay_profiles(input_file: str, output_file: str) -> None:
     ds = xr.open_dataset(input_file)
 
     # Extract hillslope geometry (exclude stream column 16)
-    hillslope_idx = ds["hillslope_index"].values[0:N_HILLSLOPE_COLS]
-    elevation = ds["hillslope_elev"].values[0:N_HILLSLOPE_COLS]
-    width = ds["hillslope_width"].values[0:N_HILLSLOPE_COLS]
-    distance = ds["hillslope_distance"].values[0:N_HILLSLOPE_COLS]
+    # Squeeze to handle both 1D and 3D arrays (e.g., shape (16,) or (16,1,1))
+    hillslope_idx = ds["hillslope_index"].values[0:N_HILLSLOPE_COLS].squeeze()
+
+    # Support both variable names (hillslope_elevation in new files, hillslope_elev in old)
+    elev_var = (
+        "hillslope_elevation" if "hillslope_elevation" in ds else "hillslope_elev"
+    )
+    elevation = ds[elev_var].values[0:N_HILLSLOPE_COLS].squeeze()
+
+    width = ds["hillslope_width"].values[0:N_HILLSLOPE_COLS].squeeze()
+    distance = ds["hillslope_distance"].values[0:N_HILLSLOPE_COLS].squeeze()
 
     ds.close()
 

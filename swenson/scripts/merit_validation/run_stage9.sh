@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48GB
 #SBATCH --time=02:00:00
-#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/logs/stage9_%j.log
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage9/stage9_%j.log
 
 # Stage 9: Accumulation Threshold Sensitivity Analysis
 # Tests different accumulation thresholds to determine if area correlation
@@ -34,7 +34,7 @@ echo "Verifying pysheds import..."
 python -c "from pysheds.pgrid import Grid; print('pysheds.pgrid import: OK')"
 
 # Script directory (absolute path)
-SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts"
+SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation"
 cd "$SCRIPT_DIR"
 
 # Run the stage 9 script

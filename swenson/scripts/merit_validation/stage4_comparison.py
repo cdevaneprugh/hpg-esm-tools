@@ -17,9 +17,9 @@ Published data:
 - Resolution: 0.9° x 1.25° (288 x 192 gridcells globally)
 
 Data paths:
-- Stage 3 output: swenson/output/stage3/stage3_hillslope_params.json
-- Published data: swenson/data/hillslopes_0.9x1.25_c240416.nc
-- Output: swenson/output/stage4/
+- Stage 3 output: swenson/output/merit_validation/stage3/stage3_hillslope_params.json
+- Published data: swenson/data/reference/hillslopes_0.9x1.25_c240416.nc
+- Output: swenson/output/merit_validation/stage4/
 
 Expected runtime: ~5 minutes
 """
@@ -46,12 +46,12 @@ except ImportError:
 
 
 # Configuration
-STAGE3_RESULTS = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage3/stage3_hillslope_params.json"
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage4"
+STAGE3_RESULTS = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage3/stage3_hillslope_params.json"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage4"
 
 # Published data paths (try multiple locations)
 PUBLISHED_DATA_PATHS = [
-    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/hillslopes_0.9x1.25_c240416.nc",
+    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/reference/hillslopes_0.9x1.25_c240416.nc",
 ]
 
 # Download URL for published data

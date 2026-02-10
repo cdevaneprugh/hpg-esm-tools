@@ -62,3 +62,4 @@ dependencies:
   - ipython>=8.20.0       # better REPL
   - rich>=13.7.0          # pretty terminal output
   - pyyaml>=6.0.0
+  - poppler>=24.0.0       # PDF utilities (pdftoppm for Claude Code PDF reading)

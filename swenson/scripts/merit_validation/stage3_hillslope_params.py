@@ -24,9 +24,9 @@ The 6 parameters per hillslope element:
 Structure: 4 aspects × 4 elevation bins = 16 hillslope elements per gridcell
 
 Data paths:
-- Stage 2 output: swenson/output/stage2/stage2_results.json
-- MERIT DEM: /blue/gerber/cdevaneprugh/Representative_Hillslopes/topo_data/n30w095_dem.tif
-- Output: swenson/output/stage3/
+- Stage 2 output: swenson/output/merit_validation/stage2/stage2_results.json
+- input: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif
+- Output: swenson/output/merit_validation/stage1/
 
 Expected runtime: ~30-60 minutes on 4 cores with 32GB RAM
 """
@@ -40,6 +40,9 @@ import numpy as np
 # Add pysheds fork to path
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
 sys.path.insert(0, pysheds_fork)
+
+# Add parent directory for local imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pysheds.pgrid import Grid
 
@@ -63,11 +66,11 @@ except ImportError:
 
 
 # Configuration
-MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
+MERIT_DEM_PATH = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif"
 STAGE2_RESULTS = (
-    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage2/stage2_results.json"
+    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage2/stage2_results.json"
 )
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage3"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage3"
 
 # Processing parameters
 N_ASPECT_BINS = 4  # N, E, S, W

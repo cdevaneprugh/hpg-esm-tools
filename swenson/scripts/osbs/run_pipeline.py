@@ -4,10 +4,9 @@ Full Mosaic Pipeline for OSBS 1m LIDAR Data
 
 Run the Swenson hillslope methodology on the full 19x17 km OSBS mosaic.
 
-This script adapts run_smoke_test_pipeline.py for the full mosaic with:
+Features:
 - Memory-efficient processing
 - Progress logging for long-running jobs
-- Same methodology as the 4x4km smoke test
 
 Creates:
 - output/full_mosaic/lc_spectral_analysis.png
@@ -60,21 +59,12 @@ TILE_SELECTION_MODE = os.environ.get("TILE_SELECTION_MODE", "all")
 # Interior tile selection (excludes edge tiles to avoid boundary effects)
 # Format: list of "R#C#-R#C#" range strings
 INTERIOR_TILE_RANGES = [
-    "R1C11-R1C13",  # 3 tiles
-    "R2C11-R2C13",  # 3 tiles
-    "R3C11-R3C13",  # 3 tiles
-    "R4C5-R4C14",  # 10 tiles
-    "R5C1-R5C14",  # 14 tiles
-    "R6C1-R6C14",  # 14 tiles
-    "R7C1-R7C14",  # 14 tiles
-    "R8C1-R8C14",  # 14 tiles
-    "R9C1-R9C14",  # 14 tiles
-    "R10C1-R10C16",  # 16 tiles
-    "R11C5-R11C16",  # 12 tiles
-    "R12C5-R12C16",  # 12 tiles
-    "R13C5-R13C11",  # 7 tiles
-    "R14C5-R14C11",  # 7 tiles
-    "R15C5-R15C11",  # 7 tiles
+    "R4C10-R4C12",  # 3 tiles
+    "R5C9-R5C12",  # 4 tiles
+    "R6C9-R6C14",  # 6 tiles
+    "R7C7-R7C14",  # 8 tiles
+    "R8C6-R8C14",  # 9 tiles
+    "R9C6-R9C14",  # 9 tiles
 ]
 
 # Tile grid parameters (from tile_grid.md)
@@ -176,7 +166,7 @@ def tile_to_filepath(row: int, col: int) -> Path:
     easting = TILE_GRID_ORIGIN_EASTING + col * TILE_SIZE
     northing = TILE_GRID_ORIGIN_NORTHING - row * TILE_SIZE
     filename = f"NEON_D03_OSBS_DP3_{easting}_{northing}_DTM.tif"
-    return DATA_DIR / "tiles" / filename
+    return DATA_DIR / "neon" / "dtm" / filename
 
 
 def create_custom_mosaic(
@@ -278,7 +268,7 @@ def generate_mosaic_heatmap(mosaic_path: Path, output_path: Path) -> None:
 
 
 # =============================================================================
-# Spatial Scale Analysis (UTM-adapted) - Same as smoke test
+# Spatial Scale Analysis (UTM-adapted)
 # =============================================================================
 
 
@@ -579,7 +569,7 @@ def identify_spatial_scale_utm(
 
 
 # =============================================================================
-# Hillslope Parameter Functions (same as smoke test)
+# Hillslope Parameter Functions
 # =============================================================================
 
 
@@ -1227,7 +1217,7 @@ def main():
         tile_coords = parse_all_tile_ranges(INTERIOR_TILE_RANGES)
         print_progress(f"  Selected {len(tile_coords)} tiles")
 
-        mosaic_path = DATA_DIR / "mosaics" / "OSBS_interior.tif"
+        mosaic_path = DATA_DIR / "mosaics" / f"OSBS_{OUTPUT_DESCRIPTOR}.tif"
         mosaic_path, tile_count = create_custom_mosaic(tile_coords, mosaic_path)
 
         # Generate verification heatmap

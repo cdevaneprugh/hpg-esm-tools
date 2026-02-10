@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32GB
 #SBATCH --time=02:00:00
-#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/logs/stage1_%j.log
+#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage1/stage1_%j.log
 
 # Stage 1: pgrid Validation on MERIT DEM
 # Validates pysheds fork processing on full MERIT tile
@@ -33,7 +33,7 @@ echo "Verifying pysheds import..."
 python -c "from pysheds.pgrid import Grid; print('pysheds.pgrid import: OK')"
 
 # Script directory (absolute path)
-SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts"
+SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation"
 cd "$SCRIPT_DIR"
 
 # Run the stage 1 script

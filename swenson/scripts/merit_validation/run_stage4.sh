@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8GB
 #SBATCH --time=00:30:00
-#SBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/logs/stage4_%j.log
+#uBATCH --output=/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/merit_validation/stage4/stage4_%j.log
 
 # Stage 4: Compare to Swenson's Published Data
 # Compares our results to the published global hillslope dataset
@@ -24,7 +24,7 @@ module load conda
 conda activate ctsm
 
 # Script directory (absolute path)
-SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts"
+SCRIPT_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/merit_validation"
 cd "$SCRIPT_DIR"
 
 # Run the stage 4 script

@@ -15,8 +15,8 @@ This script:
 The spatial scale is used in Stage 3 to set the stream network threshold.
 
 Data paths:
-- Input: /blue/gerber/cdevaneprugh/Representative_Hillslopes/topo_data/n30w095_dem.tif
-- Output: swenson/output/stage2/
+- Input: /blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif
+- Output: swenson/output/merit_validation/stage2/
 
 Expected runtime: ~5-15 minutes on 4 cores with 32GB RAM
 """
@@ -27,7 +27,8 @@ import time
 import json
 import numpy as np
 
-# Local spatial_scale module
+# Add parent directory to path for local imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from spatial_scale import identify_spatial_scale_laplacian_dem
 
 try:
@@ -47,9 +48,9 @@ except ImportError:
 
 # Configuration
 MERIT_DEM_PATH = (
-    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/MERIT_DEM_sample/n30w095_dem.tif"
+    "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/merit/n30w095_dem.tif"
 )
-OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/stage2"
+OUTPUT_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/output/merit_validation/stage2"
 
 # Analysis parameters
 MAX_HILLSLOPE_LENGTH = 10000  # meters (10 km max)
@@ -57,7 +58,7 @@ NLAMBDA = 30  # number of wavelength bins
 
 # For testing, process subregions at different sizes
 # Set to None to process full tile
-SUBREGION_SIZES = [500, 1000, 2000]  # pixels per side
+SUBREGION_SIZES = [500, 1000, 3000]  # pixels per side
 
 
 def print_section(title: str) -> None:
