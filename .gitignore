@@ -6,7 +6,10 @@ scripts/hillslope.analysis/data/
 scripts/case.analyzer/analysis/
 
 # Swenson hillslope implementation (large GeoTIFFs, outputs, logs)
-swenson/data/
+swenson/data/**
+!swenson/data/**/
+!swenson/data/**/*.md
+!swenson/data/**/.gitignore
 swenson/output/
 swenson/logs/
 
