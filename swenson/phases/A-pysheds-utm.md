@@ -15,7 +15,7 @@ Both the DTND problem (STATUS.md #1) and the slope/aspect problem (#4) stem from
 | pysheds DTND | Correct (flow-path-linked) | Wrong (haversine on UTM) |
 | Pipeline EDT | Wrong (nearest regardless of drainage) | Correct (Euclidean on UTM) |
 
-**Slope/aspect:** Stage 8 of MERIT validation discovered `np.gradient`-based aspect had a Y-axis sign inversion swapping North/South. The fix (pgrid's `slope_aspect()` with Horn 1981 stencil) was applied to MERIT validation but not the OSBS pipeline, because `slope_aspect()` also assumes geographic coordinates.
+**Slope/aspect:** Stage 8 of MERIT validation discovered `np.gradient`-based aspect had a Y-axis sign inversion swapping North/South. The sign bug has been fixed directly in `run_pipeline.py` (`-dzdy` → `dzdy`, see log below), but the pipeline still uses `np.gradient` rather than pgrid's Horn 1981 stencil. The full replacement requires pgrid's `slope_aspect()` to work with UTM coordinates — currently it assumes geographic (haversine spacing).
 
 **Fix location:** `$PYSHEDS_FORK/pysheds/pgrid.py`
 - `compute_hand()` lines 1928-1942 (haversine distance)

@@ -19,7 +19,7 @@ The current pipeline (STATUS.md #9) has ~400 lines of duplicated code between ME
 ## Tasks
 
 - [ ] Replace EDT-based DTND with pysheds hydrological DTND (from Phase A)
-- [ ] Replace np.gradient slope/aspect with pgrid Horn 1981 (from Phase A)
+- [ ] Replace np.gradient slope/aspect with pgrid Horn 1981 (from Phase A) — sign bug already fixed as interim measure; this replaces the method entirely
 - [ ] Set processing resolution (from Phase B)
 - [ ] Set Lc and accumulation threshold (from Phase C)
 - [ ] Extract shared hillslope analysis module (quadratic solver, trapezoidal fitting, HAND binning, width computation)
