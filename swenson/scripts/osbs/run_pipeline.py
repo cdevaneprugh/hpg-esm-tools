@@ -1520,11 +1520,12 @@ def main():
     # Slope magnitude (m/m)
     slope = np.sqrt(dzdx**2 + dzdy**2)
 
-    # Aspect (degrees from North, clockwise)
-    # Steepest descent is along the negative of the gradient
-    # Note: numpy y-axis increases downward (row index), x-axis increases rightward (col index)
-    # For geographic North (up on map), we need -dzdy for the y component
-    aspect = np.degrees(np.arctan2(-dzdx, -dzdy))
+    # Aspect (degrees from North, clockwise) = arctan2(east_downhill, north_downhill)
+    # np.gradient axis 0 follows row index (increases southward in GeoTIFF):
+    #   dzdy = d(elev)/d(south) = -d(elev)/d(north)
+    # Therefore: north_downhill = -d(elev)/d(north) = dzdy (no negation needed)
+    #            east_downhill  = -d(elev)/d(east)  = -dzdx
+    aspect = np.degrees(np.arctan2(-dzdx, dzdy))
     aspect[aspect < 0] += 360  # Convert to 0-360
 
     # Mask invalid areas

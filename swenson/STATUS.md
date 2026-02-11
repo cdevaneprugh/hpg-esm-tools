@@ -128,25 +128,81 @@ The bottleneck is pysheds' `resolve_flats()`, which has poor scaling on large fl
 
 **This is a PI question.** The spectral analysis is complete. Lc ~300m (range 285-356m) is the best FFT-based candidate, with A_thresh ~45,000-63,000 m² (same order of magnitude as MERIT). Remaining validation: Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A fixes first).
 
-### 4. Slope/aspect calculation not validated
+### 4. Slope/aspect: N/S aspect swap in OSBS pipeline — FIXED
 
-**Impact:** Potentially corrupts slope and aspect parameters for all 16 columns; also corrupts aspect-based binning (which affects area fractions).
+**Impact:** Corrupted aspect for all pixels, which corrupted aspect-based binning and area fractions for all 16 hillslope columns.
 
 **File:** `scripts/osbs/run_pipeline.py` lines 1514-1528
 
-Stage 8 of the MERIT validation discovered that `np.gradient`-based aspect had a Y-axis sign inversion that swapped North/South. The fix (use pgrid's `slope_aspect()` with Horn 1981 stencil) was applied to `stage3_hillslope_params.py` but **not** to the OSBS pipeline.
+**Status: FIXED.** The sign bug (`-dzdy` → `dzdy`) has been applied to `run_pipeline.py:1527`. Phase D will replace `np.gradient` entirely with pgrid's `slope_aspect()` once Phase A makes it UTM-aware.
 
-The OSBS pipeline uses `np.gradient` with `arctan2(-dzdx, -dzdy)`, which *may* compensate for the sign issue, but this was **never validated** against the stage 8 findings.
+#### How the bug happened
 
-The reason pgrid's method wasn't used directly: it assumes geographic coordinates (haversine spacing). Same CRS problem as DTND.
+The OSBS pipeline cannot use pgrid's `slope_aspect()` because `_gradient_horn_1981()` internally computes haversine distances, which produce garbage on UTM data. So the pipeline uses `np.gradient(dem, pixel_size)` as a workaround and applies the same `arctan2(-dzdx, -dzdy)` formula from pgrid.
 
-**Fix path:** Either:
-- Adapt pgrid's `slope_aspect()` / `_gradient_horn_1981()` for UTM (replace haversine spacing with uniform pixel_size)
-- Validate the existing np.gradient approach against a known-correct result
+The problem: pgrid and `np.gradient` return `dzdy` with **opposite sign conventions**, and the formula was copied without adjusting for this.
 
-This is the easiest of the 4 critical issues to resolve.
+**pgrid's `_gradient_horn_1981()`** references neighbors by compass direction (N, NE, E, ...) and normalizes spacings with `abs()`:
+```python
+dy = re * np.abs(dtr * dlat)  # always positive regardless of data ordering
+```
+Combined with the explicit neighbor ordering, this always returns `dzdy = d(elev)/d(north)` — positive means elevation increases northward.
 
-**NEON validation data:** NEON provides precalculated slope/aspect rasters (DP3.30025.001) which could serve as a validation baseline. Key tradeoffs: NEON likely has better flat-area handling (where near-zero gradients make aspect noisy), but adds an external dependency and grid alignment must be verified. However, bin-averaged means over thousands of pixels may wash out per-pixel differences anyway. Worth a comparison test — see PI question #5.
+**`np.gradient`** computes finite differences along array axes, following array indexing order. In a standard GeoTIFF (row 0 = north, row index increases southward):
+- `dzdy = d(elev)/d(row) = d(elev)/d(south) = -d(elev)/d(north)` — **opposite sign** from pgrid
+
+The pipeline's original comment showed the reasoning that led to the error:
+```python
+# Note: numpy y-axis increases downward (row index), x-axis increases rightward (col index)
+# For geographic North (up on map), we need -dzdy for the y component
+```
+The author correctly recognized that dzdy follows rows (southward) and that `-dzdy` converts to d(elev)/d(north). But the aspect formula needs `north_downhill` = **-**d(elev)/d(north) = dzdy (no negation). The extra negation in the formula produces `north_uphill` instead — one level of negation too many.
+
+#### What the bug does
+
+The bug reflects aspect across the east-west axis (the 90°-270° line):
+
+| Correct | Buggy | Error |
+|---------|-------|-------|
+| 0° (N) | 180° (S) | 180° |
+| 45° (NE) | 135° (SE) | 90° |
+| 90° (E) | 90° (E) | 0° |
+| 135° (SE) | 45° (NE) | 90° |
+| 180° (S) | 0° (N) | 180° |
+| 270° (W) | 270° (W) | 0° |
+
+Pure east/west aspects are unaffected. Everything else is corrupted, with maximum error (180°) for pure north/south aspects. At OSBS with nearly uniform aspect distribution, this systematically swaps N-bin and S-bin pixel assignments.
+
+#### What this does NOT affect
+
+Slope magnitude (`sqrt(dzdx² + dzdy²)` — sign-independent), HAND (elevation differences), DTND (distances, always positive), flow routing (compares neighbor elevations directly).
+
+#### What this DOES affect — downstream corruption chain
+
+Everything downstream of line 1527 operated on wrong aspect values:
+
+| Step | Lines | Corruption |
+|------|-------|-----------|
+| Aspect binning | 1587 | Pixels assigned to wrong N/E/S/W hillslope |
+| Area fractions | 1619-1657 | Wrong pixel counts per aspect bin |
+| Trapezoidal width fit | 1624-1626 | Fit on wrong pixel populations |
+| Circular mean aspect | 1681 | Mean computed from wrong pixel sets |
+| All 6 params × 16 elements | 1659-1710 | height, distance, area, slope, aspect, width |
+| NetCDF output | 934-1182 | All hillslope variables in output file |
+
+The `circular_mean_aspect()` function (line 745) and `get_aspect_mask()` function (line 576) are themselves correct — they just received wrong input. No changes to those functions were needed.
+
+#### Where the bug did NOT occur
+
+- **pgrid's `slope_aspect()`** (`pgrid.py:2223`): Uses the same `arctan2(-dzdx, -dzdy)` formula, but correct because pgrid's `_gradient_horn_1981()` returns `dzdy = d/d(north)`.
+- **MERIT validation** (`stage3_hillslope_params.py:800`): Uses pgrid's `slope_aspect()` directly — correct.
+- **`calc_gradient_utm()`** (`run_pipeline.py:275`): Only used for FFT Laplacian computation. The Laplacian is a sum of second derivatives where signs cancel — not affected.
+
+#### History
+
+Stage 8 of MERIT validation discovered the N/S swap and fixed it by switching to pgrid's `slope_aspect()`. That fix could not be applied to the OSBS pipeline because pgrid uses haversine math that fails on UTM data.
+
+**NEON validation data:** NEON provides precalculated slope/aspect rasters (DP3.30025.001) which could serve as an additional validation baseline — see PI question #5.
 
 ### 5. DEM conditioning may erase real geomorphic features
 

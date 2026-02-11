@@ -24,14 +24,19 @@ Both the DTND problem (STATUS.md #1) and the slope/aspect problem (#4) stem from
 ## Tasks
 
 - [x] Fix deprecation warnings in `pgrid.py` (clean working state before making changes)
+- [ ] Create synthetic V-valley DEM for testing (1000x1000, UTM CRS, analytically known outputs)
 - [ ] Modify `compute_hand()` to detect UTM CRS and use Euclidean distance for DTND
 - [ ] Modify `slope_aspect()` / `_gradient_horn_1981()` to use uniform pixel spacing for UTM
+- [ ] Validate against synthetic DEM (slope, aspect, HAND, DTND must match analytical expectations)
 - [ ] Test both changes against MERIT validation (geographic CRS — should reproduce existing results)
 - [ ] Test on OSBS 4x4km smoke test region (UTM, known results to compare)
 
 ## Deliverable
 
-pysheds fork that correctly handles both geographic and UTM CRS for HAND/DTND computation and slope/aspect calculation. MERIT validation results unchanged. OSBS smoke test produces correct hydrological DTND and Horn 1981 slope/aspect.
+pysheds fork that correctly handles both geographic and UTM CRS for HAND/DTND computation and slope/aspect calculation. Validated three ways:
+1. **Synthetic V-valley DEM** — analytically known slope, aspect, HAND, DTND in UTM (catches CRS math bugs directly)
+2. **MERIT validation** — geographic CRS regression test (existing stages 1-9 reproduce >0.95 correlations)
+3. **OSBS smoke test** — real 1m LIDAR in UTM (confirms fix works on actual data)
 
 ## Log
 
@@ -54,3 +59,21 @@ Previous sessions had already fixed 27 warnings (12x `np.warnings` → `warnings
 Result: `pytest tests/test_hillslope.py -v` — 15/15 passed, 0 warnings. Strict mode (`-W error::DeprecationWarning`) also passes.
 
 `ruff check` shows 30 pre-existing lint issues (bare excepts, unused variables, etc.) from Swenson's original code — out of scope for this task.
+
+### 2026-02-10: Confirmed pipeline aspect bug (during synthetic DEM planning)
+
+While analyzing the GeoTIFF affine transform convention for the synthetic DEM design, confirmed that the OSBS pipeline's aspect calculation at `run_pipeline.py:1527` has the same N/S swap that stage 8 of MERIT validation discovered.
+
+The bug is in the sign of `dzdy`: `np.gradient` axis 0 gives `d(elev)/d(row) = d(elev)/d(south) = -d(elev)/d(north)`. The pipeline's `arctan2(-dzdx, -dzdy)` double-negates the north component, producing the uphill direction instead of downhill. Correct expression: `arctan2(-dzdx, dzdy)`.
+
+This does not affect slope (sign-independent), HAND, DTND, or flow routing. It only affects aspect and aspect-based binning.
+
+Phase A will fix this in pgrid. Phase D will replace the pipeline's `np.gradient` with the corrected pgrid method. The synthetic V-valley DEM catches this bug: expected east-side aspect is ~268° (west-facing); the buggy formula produces ~272° (3.8° error). The error is small because the cross-slope (0.03) dominates the downstream slope (0.001), so inverting the north component barely changes the angle. The CRS bugs (haversine on UTM) produce much larger errors and are the primary test target.
+
+Updated STATUS.md problem #4 from "not validated" to "confirmed bug" with the full affine sign analysis.
+
+### 2026-02-10: Fix aspect sign bug in run_pipeline.py
+
+Applied the aspect sign fix directly to `run_pipeline.py:1527`: changed `arctan2(-dzdx, -dzdy)` to `arctan2(-dzdx, dzdy)`. Rewrote the misleading comments at lines 1523-1526 to document the sign convention clearly. Updated STATUS.md problem #4 from "confirmed bug" to "FIXED" with expanded analysis of the root cause, downstream corruption chain, and history.
+
+This is an interim fix — Phase D will replace `np.gradient` entirely with pgrid's `slope_aspect()` once Phase A makes it UTM-aware. The synthetic V-valley DEM (Phase A task 2) will formally verify the fix.
