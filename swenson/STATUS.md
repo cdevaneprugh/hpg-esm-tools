@@ -32,7 +32,7 @@ This gives confidence that the *approach* is correct — we understand Swenson's
 ### Bugs found and fixed during validation
 
 - **Width calculation** (stage 6): Fixed from 0.09 to 0.96 correlation. Root cause was using raw pixel areas instead of fitted trapezoidal areas.
-- **North/South aspect swap** (stage 8): Fixed a Y-axis sign inversion in the gradient calculation that systematically swapped N and S aspects. Area fraction correlation improved from 0.64 to 0.82.
+- **North/South aspect swap** (stage 8): Fixed a Y-axis sign inversion in the gradient calculation that systematically swapped N and S aspects. Area fraction correlation improved from 0.64 to 0.82. The fix (switching to pgrid's `slope_aspect()`) only applied to the MERIT validation scripts — the OSBS pipeline could not use pgrid because its haversine math fails on UTM data. The same bug persisted in `run_pipeline.py` until an interim sign fix was applied (see problem #4). Full resolution requires Phase A (UTM-aware pgrid) and Phase D (replace `np.gradient` with Horn 1981 stencil).
 - **Gridcell alignment** (stage 7): Fixed region extraction to match the published 0.9x1.25 degree gridcell exactly.
 - **Mandatory 2m HAND bin constraint** (stage 7): Corrected our optional implementation to match Swenson's mandatory constraint per the paper.
 
@@ -50,7 +50,9 @@ This gives confidence that the *approach* is correct — we understand Swenson's
 - 233 NEON DTM tiles downloaded (1m, EPSG:32617, 19x17 km)
 - Full mosaic stitched (`OSBS_full.tif`, 17000x19000 pixels)
 - Interior tile selection defined (150 tiles, excludes edge/urban areas)
-- Interior mosaic created (`OSBS_interior.tif`)
+- Interior mosaic created (`OSBS_interior.tif`) — note: 37.5% nodata from tile gaps
+- Contiguous sub-region identified: R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata pixels out of 90M) — used as clean baseline for Phase C spectral analysis
+- Tile nodata coverage documented (`data/neon/tile_coverage.md`)
 - Tile reference system documented (R#C# format, KML for Google Earth)
 - osbs2 baseline case identified for future comparison (860+ year spinup)
 
@@ -98,7 +100,7 @@ The bottleneck is pysheds' `resolve_flats()`, which has poor scaling on large fl
 
 **Downstream effect:** Resolution affects the stream network, HAND, DTND, and through them all 6 hillslope parameters. Also affects Lc if the FFT is coupled to the same subsampled grid (it shouldn't be — see #3).
 
-### 3. Characteristic length scale (Lc): ~300m from restricted-wavelength FFT, pending PI decision
+### 3. Characteristic length scale (Lc): ~300m accepted as working value, physical validation pending Phase A
 
 **Impact:** Everything downstream depends on Lc — accumulation threshold, stream network density, HAND, DTND, all 6 parameters.
 
@@ -126,7 +128,7 @@ The bottleneck is pysheds' `resolve_flats()`, which has poor scaling on large fl
 2. ~~Single-tile FFT~~ — Tile R6C10 reproduces same spectral structure. Mosaic stitching is not creating artifacts.
 3. ~~Restricted wavelength range~~ — **200-500m hump IS a real peak when micro-topography excluded. Lc = 285-356m.**
 
-**This is a PI question.** The spectral analysis is complete. Lc ~300m (range 285-356m) is the best FFT-based candidate, with A_thresh ~45,000-63,000 m² (same order of magnitude as MERIT). Remaining validation: Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A fixes first).
+**PI accepts ~300m as working Lc (2026-02-11).** The spectral analysis is complete. Lc ~300m (range 285-356m) is the working value, with A_thresh ~45,000-63,000 m² (same order of magnitude as MERIT). Final judgement reserved until physical validation: Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A fixes first). If these checks fail, Lc will be revisited.
 
 ### 4. Slope/aspect: N/S aspect swap in OSBS pipeline — FIXED
 
@@ -313,9 +315,9 @@ Run in parallel with Phase A (independent work).
 
 **Deliverable:** Determined processing resolution with scientific justification.
 
-### Phase C: Establish trustworthy Lc — spectral analysis complete, Lc ~300m pending PI decision
+### Phase C: Establish trustworthy Lc — ~300m accepted as working value, physical validation pending
 
-**Status:** All spectral analysis complete. Restricted-wavelength FFT finds a drainage-scale peak at 285-356m. Pending PI decision on final Lc value. See `phases/C-characteristic-length.md`.
+**Status:** Spectral analysis complete. PI accepts Lc ~300m (range 285-356m) as working value (2026-02-11). Final judgement reserved until physical validation after Phase A. See `phases/C-characteristic-length.md`.
 
 **Completed:**
 1. Full-resolution (1m) FFT on interior mosaic — Laplacian peak at 8.1m (artifact)
@@ -325,12 +327,12 @@ Run in parallel with Phase A (independent work).
 5. Single-tile FFT (R6C10) — confirms spectral features are intrinsic, not mosaic artifacts
 6. Restricted wavelength sweep — **200-500m hump IS a real peak at cutoff >= 20m: Lc = 285-356m**
 7. Tile coverage documented (`data/neon/tile_coverage.md`)
+8. PI decision: ~300m accepted as working value
 
 **Remaining:**
-8. PI decision on Lc: accept ~300m with restricted-wavelength justification?
 9. Physical validation: Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A)
 
-**Deliverable:** Lc value with scientific justification — pending remaining follow-up and PI input.
+**Deliverable:** Lc value with scientific justification. Working value established; final confirmation after physical validation.
 
 ### Phase D: Rebuild pipeline with fixes (depends on A, B, C)
 
@@ -397,7 +399,7 @@ These require scientific judgment, not engineering work:
 
 5. **NEON slope/aspect products:** NEON DP3.30025.001 provides precalculated slope/aspect rasters. Worth using as a validation baseline for our gradient calculation, especially for flat terrain where the noise-to-signal ratio is high. Requires grid alignment verification. Decision: use as a validation check only, or replace our calculation entirely?
 
-6. **Lc at 1m resolution — spectral analysis complete, decision needed:** The restricted-wavelength FFT finds a drainage-scale peak at Lc = 285-356m when micro-topographic wavelengths (< 20m) are excluded. This gives A_thresh ~45,000-63,000 m², the same order of magnitude as MERIT. The full-range FFT's 8.1m peak is confirmed as a k² artifact. Is ~300m an acceptable Lc for OSBS? Physical validation (Lc vs max DTND, Lc² vs mean catchment area) will be possible after Phase A fixes. See `phases/C-characteristic-length.md` for full analysis.
+6. **Lc at 1m resolution — ~300m accepted as working value (2026-02-11).** The restricted-wavelength FFT finds a drainage-scale peak at Lc = 285-356m when micro-topographic wavelengths (< 20m) are excluded. This gives A_thresh ~45,000-63,000 m², the same order of magnitude as MERIT. PI accepts ~300m as working value; final judgement reserved until physical validation (Lc vs max DTND, Lc² vs mean catchment area) after Phase A. See `phases/C-characteristic-length.md` for full analysis.
 
    **Important: Lc resolution and flow routing resolution are independent.** Lc is used for exactly one thing — setting A_thresh = 0.5 * Lc², which controls stream network density. Once A_thresh is determined, it can be applied at any routing resolution. The fact that Lc requires filtering out sub-20m wavelengths does **not** imply the DEM should be subsampled to ~100m for flow routing. The restricted-wavelength approach computes the full 1m FFT and filters during peak fitting — no information destruction, no aliasing. Flow routing, HAND, and DTND still benefit from 1m resolution: wetland depressions (10-50m across), stream channels (1-5m wide), and sub-meter elevation differences that drive TAI dynamics all require fine resolution to resolve.
 

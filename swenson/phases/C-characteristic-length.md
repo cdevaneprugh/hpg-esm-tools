@@ -1,7 +1,7 @@
 # Phase C: Establish Trustworthy Characteristic Length Scale (Lc)
 
-Status: In progress
-Depends on: Phase B (for final resolution decision, but FFT itself is independent)
+Status: Lc ~300m accepted as working value, pending physical validation after Phase A
+Depends on: Phase A (for physical validation checks)
 Blocks: Phase D
 
 ## Problem
@@ -33,7 +33,7 @@ Additionally, FFT parameters (#8) were copied from Swenson's 90m defaults withou
 | ~~F~~ | ~~Region size~~ | ~~deferred — Lc is stable, not needed~~ |
 
 - [x] Determine whether Lc is stable or sensitive to parameters
-- [ ] Set final Lc value with justification — **pending PI discussion (see results below)**
+- [ ] Set final Lc value with justification — **PI accepts ~300m as working value; final judgement reserved until physical validation after Phase A**
 
 ## Deliverable
 
@@ -284,8 +284,20 @@ The 20m cutoff transition makes physical sense: features below ~20m at 1m resolu
 
 This resolves the Lc question to the extent possible with spectral analysis alone. The remaining open items are:
 - Physical validation via Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A fixes)
-- PI discussion: accept ~300m as Lc, or use an alternative approach?
+- ~~PI discussion: accept ~300m as Lc, or use an alternative approach?~~ — resolved 2026-02-11, see below
 - If 300m is accepted, what cutoff wavelength to standardize on? (20m and 100m both give reasonable results)
+
+### 2026-02-11: PI accepts ~300m as working Lc
+
+PI reviewed the spectral analysis summary and agrees that ~300m passes the sniff test for OSBS drainage-scale periodicity. The 8m micro-topographic peak, the k² artifact explanation, and the restricted-wavelength resolution were all discussed.
+
+**Decision:** Accept Lc ~300m (range 285-356m) as the working value for pipeline development. Reserve final judgement until Phase A delivers correct DTND and we can run the paper's physical validation checks:
+- Lc vs max(DTND): expect max ridge-to-channel distance ~300m
+- Lc² vs mean catchment area: expect mean catchment ~90,000 m²
+
+If these checks fail, Lc will be revisited. The restricted-wavelength FFT result provides the starting point, not necessarily the final answer.
+
+**Also discussed:** The 8m micro-topographic signal is real and scientifically relevant to OSBS hydrology (water accumulation in micro-depressions, spillheight dynamics), but the Swenson hillslope framework is not the right vehicle for it. D8 routing, mandatory depression filling, and HAND-based binning are fundamentally mismatched with micro-topographic processes. The ~300m Lc targets the macro drainage network, which is what the Swenson method is designed to characterize. Micro-topography handling would require new routing algorithms and a new framework — a separate research effort.
 
 #### Updated Lc comparison table
 

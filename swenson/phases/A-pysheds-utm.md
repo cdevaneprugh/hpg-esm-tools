@@ -24,7 +24,7 @@ Both the DTND problem (STATUS.md #1) and the slope/aspect problem (#4) stem from
 ## Tasks
 
 - [x] Fix deprecation warnings in `pgrid.py` (clean working state before making changes)
-- [ ] Create synthetic V-valley DEM for testing (1000x1000, UTM CRS, analytically known outputs)
+- [x] Create synthetic V-valley DEM for testing (1000x1000, UTM CRS, analytically known outputs)
 - [ ] Modify `compute_hand()` to detect UTM CRS and use Euclidean distance for DTND
 - [ ] Modify `slope_aspect()` / `_gradient_horn_1981()` to use uniform pixel spacing for UTM
 - [ ] Validate against synthetic DEM (slope, aspect, HAND, DTND must match analytical expectations)
@@ -71,6 +71,28 @@ This does not affect slope (sign-independent), HAND, DTND, or flow routing. It o
 Phase A will fix this in pgrid. Phase D will replace the pipeline's `np.gradient` with the corrected pgrid method. The synthetic V-valley DEM catches this bug: expected east-side aspect is ~268° (west-facing); the buggy formula produces ~272° (3.8° error). The error is small because the cross-slope (0.03) dominates the downstream slope (0.001), so inverting the north component barely changes the angle. The CRS bugs (haversine on UTM) produce much larger errors and are the primary test target.
 
 Updated STATUS.md problem #4 from "not validated" to "confirmed bug" with the full affine sign analysis.
+
+### 2026-02-11: Task 1 — Create synthetic V-valley DEM
+
+Created a synthetic V-valley DEM for validating pysheds UTM CRS handling. Generator script and documentation live in `$PYSHEDS_FORK/data/synthetic_valley/`.
+
+**Files:**
+- `generate_synthetic_dem.py` — generates 1000x1000 UTM GeoTIFF with analytically known outputs
+- `README.md` — full documentation of elevation formula, D8 routing behavior, HAND/DTND derivations, known limitations
+- `synthetic_valley_utm.tif` — generated output (not committed, regenerable)
+
+**Geometry:** Two planar hillslopes (cross_slope=0.03 m/m) meeting at a central N-S channel (downstream_slope=0.001 m/m). Every pixel has a closed-form solution for slope, aspect, HAND, and DTND.
+
+**What it catches:**
+| Bug | Detection |
+|-----|-----------|
+| Haversine DTND on UTM | DTND should be 500m at ridge — haversine on meters gives garbage |
+| Haversine gradient spacing on UTM | Slope/aspect wrong from haversine spacing |
+| N/S aspect swap | 3.82 deg systematic offset (small because cross_slope >> downstream_slope) |
+
+**What it can't catch:** EDT vs flow-path DTND (V-valley gives same answer for both — would need multi-basin DEM).
+
+Committed and pushed to `uf-development` on the pysheds fork.
 
 ### 2026-02-10: Fix aspect sign bug in run_pipeline.py
 
