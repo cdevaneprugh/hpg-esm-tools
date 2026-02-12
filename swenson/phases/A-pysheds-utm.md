@@ -29,14 +29,14 @@ Both the DTND problem (STATUS.md #1) and the slope/aspect problem (#4) stem from
 - [ ] Modify `slope_aspect()` / `_gradient_horn_1981()` to use uniform pixel spacing for UTM
 - [ ] Validate against synthetic DEM (slope, aspect, HAND, DTND must match analytical expectations)
 - [ ] Test both changes against MERIT validation (geographic CRS — should reproduce existing results)
-- [ ] Test on OSBS 4x4km smoke test region (UTM, known results to compare)
+- [ ] Test on single interior tile R6C10 (UTM, real NEON LIDAR with lake/swamp/upland)
 
 ## Deliverable
 
 pysheds fork that correctly handles both geographic and UTM CRS for HAND/DTND computation and slope/aspect calculation. Validated three ways:
 1. **Synthetic V-valley DEM** — analytically known slope, aspect, HAND, DTND in UTM (catches CRS math bugs directly)
 2. **MERIT validation** — geographic CRS regression test (existing stages 1-9 reproduce >0.95 correlations)
-3. **OSBS smoke test** — real 1m LIDAR in UTM (confirms fix works on actual data)
+3. **OSBS smoke test** — single interior tile R6C10 in UTM (real NEON LIDAR with lake/swamp/upland)
 
 ## Log
 

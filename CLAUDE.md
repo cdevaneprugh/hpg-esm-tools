@@ -117,13 +117,8 @@ Includes:
 
 ## Related Repositories
 
-- **hpg-esm-docs** - Official documentation (MkDocs/GitHub Pages)
-- **CTSM fork** - `github.com/cdevaneprugh/CTSM` branch `uf-ctsm5.3.085`
-  - Local: `/blue/gerber/cdevaneprugh/ctsm5.3`
-  - Contains HiPerGator-specific tool fixes (mksurfdata, subset_data paths)
-- **ccs_config_cesm fork** - `github.com/cdevaneprugh/ccs_config_cesm` branch `uf-hipergator`
-  - Submodule of CTSM fork
-  - Contains HiPerGator machine configuration
+Repository details (GitHub URLs, branches, local paths) are in `$BLUE/CLAUDE.md`.
+Each repository has its own `CLAUDE.md` with detailed guidance.
 
 ## Working with Claude Code
 

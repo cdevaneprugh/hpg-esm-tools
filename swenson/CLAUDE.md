@@ -29,11 +29,19 @@ Phase files are the **primary record** of what was done and why. After completin
 | Resource | Location |
 |----------|----------|
 | Project status | `STATUS.md` |
-| Tile grid reference | `tile_grid.md` |
+| Tile coverage reference | `data/neon/tile_coverage.md` |
 | Paper summary | `../docs/papers/Swenson_2025_Hillslope_Dataset_Summary.md` |
 | Swenson's codebase | `/blue/gerber/cdevaneprugh/Representative_Hillslopes/` |
 | Our pysheds fork | `$BLUE/pysheds_fork` |
 | pysheds documentation | https://mattbartos.com/pysheds/ |
+
+## Standard Test Data
+
+| Dataset | Description | Location |
+|---------|-------------|----------|
+| Single-tile smoke test | R6C10 — representative tile with lake, swamp, upland | `data/neon/dtm/NEON_D03_OSBS_DP3_404000_3286000_DTM.tif` |
+| Contiguous mosaic region | R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata) | Pixel coords `[3000:12000, 4000:14000]` in `data/mosaics/OSBS_interior.tif` |
+| Full tile coverage map | Nodata percentages, row/column assignments | `data/neon/tile_coverage.md` |
 
 ## Directory Structure
 
@@ -41,7 +49,6 @@ Phase files are the **primary record** of what was done and why. After completin
 swenson/
 ├── CLAUDE.md                  # This file
 ├── STATUS.md                  # Living project status document
-├── tile_grid.md               # Tile reference system (R#C# format)
 │
 ├── phases/                    # Phase tracking files (A-F)
 │   ├── A-pysheds-utm.md       # Fix pysheds for UTM CRS
