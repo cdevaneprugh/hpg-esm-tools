@@ -154,8 +154,8 @@ Three quick tests to resolve the interpretation:
 Each test takes seconds. Together they determine whether 8m is the right Lc, or whether the secondary feature at 200-400m is more physically appropriate.
 
 Two additional consistency checks from the paper (applicable once Phase A provides correct DTND):
-- [ ] **Lc vs max(DTND):** Does the selected Lc predict realistic ridge-to-channel distances? (Paper: Lc ≈ max DTND)
-- [ ] **Lc² vs mean catchment area:** Does the selected Lc produce physically reasonable catchment sizes? (Paper: mean catchment ≈ Lc²)
+- [x] **Lc vs max(DTND):** Does the selected Lc predict realistic ridge-to-channel distances? (Paper: Lc ≈ max DTND) — **Run 2026-02-17. max(DTND)/Lc = 3.1 at Lc=300 (FAIL), but P99/Lc = 1.6 (PASS). See log entry.**
+- [x] **Lc² vs mean catchment area:** Does the selected Lc produce physically reasonable catchment sizes? (Paper: mean catchment ≈ Lc²) — **Run 2026-02-17. mean(catch)/Lc² = 0.876 at Lc=300 (PASS). See log entry.**
 
 #### Open question for PI
 
@@ -309,4 +309,32 @@ If these checks fail, Lc will be revisited. The restricted-wavelength FFT result
 | OSBS (interior, 1m, full range) | FFT peak (artifact) | 8.1m | 33 cells (33 m²) |
 | **OSBS (interior, 1m, cutoff>=20m)** | **FFT peak** | **356m** | **63,368 cells (63,368 m²)** |
 | **OSBS (interior, 1m, cutoff>=100m)** | **FFT peak** | **285m** | **40,612 cells (40,612 m²)** |
+
+### 2026-02-17: Physical validation — Check 2 passes, Check 1 fails on outlier max
+
+Job 25164927 completed in ~4 minutes. Script: `scripts/smoke_tests/validate_lc_physical.py`. Output: `output/osbs/smoke_tests/lc_physical_validation/`.
+
+**Test region:** 5x5 tile block (R6-R10, C7-C11), 5000x5000 pixels at 1m (25M pixels, 5km x 5km). All 25 tiles 0% nodata. 0 edge catchments at all Lc values — domain is large enough that all catchments are fully interior.
+
+**DEM conditioning + flow routing completed at full 1m resolution in 67s at 64GB.** `resolve_flats` was not a bottleneck at this domain size. HAND/DTND took ~15s per Lc value.
+
+**Results across all three Lc values:**
+
+| Lc (m) | A_thresh | max DTND/Lc | P99 DTND/Lc | Verdict 1 | mean catch/Lc^2 | Verdict 2 |
+|--------|----------|-------------|-------------|-----------|-----------------|-----------|
+| 285 | 40,612 | 3.268 | 1.646 | FAIL | 0.851 | PASS |
+| 300 | 45,000 | 3.105 | 1.591 | FAIL | 0.876 | PASS |
+| 356 | 63,368 | 2.616 | 1.434 | MARGINAL | 0.877 | PASS |
+
+Swenson Section 2.4 calibration (low-relief): max(DTND)/Lc = 0.90, mean(catch)/Lc^2 = 0.94.
+
+**Check 2 (mean catchment area / Lc^2): PASS at all Lc values.** Ratios of 0.85-0.88, close to Swenson's 0.94 calibration. Catchment area distributions show well-defined modes near Lc^2. At Lc=300: 247 catchments, mean area 78,882 m^2 vs Lc^2 = 90,000 m^2.
+
+**Check 1 (max DTND / Lc): FAIL.** max(DTND) = 931m is the same pixel across all three Lc values — it's a single outlier on a large ridge feature. The DTND histogram shows the bulk of the distribution well below Lc:
+- At Lc=300: P95 = 350m (1.17x), P99 = 477m (1.59x), mean = 126m (0.42x), median = 104m (0.35x)
+- The max at 931m is 3.1x Lc — a single extreme value in a heavy-tailed distribution
+
+**Interpretation:** The terrain plot shows several large elevated features (ridges/hills with relief up to 30m over ~1km horizontal) that produce long flow paths. These are real geomorphic features, not artifacts. The question is whether Swenson's "max(DTND) ~ Lc" criterion is meant as a strict maximum or a bulk statistic. The paper's low-relief example (max DTND/Lc = 0.90) used 90m MERIT data where individual outlier pixels are smoothed away. At 1m resolution, extreme ridgeline pixels can have much longer flow paths than the typical drainage spacing.
+
+**Status:** Results recorded. Revisiting after pipeline refactoring — the physical validation may benefit from running on a larger domain or with different domain placement. The Check 1 FAIL is driven by a single max(DTND) value and may warrant using P99 or another robust statistic instead. This is a PI interpretation question.
 

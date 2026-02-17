@@ -1,6 +1,6 @@
 # State of the Union: Swenson Hillslope Implementation for OSBS
 
-Date: 2026-02-10
+Date: 2026-02-17
 
 ## Executive Summary
 
@@ -128,7 +128,9 @@ The bottleneck is pysheds' `resolve_flats()`, which has poor scaling on large fl
 2. ~~Single-tile FFT~~ — Tile R6C10 reproduces same spectral structure. Mosaic stitching is not creating artifacts.
 3. ~~Restricted wavelength range~~ — **200-500m hump IS a real peak when micro-topography excluded. Lc = 285-356m.**
 
-**PI accepts ~300m as working Lc (2026-02-11).** The spectral analysis is complete. Lc ~300m (range 285-356m) is the working value, with A_thresh ~45,000-63,000 m² (same order of magnitude as MERIT). Final judgement reserved until physical validation: Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A fixes first). If these checks fail, Lc will be revisited.
+**PI accepts ~300m as working Lc (2026-02-11).** The spectral analysis is complete. Lc ~300m (range 285-356m) is the working value, with A_thresh ~45,000-63,000 m² (same order of magnitude as MERIT).
+
+**Physical validation (2026-02-17):** Run on 5x5 tile block (R6-R10, C7-C11, 25M pixels at 1m). Check 2 (mean catchment area / Lc^2 = 0.876) **passes** — close to Swenson's calibration of 0.94. Check 1 (max DTND / Lc = 3.1) **fails** — but driven by a single 931m outlier pixel on a large ridge; P99/Lc = 1.6 and P95/Lc = 1.2 are within range. The max(DTND) is the same pixel across all three Lc values tested, suggesting one anomalously long catchment rather than a systematic Lc mismatch. Revisiting after refactoring — may warrant using P99 instead of max, or running on a larger domain. Results: `output/osbs/smoke_tests/lc_physical_validation/`.
 
 ### 4. Slope/aspect: N/S aspect swap in OSBS pipeline — FIXED
 
@@ -315,9 +317,9 @@ Run in parallel with Phase A (independent work).
 
 **Deliverable:** Determined processing resolution with scientific justification.
 
-### Phase C: Establish trustworthy Lc — ~300m accepted as working value, physical validation pending
+### Phase C: Establish trustworthy Lc — ~300m accepted as working value, physical validation mixed
 
-**Status:** Spectral analysis complete. PI accepts Lc ~300m (range 285-356m) as working value (2026-02-11). Final judgement reserved until physical validation after Phase A. See `phases/C-characteristic-length.md`.
+**Status:** Spectral analysis complete. Physical validation run (2026-02-17): Check 2 (mean catchment / Lc^2) passes cleanly at 0.88; Check 1 (max DTND / Lc) fails at 3.1 due to a single outlier ridge pixel (P99/Lc = 1.6 passes). Revisiting after refactoring. See `phases/C-characteristic-length.md`.
 
 **Completed:**
 1. Full-resolution (1m) FFT on interior mosaic — Laplacian peak at 8.1m (artifact)
@@ -328,11 +330,12 @@ Run in parallel with Phase A (independent work).
 6. Restricted wavelength sweep — **200-500m hump IS a real peak at cutoff >= 20m: Lc = 285-356m**
 7. Tile coverage documented (`data/neon/tile_coverage.md`)
 8. PI decision: ~300m accepted as working value
+9. Physical validation run on 5x5 tile block (R6-R10, C7-C11, 25M pixels at 1m) — Check 2 PASS (0.876), Check 1 FAIL (3.105, outlier-driven). Results: `output/osbs/smoke_tests/lc_physical_validation/`
 
 **Remaining:**
-9. Physical validation: Lc vs max(DTND) and Lc² vs mean catchment area (requires Phase A)
+10. Revisit Check 1 interpretation after refactoring — max vs P99, domain size effects, PI discussion
 
-**Deliverable:** Lc value with scientific justification. Working value established; final confirmation after physical validation.
+**Deliverable:** Lc value with scientific justification. Working value established; physical validation partially confirms.
 
 ### Phase D: Rebuild pipeline with fixes (depends on A, B, C)
 
@@ -409,9 +412,9 @@ These require scientific judgment, not engineering work:
 
    **Uncertainty in the Lc range:** Gaussian fit at cutoff=100m gives 285m; lognormal at cutoff=20m gives 356m. This 25% range in Lc translates to ~56% range in A_thresh (40,000 vs 63,000 m²) since A_thresh scales with Lc². Whether this matters for final hillslope parameters is an empirical question — testable by running the rebuilt pipeline at both endpoints.
 
-   **Predictions from Lc ~300m (testable after Phase A):**
-   - Max ridge-to-channel distance (DTND) ~300m (paper: Lc ≈ max DTND)
-   - Mean catchment area ~90,000 m² (paper: mean catchment ≈ Lc²)
+   **Predictions from Lc ~300m (tested 2026-02-17 on R6-R10, C7-C11):**
+   - Max ridge-to-channel distance (DTND) ~300m — **Actual: max = 931m (3.1x), P99 = 477m (1.6x), P95 = 350m (1.2x).** Max fails due to single outlier ridge pixel; bulk distribution is consistent.
+   - Mean catchment area ~90,000 m² — **Actual: 78,882 m² (0.88x Lc²). PASS.** Close to Swenson's calibration of 0.94.
    - A_thresh ~45,000 m² — stream pixels where accumulated drainage area exceeds this
 
    **Alternative to FFT:** Set Lc empirically from aerial imagery or field knowledge of drainage spacing. The spectral result provides a starting point, but isn't the only option.
@@ -447,3 +450,4 @@ The audit revealed that Phase 4 was declared "substantially complete" prematurel
 | Phase C Lc analysis | `phases/C-characteristic-length.md` | Lc results, sensitivity, interpretation |
 | Phase C job log | `logs/phase_c_lc_24705742.log` | Full output from Lc analysis run |
 | Phase C plots | `output/osbs/phase_c/` | Baseline spectrum and sensitivity sweep plots |
+| Lc physical validation | `output/osbs/smoke_tests/lc_physical_validation/` | Check 1 & 2 results, plots, JSON |
