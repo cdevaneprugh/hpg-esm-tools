@@ -31,12 +31,57 @@ Both the DTND problem (STATUS.md #1) and the slope/aspect problem (#4) stem from
 - [x] Test both changes against MERIT validation (geographic CRS — should reproduce existing results)
 - [x] Test on single interior tile R6C10 (UTM, real NEON LIDAR with lake/swamp/upland)
 
+### 1. Cleanup and refactor pgrid.py
+- [ ] Extract `_propagate_uphill()` helper from 3 identical loops in `compute_hillslope()` (lines 2173-2237)
+- [ ] Extract CRS distance helper to consolidate 4 duplicated haversine/Euclidean branches and repeated constants (`re`, `dtr`)
+  - Evaluate the right abstraction before implementing — the 4 call sites compute different things (point distance, bearing, gradient spacing)
+
+### 2. Improve test suite
+- [ ] Discuss code coverage report approach before generating
+- [ ] Add tests for extracted helpers
+- [ ] Add synthetic test data if coverage gaps are found
+
+### 3. Revalidate on MERIT
+- [ ] Create consolidated MERIT validation script (replaces 9-stage pipeline + regression wrapper)
+  - Merge stage5's circular correlation for aspect (fixes the radian/degree comparison bug)
+  - Assert all 6 parameters meet known correlation thresholds
+  - Single script, known expected values
+
+### 4. Test on OSBS data
+- [ ] Re-run single tile R6C10 smoke test (confirm refactoring didn't break anything)
+- [ ] Create and run 5x5 interior block smoke test (R6-R10, C7-C11, 25 tiles, 5km x 5km, 0% nodata)
+
+## pgrid.py Cleanup Context (moved from Phase D)
+
+Scoped during test audit work (2026-02-17). Small improvements to make while finishing Phase A fork work.
+
+### pgrid.py background
+
+pgrid.py (4384 lines) is Swenson's pure-numpy reimplementation of upstream pysheds' sgrid.py. It was copied wholesale from Swenson's fork and adapted to our pysheds version. It is NOT upstream code — upstream pysheds has sgrid.py (numba-accelerated) and _sgrid.py (standalone numba functions). pgrid.py exists because we don't use numba.
+
+Of the ~97 methods, ~50 are reimplementations of upstream sgrid methods (flow routing, accumulation, DEM conditioning, I/O) and ~47 are Swenson's additions (hillslope analysis, slope/aspect, channel mask, etc.). Our Phase A UTM work added `_crs_is_geographic()` and if/else CRS branches.
+
+### What NOT to touch
+
+- The ~50 shared-with-sgrid methods (I/O, flow routing, accumulation, DEM conditioning). They work, we don't modify them, and we lack analytical tests for most. Leave them alone.
+- `_pop_rim` / `_replace_rim` boilerplate (12 paired calls with try/finally). This is Swenson's pervasive pattern throughout all methods. Changing it touches everything.
+- File splitting. Considered and rejected — the sgrid/_sgrid split exists because numba requires standalone functions. pgrid uses pure numpy so there's no technical reason to mirror it. Two 2000-line files isn't meaningfully better than one 4400-line file.
+
+### Decision record (2026-02-17)
+
+Explored upstream pysheds vs our fork in detail. Key findings:
+- `pgrid.py` is the ONLY file added to the fork (plus a 1-line change in `grid.py` to import it when numba is unavailable)
+- pgrid's shared methods have diverged APIs from sgrid (`out_name`/`inplace` vs Raster returns) — they're parallel implementations, not copies
+- Refactoring shared infrastructure is high-risk with low test coverage (geographic DEM tests are smoke tests only)
+- The hillslope methods have strong analytical test coverage (synthetic DEMs) and are the only methods we actively develop
+
 ## Deliverable
 
-pysheds fork that correctly handles both geographic and UTM CRS for HAND/DTND computation and slope/aspect calculation. Validated three ways:
-1. **Synthetic V-valley DEM** — analytically known slope, aspect, HAND, DTND in UTM (catches CRS math bugs directly)
-2. **MERIT validation** — geographic CRS regression test (existing stages 1-9 reproduce >0.95 correlations)
-3. **OSBS smoke test** — single interior tile R6C10 in UTM (real NEON LIDAR with lake/swamp/upland)
+pysheds fork that correctly handles both geographic and UTM CRS for HAND/DTND computation and slope/aspect calculation. Cleaned up, well-tested, and validated four ways:
+1. **Synthetic DEMs** — analytically known slope, aspect, HAND, DTND in UTM (catches CRS math bugs directly)
+2. **Consolidated MERIT validation** — geographic CRS with correct aspect comparison (all 6 params meet correlation thresholds)
+3. **OSBS single tile** — R6C10 smoke test (real NEON LIDAR with lake/swamp/upland)
+4. **OSBS 5x5 block** — R6-R10, C7-C11 (25 tiles, 25M pixels, confirms UTM at scale)
 
 ## Log
 

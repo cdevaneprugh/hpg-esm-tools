@@ -33,3 +33,7 @@ Pipeline that produces scientifically defensible hillslope parameters. Shared mo
 
 ## Log
 
+### 2026-02-17: pgrid cleanup moved to Phase A
+
+pgrid.py cleanup (uphill loop extraction, CRS distance helper) was originally scoped here as opportunistic work. Moved to Phase A to finish fork work cleanly before pipeline rebuild. See Phase A for full context, decision record, and "what not to touch" guidelines.
+
