@@ -166,17 +166,18 @@ dtnd = np.where(hndx != -1, dtnd, 0)
 # of each pixel's drainage outlet. It's CRS-independent — purely
 # topological, determined by the D8 flow direction graph.
 #
-# dlon/dlat below are coordinate differences FROM drainage pixel
+# dx/dy below are coordinate differences FROM drainage pixel
 # TO current pixel (i.e. current - drainage). The sign doesn't
 # matter for distance (we square them), but it does matter for
 # AZND below.
 
 # [ORIGINAL] These two lines are unchanged — they compute the
 # coordinate offset between each pixel and its drainage target.
-# Variable names lon2d/lat2d are retained for compatibility even
-# though for UTM they contain easting/northing in meters.
-dlon = lon2d-lon2d.flat[hndx]
-dlat = lat2d-lat2d.flat[hndx]
+# In the original Swenson code these were named dlon/dlat; they
+# were renamed to dx/dy to be CRS-neutral (for UTM they contain
+# easting/northing offsets in meters, not longitude/latitude).
+dx = x2d-x2d.flat[hndx]
+dy = y2d-y2d.flat[hndx]
 
 # [ADDED - Phase A] CRS branch for distance computation.
 if self._crs_is_geographic():
@@ -187,17 +188,15 @@ if self._crs_is_geographic():
     # 400000m as 400000 degrees).
     #
     # [WHY] This branch is identical to Swenson's original code.
-    # The re constant was extracted to a named variable for clarity
-    # but the math is unchanged. MERIT validation (stage 1-9)
-    # confirms bit-identical results.
-    dtr = np.pi/180
-    re = 6.371e6  # Earth radius in meters
-    dtnd = np.power(np.sin(dtr*dlat/2),2) + np.cos(dtr*lat2d) \
-           * np.cos(dtr*lat2d.flat[hndx]) \
-           * np.power(np.sin(dtr*dlon/2),2)
+    # The local dtr/re constants were replaced by module-level
+    # _DEG_TO_RAD/_EARTH_RADIUS_M but the math is unchanged.
+    # MERIT validation (stage 1-9) confirms bit-identical results.
+    dtnd = np.power(np.sin(_DEG_TO_RAD*dy/2),2) + np.cos(_DEG_TO_RAD*y2d) \
+           * np.cos(_DEG_TO_RAD*y2d.flat[hndx]) \
+           * np.power(np.sin(_DEG_TO_RAD*dx/2),2)
     dtnd[dtnd > 1] = 1
     dtnd[dtnd < 0] = 0
-    dtnd = (re * 2 * np.arctan2( np.sqrt(dtnd), np.sqrt(1-dtnd)))
+    dtnd = (_EARTH_RADIUS_M * 2 * np.arctan2( np.sqrt(dtnd), np.sqrt(1-dtnd)))
 else:
     # [ADDED - Phase A] Projected CRS (e.g. UTM): coordinates are
     # already in linear units (meters for UTM). Euclidean distance
@@ -207,9 +206,9 @@ else:
     # [WHY] This is the simple Pythagorean formula. It replaces
     # the EDT workaround in run_pipeline.py (which computed
     # distance to the geographically nearest channel, ignoring
-    # watershed topology). Here dlon/dlat point to the correct
+    # watershed topology). Here dx/dy point to the correct
     # (hydrologically linked) channel pixel via hndx.
-    dtnd = np.sqrt(dlon**2 + dlat**2)
+    dtnd = np.sqrt(dx**2 + dy**2)
 
 # [ORIGINAL] Mask unrouted pixels (hndx == -1) to zero.
 # The commented-out nodata_out line was already commented in
@@ -226,8 +225,10 @@ self._output_handler(data=dtnd, out_name='dtnd',
 | Element | Changed? | Notes |
 |---------|----------|-------|
 | `hndx` D8 routing (line 1929-1949) | No | Topology is CRS-independent |
-| `dlon`/`dlat` computation | No | Same subtraction, different physical interpretation |
+| `dx`/`dy` computation (was `dlon`/`dlat`) | **Renamed** | Same subtraction, different physical interpretation; renamed to be CRS-neutral |
+| `x2d`/`y2d` (was `lon2d`/`lat2d`) | **Renamed** | CRS-neutral names from `_2d_crs_coordinates()` |
 | Haversine formula | No | Moved into `if` branch, logic identical |
+| `dtr`/`re` constants | **Replaced** | Now uses module-level `_DEG_TO_RAD`/`_EARTH_RADIUS_M` |
 | Euclidean branch | **Added** | New `else` clause |
 | `dtnd = np.zeros(...)` initialization | **Removed** | No longer needed — both branches produce the full array |
 
@@ -235,7 +236,7 @@ self._output_handler(data=dtnd, out_name='dtnd',
 
 ## 4. AZND in `compute_hand()` (lines 1999-2029)
 
-Immediately follows the DTND computation and reuses the same `dlon`/`dlat` values.
+Immediately follows the DTND computation and reuses the same `dx`/`dy` values.
 
 ### What AZND is
 
@@ -268,9 +269,9 @@ aznd[aznd < 0] += 360
 # outlet. Convention: 0° = north, 90° = east, 180° = south,
 # 270° = west (standard geographic azimuth).
 #
-# Sign convention for dlon/dlat (computed above):
-#   dlon = lon_pixel - lon_drainage  (FROM drainage TO pixel)
-#   dlat = lat_pixel - lat_drainage  (FROM drainage TO pixel)
+# Sign convention for dx/dy (computed above):
+#   dx = x_pixel - x_drainage  (FROM drainage TO pixel)
+#   dy = y_pixel - y_drainage  (FROM drainage TO pixel)
 #
 # We want the bearing FROM pixel TO drainage, which is the
 # REVERSE direction. Hence we negate both components.
@@ -281,32 +282,31 @@ aznd[aznd < 0] += 360
 # [ADDED - Phase A] CRS branch for azimuth computation.
 if self._crs_is_geographic():
     # [ORIGINAL] Spherical bearing formula. Identical to Swenson's
-    # original code. The sin(-dlon) and cos(-dlon) terms negate
-    # dlon for the same reason: reversing the vector from
+    # original code. The sin(-dx) and cos(-dx) terms negate
+    # dx for the same reason: reversing the vector from
     # "drainage→pixel" to "pixel→drainage".
     #
     # [WHY] The spherical bearing formula accounts for meridian
     # convergence. On a sphere, a constant easting offset
     # corresponds to different angular bearings at different
     # latitudes. This formula handles that correctly.
-    dtr = np.pi/180
     aznd = np.arctan2(
-        np.sin(-dtr*dlon),
-        (np.cos(dtr*lat2d) * np.tan(dtr*lat2d.flat[hndx])
-         - np.sin(dtr*lat2d) * np.cos(-dtr*dlon))
+        np.sin(-_DEG_TO_RAD*dx),
+        (np.cos(_DEG_TO_RAD*y2d) * np.tan(_DEG_TO_RAD*y2d.flat[hndx])
+         - np.sin(_DEG_TO_RAD*y2d) * np.cos(-_DEG_TO_RAD*dx))
     )
-    aznd = aznd/dtr
+    aznd = aznd/_DEG_TO_RAD
 else:
     # [ADDED - Phase A] Projected CRS: planar azimuth.
-    # Negate dlon/dlat to reverse from "drainage→pixel" to
-    # "pixel→drainage". arctan2(-dlon, -dlat) gives the
+    # Negate dx/dy to reverse from "drainage→pixel" to
+    # "pixel→drainage". arctan2(-dx, -dy) gives the
     # clockwise-from-north bearing in radians.
     #
     # [WHY] On a projected plane, bearing is simply the angle
     # of the displacement vector. arctan2(east, north) gives
     # clockwise-from-north by convention. The negation reverses
-    # the direction since dlon/dlat point drainage→pixel.
-    aznd = np.degrees(np.arctan2(-dlon, -dlat))
+    # the direction since dx/dy point drainage→pixel.
+    aznd = np.degrees(np.arctan2(-dx, -dy))
 
 # [ORIGINAL] Normalize from [-180, 360) to [0, 360).
 # Moved outside the if/else since both branches need it.
@@ -321,9 +321,10 @@ self._output_handler(data=aznd, out_name='aznd',
 
 | Element | Changed? | Notes |
 |---------|----------|-------|
-| `dlon`/`dlat` | No | Reused from DTND section above |
+| `dx`/`dy` (was `dlon`/`dlat`) | **Renamed** | Reused from DTND section above |
 | Spherical bearing formula | No | Moved into `if` branch, logic identical |
-| Planar bearing branch | **Added** | New `else` clause using `np.degrees(np.arctan2(-dlon, -dlat))` |
+| `dtr` constant | **Replaced** | Now uses module-level `_DEG_TO_RAD` |
+| Planar bearing branch | **Added** | New `else` clause using `np.degrees(np.arctan2(-dx, -dy))` |
 | `aznd = np.zeros(...)` initialization | **Removed** | Both branches produce the full array |
 | `aznd[aznd < 0] += 360` normalization | **Moved** | Was after the formula; now after the `if/else` block (applies to both branches) |
 
@@ -338,11 +339,11 @@ self._output_handler(data=aznd, out_name='aznd',
 Computes the spatial gradient (dz/dx, dz/dy) of a DEM using the Horn 1981 3x3 stencil. The stencil uses 8 neighbors with specific weights:
 
 ```
-dz/dx = (z_NE + 2*z_E + z_SE - z_NW - 2*z_W - z_SW) / (8 * dx)
-dz/dy = (z_NE + 2*z_N + z_NW - z_SE - 2*z_S - z_SW) / (8 * dy)
+dz/dx = (z_NE + 2*z_E + z_SE - z_NW - 2*z_W - z_SW) / (8 * cell_dx)
+dz/dy = (z_NE + 2*z_N + z_NW - z_SE - 2*z_S - z_SW) / (8 * cell_dy)
 ```
 
-The `dx` and `dy` denominators must be physical distances in meters. For geographic CRS, this requires converting degree offsets to meters using Earth's radius and a `cos(lat)` correction for longitude. For projected CRS, the affine transform already gives coordinates in meters, so no conversion is needed.
+The `cell_dx` and `cell_dy` denominators must be physical distances in meters. For geographic CRS, this requires converting degree offsets to meters using Earth's radius and a `cos(lat)` correction for longitude. For projected CRS, the affine transform already gives coordinates in meters, so no conversion is needed.
 
 ### Why this matters
 
@@ -419,37 +420,40 @@ def _gradient_horn_1981(self, dem, inside):
     # _2d_crs_coordinates() returns CRS coordinates at pixel centers:
     #   - Geographic CRS → lon/lat in degrees
     #   - Projected CRS (e.g. UTM) → easting/northing in meters
-    # (The method name is misleading for projected CRS; see its docstring.)
     #
-    # dlon[k, i] and dlat[k, i] are the coordinate offsets from pixel i
+    # dx[k, i] and dy[k, i] are the coordinate offsets from pixel i
     # to its k-th neighbor (k in [N, NE, E, SE, S, SW, W, NW]).
 
     # [ORIGINAL] Get 2D coordinates and compute offsets to neighbors.
-    # For geographic CRS, dlon/dlat are in degrees.
-    # For projected CRS, dlon/dlat are in meters.
-    lon2d, lat2d = self._2d_crs_coordinates()
-    dlon = np.subtract(lon2d.flat[inner_neighbors], lon2d.flat[inside])
-    dlat = np.subtract(lat2d.flat[inner_neighbors], lat2d.flat[inside])
+    # In the original Swenson code these were lon2d/lat2d and dlon/dlat;
+    # renamed to x2d/y2d and dx/dy to be CRS-neutral.
+    # For geographic CRS, dx/dy are in degrees.
+    # For projected CRS, dx/dy are in meters.
+    x2d, y2d = self._2d_crs_coordinates()
+    dx = np.subtract(x2d.flat[inner_neighbors], x2d.flat[inside])
+    dy = np.subtract(y2d.flat[inner_neighbors], y2d.flat[inside])
 
     # [ADDED - Phase A] CRS branch for unit conversion.
     #
-    # Convert coordinate differences to meters.
+    # Convert coordinate differences to physical cell spacings in meters.
     # abs() is taken because the Horn stencil cares about spacing magnitude,
     # not direction — the directional information is encoded in which
     # neighbors are summed vs subtracted (haxindices/hsxindices below).
+    #
+    # In the original Swenson code, the physical spacings were named dx/dy.
+    # They are now named cell_dx/cell_dy to distinguish them from the
+    # coordinate offsets dx/dy above.
     if self._crs_is_geographic():
         # [ORIGINAL] Geographic CRS: approximate meter distances from
         # degree offsets.
-        # dx uses a cos(lat) correction for longitude convergence
+        # cell_dx uses a cos(lat) correction for longitude convergence
         # toward poles: 1 degree of longitude is shorter at high
         # latitudes.
-        # dy is simply arc length along a meridian: always
+        # cell_dy is simply arc length along a meridian: always
         # re * dtr * dlat regardless of latitude.
-        re = 6.371e6
-        dtr = np.pi/180
-        dx = re * np.abs(np.multiply(dtr*dlon,
-                                     np.cos(dtr*lat2d.flat[inside])))
-        dy = re * np.abs(dtr*dlat)
+        cell_dx = _EARTH_RADIUS_M * np.abs(np.multiply(_DEG_TO_RAD*dx,
+                                     np.cos(_DEG_TO_RAD*y2d.flat[inside])))
+        cell_dy = _EARTH_RADIUS_M * np.abs(_DEG_TO_RAD*dy)
     else:
         # [ADDED - Phase A] Projected CRS (e.g. UTM): the affine
         # transform maps pixel indices directly to CRS coordinates in
@@ -460,20 +464,22 @@ def _gradient_horn_1981(self, dem, inside):
         # [WHY] This is the key fix for slope/aspect on UTM data.
         # The original code's `re * dtr * cos(lat)` conversion is
         # nonsensical when lat is already in meters (e.g. 3286000m).
-        # For UTM, abs(dlon) and abs(dlat) are already the physical
+        # For UTM, abs(dx) and abs(dy) are already the physical
         # spacing between pixel centers.
-        dx = np.abs(dlon)
-        dy = np.abs(dlat)
+        cell_dx = np.abs(dx)
+        cell_dy = np.abs(dy)
 
     # [ORIGINAL] Horn 1981 uses the average spacing of the two cardinal
     # neighbors along each axis to normalize the weighted finite
     # difference. This makes the stencil symmetric for non-square pixels.
-    #   mean_dx = average of east (index 2) and west (index 6) spacings
-    #   mean_dy = average of north (index 0) and south (index 4) spacings
+    #   mean_cell_dx = average of east (index 2) and west (index 6) spacings
+    #   mean_cell_dy = average of north (index 0) and south (index 4) spacings
     #
     # [ADDED - Phase A] Comments clarifying the index references.
-    mean_dx = 0.5 * np.sum(dx[[2,6],:],axis=0)
-    mean_dy = 0.5 * np.sum(dy[[0,4],:],axis=0)
+    # In the original code these were mean_dx/mean_dy; renamed to
+    # mean_cell_dx/mean_cell_dy for consistency with cell_dx/cell_dy.
+    mean_cell_dx = 0.5 * np.sum(cell_dx[[2,6],:],axis=0)
+    mean_cell_dy = 0.5 * np.sum(cell_dy[[0,4],:],axis=0)
 
     # [ORIGINAL] Horn 1981 stencil weights.
     # For x gradient: sum [NE, 2xE, SE] - sum [NW, 2xW, SW]
@@ -488,9 +494,9 @@ def _gradient_horn_1981(self, dem, inside):
     # [ORIGINAL] Final gradient computation. The 8 in the denominator
     # is the sum of Horn stencil weights (1+2+1+1+2+1 = 8).
     dzdx = (np.sum(elev_neighbors[haxindices,:],axis=0)
-            - np.sum(elev_neighbors[hsxindices,:],axis=0)) / (8.*mean_dx)
+            - np.sum(elev_neighbors[hsxindices,:],axis=0)) / (8.*mean_cell_dx)
     dzdy = (np.sum(elev_neighbors[hayindices,:],axis=0)
-            - np.sum(elev_neighbors[hsyindices,:],axis=0)) / (8.*mean_dy)
+            - np.sum(elev_neighbors[hsyindices,:],axis=0)) / (8.*mean_cell_dy)
     return [dzdx,dzdy]
 ```
 
@@ -500,15 +506,18 @@ def _gradient_horn_1981(self, dem, inside):
 |---------|----------|-------|
 | Neighbor selection (`_select_surround_ravel`) | No | Purely topological |
 | Elevation lookup | No | |
-| Coordinate offset computation (`dlon`, `dlat`) | No | Same subtraction |
-| Degree-to-meter conversion (`re * dtr * cos(lat)`) | No | Moved into `if` branch |
-| UTM branch (`abs(dlon)`, `abs(dlat)`) | **Added** | New `else` clause |
-| `mean_dx`, `mean_dy` averaging | No | Now operates on CRS-appropriate values |
-| Horn stencil weights and final division | No | |
+| `x2d`/`y2d` (was `lon2d`/`lat2d`) | **Renamed** | CRS-neutral names from `_2d_crs_coordinates()` |
+| `dx`/`dy` coordinate offsets (was `dlon`/`dlat`) | **Renamed** | Same subtraction, CRS-neutral names |
+| `cell_dx`/`cell_dy` physical spacings (was `dx`/`dy`) | **Renamed** | Disambiguated from coordinate offsets above |
+| `mean_cell_dx`/`mean_cell_dy` (was `mean_dx`/`mean_dy`) | **Renamed** | Consistent with `cell_dx`/`cell_dy` |
+| `re`/`dtr` constants | **Replaced** | Now uses module-level `_EARTH_RADIUS_M`/`_DEG_TO_RAD` |
+| Degree-to-meter conversion | No | Moved into `if` branch, uses `cell_dx`/`cell_dy` |
+| UTM branch (`abs(dx)`, `abs(dy)`) | **Added** | New `else` clause, stored as `cell_dx`/`cell_dy` |
+| Horn stencil weights and final division | No | Now uses `mean_cell_dx`/`mean_cell_dy` |
 
 ### Why `abs()` in the UTM branch?
 
-The Horn stencil encodes direction through which neighbors are *added* vs *subtracted* (haxindices vs hsxindices). The `dx`/`dy` denominators should be pure spacing magnitudes — always positive. For geographic CRS, `abs()` was already applied to the degree offsets. For UTM, the affine transform can produce negative `dlat` (northing decreases with row index in a standard north-up GeoTIFF), so `abs()` is needed to get the magnitude.
+The Horn stencil encodes direction through which neighbors are *added* vs *subtracted* (haxindices vs hsxindices). The `cell_dx`/`cell_dy` denominators should be pure spacing magnitudes — always positive. For geographic CRS, `abs()` was already applied to the degree offsets. For UTM, the affine transform can produce negative `dy` (northing decreases with row index in a standard north-up GeoTIFF), so `abs()` is needed to get the magnitude.
 
 ---
 
@@ -672,35 +681,35 @@ for index, profile in enumerate(profiles):
     pmask = mask[yi,xi]
 
     # [ADDED - Phase A] Clarifying comment.
-    # plon/plat are affine-transformed coordinates along the stream
+    # px/py are affine-transformed coordinates along the stream
     # reach profile. For geographic CRS these are lon/lat in degrees;
     # for projected CRS (e.g. UTM) these are easting/northing in meters.
 
     # [ORIGINAL] Get coordinates and compute consecutive differences.
-    plon = np.asarray((fdir.affine * (xi, yi))[0])
-    plat = np.asarray((fdir.affine * (xi, yi))[1])
-    plon,plat = plon[pmask],plat[pmask]
-    dlon = plon[:-1] - plon[1:]
-    dlat = plat[:-1] - plat[1:]
+    # In the original Swenson code these were named plon/plat and
+    # dlon/dlat; renamed to px/py and dx/dy to be CRS-neutral.
+    px = np.asarray((fdir.affine * (xi, yi))[0])
+    py = np.asarray((fdir.affine * (xi, yi))[1])
+    px,py = px[pmask],py[pmask]
+    dx = px[:-1] - px[1:]
+    dy = py[:-1] - py[1:]
 
     # [ADDED - Phase A] CRS branch for segment length computation.
     if is_geographic:
         # [ORIGINAL] Geographic CRS: coordinates are degrees. Use
         # haversine to compute great-circle segment lengths along
         # the reach. Identical to Swenson's original code.
-        dtr = np.pi/180.
-        re = 6.371e6
-        dist = np.power(np.sin(dtr*dlat/2),2) \
-               + np.cos(dtr*plat[:-1]) \
-               * np.cos(dtr*plat[1:]) \
-               * np.power(np.sin(dtr*dlon/2),2)
-        length = np.sum(re * 2 * np.arctan2(np.sqrt(dist),
+        dist = np.power(np.sin(_DEG_TO_RAD*dy/2),2) \
+               + np.cos(_DEG_TO_RAD*py[:-1]) \
+               * np.cos(_DEG_TO_RAD*py[1:]) \
+               * np.power(np.sin(_DEG_TO_RAD*dx/2),2)
+        length = np.sum(_EARTH_RADIUS_M * 2 * np.arctan2(np.sqrt(dist),
                                              np.sqrt(1-dist)))
     else:
         # [ADDED - Phase A] Projected CRS: coordinates are already
         # in linear units (meters for UTM). Euclidean distance
         # between consecutive profile pixels.
-        length = np.sum(np.sqrt(dlon**2 + dlat**2))
+        length = np.sum(np.sqrt(dx**2 + dy**2))
 
     # [ORIGINAL] Rest of loop body (elevation, slope) unchanged...
     elevation = self.inflated_dem[yi,xi]
@@ -712,21 +721,24 @@ for index, profile in enumerate(profiles):
 
 | Element | Changed? | Notes |
 |---------|----------|-------|
-| `dtr`/`re` constants | **Moved** | From before the loop into the `if` branch |
+| `dtr`/`re` constants | **Replaced** | Now uses module-level `_DEG_TO_RAD`/`_EARTH_RADIUS_M`; moved from before loop into `if` branch |
 | `is_geographic` check | **Added** | Computed once before the loop |
+| `px`/`py` (was `plon`/`plat`) | **Renamed** | CRS-neutral names |
+| `dx`/`dy` (was `dlon`/`dlat`) | **Renamed** | CRS-neutral names |
 | Haversine segment lengths | No | Moved into `if` branch, logic identical |
 | Euclidean segment lengths | **Added** | New `else` clause |
+| `rx`/`ry` midpoint coords (was `rlon`/`rlat`) | **Renamed** | CRS-neutral names (used later in loop for reach midpoints) |
 | Profile extraction, elevation, slope logic | No | |
 
 ---
 
 ## 8. `_2d_crs_coordinates()` (lines 1762-1787)
 
-### No code change — docstring clarification only
+### Variable rename — docstring updated, return values renamed
 
 Despite the method name suggesting geographic coordinates, it returns coordinates in whatever CRS the grid uses. For geographic CRS, these are lon/lat in degrees. For projected CRS (UTM), these are easting/northing in meters.
 
-The variable names `lon2d` and `lat2d` are retained throughout the codebase for compatibility with existing callers (they'd be more accurately named `x2d`/`y2d` for UTM, but renaming would touch dozens of lines with no functional benefit).
+The original Swenson code named the return values `lon2d`/`lat2d` and used `geocoords` for the intermediate affine result. These were renamed to `x2d`/`y2d` and `coords` to be CRS-neutral -- the old names were misleading for projected CRS where the values are easting/northing in meters, not longitude/latitude.
 
 ### Diff
 
@@ -744,11 +756,9 @@ def _2d_crs_coordinates(self):
 def _2d_crs_coordinates(self):
     """Return 2D coordinate arrays in the grid's CRS.
 
-    Despite the name, this method returns coordinates in whatever CRS
-    the grid uses — NOT necessarily geographic coordinates. For geographic
-    CRS these are lon/lat in degrees; for projected CRS (e.g. UTM) these
-    are easting/northing in meters. The variable names lon2d/lat2d are
-    retained for compatibility with existing callers.
+    Returns [x2d, y2d] — 2D arrays of CRS coordinates at pixel centers.
+      - Geographic CRS: x2d = longitude (degrees), y2d = latitude (degrees)
+      - Projected CRS:  x2d = easting (meters),    y2d = northing (meters)
 
     The affine transform maps pixel indices (col, row) to CRS coordinates.
     The 0.5*dx / 0.5*dy offset shifts from pixel corner to pixel center.
@@ -763,17 +773,16 @@ def _2d_crs_coordinates(self):
 def _2d_crs_coordinates(self):
     """Return 2D coordinate arrays in the grid's CRS.
 
-    Despite the name, this method returns coordinates in whatever CRS
-    the grid uses — NOT necessarily geographic coordinates. For geographic
-    CRS these are lon/lat in degrees; for projected CRS (e.g. UTM) these
-    are easting/northing in meters. The variable names lon2d/lat2d are
-    retained for compatibility with existing callers.
+    Returns [x2d, y2d] — 2D arrays of CRS coordinates at pixel centers.
+      - Geographic CRS: x2d = longitude (degrees), y2d = latitude (degrees)
+      - Projected CRS:  x2d = easting (meters),    y2d = northing (meters)
 
     The affine transform maps pixel indices (col, row) to CRS coordinates.
     The 0.5*dx / 0.5*dy offset shifts from pixel corner to pixel center.
     """
 
-    # [ORIGINAL] All code below is unchanged.
+    # [ORIGINAL] All code below is unchanged in logic; variable names
+    # were updated to be CRS-neutral.
     # The affine transform encodes the CRS-to-pixel mapping:
     #   x.c = x origin (left edge), x.f = y origin (top edge)
     #   x.a = pixel width (dx), x.e = pixel height (dy, typically negative)
@@ -786,23 +795,23 @@ def _2d_crs_coordinates(self):
     j2d = np.tile(range(ys),(xs,1)).T      # row indices
 
     # Apply affine transform: (col, row) → (x_coord, y_coord)
-    geocoords = self.affine * (i2d.flatten(),j2d.flatten())
+    coords = self.affine * (i2d.flatten(),j2d.flatten())
 
     # Shift from pixel corner to pixel center
-    lon2d = geocoords[0].reshape(self.shape) + 0.5*dx
-    lat2d = geocoords[1].reshape(self.shape) + 0.5*dy
+    x2d = coords[0].reshape(self.shape) + 0.5*dx
+    y2d = coords[1].reshape(self.shape) + 0.5*dy
 
-    return [lon2d,lat2d]
+    return [x2d,y2d]
 ```
 
 ### Why this matters for understanding the UTM branches
 
 When `_gradient_horn_1981()` or `compute_hand()` compute:
 ```python
-dlon = lon2d - lon2d.flat[neighbor]
+dx = x2d - x2d.flat[neighbor]
 ```
 
-For geographic CRS, `dlon` is a degree offset that needs haversine conversion. For UTM, `dlon` is already a meter offset that needs no conversion. The CRS branches exist because this one method returns values with fundamentally different units depending on the CRS.
+For geographic CRS, `dx` is a degree offset that needs haversine conversion. For UTM, `dx` is already a meter offset that needs no conversion. The CRS branches exist because this one method returns values with fundamentally different units depending on the CRS.
 
 ---
 
@@ -859,10 +868,10 @@ gradfactor = pd.concat([(0.9 * (minsteps / gradmax)).replace(np.inf, 0), pd.Seri
 | `_crs_is_geographic()` | 129-148 | **New method** | Returns `True` | Returns `False` |
 | DTND in `compute_hand()` | 1958-1997 | **CRS branch** | Haversine (original) | Euclidean (added) |
 | AZND in `compute_hand()` | 1999-2029 | **CRS branch** | Spherical bearing (original) | Planar arctan2 (added) |
-| `_gradient_horn_1981()` | 4175-4236 | **CRS branch** | `re * dtr * cos(lat)` (original) | `abs(dlon)` / `abs(dlat)` (added) |
+| `_gradient_horn_1981()` | 4175-4236 | **CRS branch** | `re * dtr * cos(lat)` (original) | `abs(dx)` / `abs(dy)` (added) |
 | `slope_aspect()` | 2240-2312 | Docstring only | — | — |
 | `river_network_length_and_slope()` | 3176-3290 | **CRS branch** | Haversine (original) | Euclidean (added) |
-| `_2d_crs_coordinates()` | 1762-1787 | Docstring only | — | — |
+| `_2d_crs_coordinates()` | 1762-1787 | Variable rename + docstring | — | — |
 | Deprecation fixes | various | Non-UTM | — | — |
 
 All geographic branches preserve the original Swenson code exactly — MERIT validation (stages 1-9, >0.95 correlation on 5/6 parameters) remains bit-identical.

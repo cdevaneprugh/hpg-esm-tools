@@ -217,7 +217,7 @@ These have valid arguments for and against. Document the analysis; decide togeth
 | 4 | `_gradient_horn_1981()` | 4241-4261 | Pixel spacing for stencil | 8-neighbor arrays, takes abs() |
 
 **What a helper could cover:**
-- Sites 1 and 3 both compute haversine/Euclidean distance between two points. A `_point_distance(dlon, dlat, lat1, lat2)` helper could serve both — but they operate on different array shapes (full grid vs 1D profile segments).
+- Sites 1 and 3 both compute haversine/Euclidean distance between two points. A `_point_distance(dx, dy, y1, y2)` helper could serve both — but they operate on different array shapes (full grid vs 1D profile segments).
 - Site 2 computes bearing (arctan2), not distance. Different formula entirely.
 - Site 4 computes spacing magnitude (abs of coordinate diffs). The haversine branch includes a cos(lat) correction that doesn't appear in the others.
 
@@ -250,11 +250,11 @@ These have valid arguments for and against. Document the analysis; decide togeth
 - `compute_hand()` DTND (lines 1993-1996) — operates on full grid arrays
 - `river_network_length_and_slope()` (lines 3294-3297) — operates on 1D profile segments
 
-Both compute the same thing: `re * 2 * arctan2(sqrt(a), sqrt(1-a))` where `a = sin²(dlat/2) + cos(lat1)*cos(lat2)*sin²(dlon/2)`.
+Both compute the same thing: `re * 2 * arctan2(sqrt(a), sqrt(1-a))` where `a = sin²(dy/2) + cos(y1)*cos(y2)*sin²(dx/2)`.
 
 **Trade-off:**
 - **For extraction:** DRY principle. If we ever fix the formula (unlikely — haversine is well-known), we'd fix it in two places.
-- **Against extraction:** The two sites use different variable names, array shapes, and context. A helper would need `(dlon, dlat, lat1, lat2)` parameters — essentially the same code just wrapped in a function call. Marginal reduction in readability for marginal DRY compliance.
+- **Against extraction:** The two sites use different variable names, array shapes, and context. A helper would need `(dx, dy, y1, y2)` parameters — essentially the same code just wrapped in a function call. Marginal reduction in readability for marginal DRY compliance.
 
 **Recommendation:** Skip unless combined with 4a option B. The formula is stable (haversine hasn't changed since Euler) and appears only in geographic CRS branches that we don't actively modify.
 
