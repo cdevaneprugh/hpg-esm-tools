@@ -153,7 +153,7 @@ Branch: `feature/utm-crs-support` (from `uf-development`)
 
 1. **`_crs_is_geographic()` helper** — Uses existing `_pyproj_crs`/`_pyproj_crs_is_geographic` infrastructure to detect CRS type. Returns True for geographic (lat/lon), False for projected (UTM etc.).
 
-2. **`_gradient_horn_1981()` fix** — After computing `dlon`/`dlat` from `_2d_geographic_coordinates()`, branches on CRS:
+2. **`_gradient_horn_1981()` fix** — After computing `dlon`/`dlat` from `_2d_crs_coordinates()`, branches on CRS:
    - Geographic: haversine conversion to meters (unchanged)
    - Projected: `dx = abs(dlon)`, `dy = abs(dlat)` — coordinates already in linear units
 

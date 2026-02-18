@@ -79,7 +79,7 @@ Swenson created `pgrid.py` (~200KB, 4,209 lines) - a pure-Python Grid class with
 
 | Method | Lines | Purpose |
 |--------|-------|---------|
-| `_2d_geographic_coordinates()` | 1730-1748 | Generate 2D lon/lat arrays from affine |
+| `_2d_crs_coordinates()` | 1730-1748 | Generate 2D coordinate arrays from affine |
 | `_translate_dict()` | 3215-3223 | Map direction values to indices |
 | `_gradient_horn_1981()` | 4070-4104 | Horn (1981) gradient for slope/aspect |
 
@@ -123,7 +123,7 @@ Swenson created `pgrid.py` (~200KB, 4,209 lines) - a pure-Python Grid class with
 - [x] Commit changes to `uf-development` branch
 
 **Methods Verification (all come with pgrid.py):**
-- [x] `_2d_geographic_coordinates()`
+- [x] `_2d_crs_coordinates()`
 - [x] `_gradient_horn_1981()`
 - [x] `_translate_dict()`
 - [x] `slope_aspect()`
