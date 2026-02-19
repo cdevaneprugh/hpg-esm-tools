@@ -193,7 +193,6 @@ def compute_hand_bins(
     """Compute HAND bin boundaries following Swenson's SpecifyHandBounds()."""
     valid = (hand > 0) & np.isfinite(hand)
     hand_valid = hand[valid]
-    aspect_valid = aspect[valid]
 
     if hand_valid.size == 0:
         return np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
@@ -203,41 +202,36 @@ def compute_hand_bins(
     initial_q25 = hand_sorted[int(0.25 * n) - 1] if n > 0 else 0
 
     if initial_q25 > bin1_max:
-        adjusted_bin1_max = bin1_max
+        # Ensure at least min_aspect_fraction of pixels exist below bin1_max
+        # for each aspect bin (Swenson SpecifyHandBounds lines 365-395).
+        # Aspect mask applied to full arrays (including zeros) to match Swenson.
         for asp_idx, (asp_low, asp_high) in enumerate(aspect_bins):
             if asp_low > asp_high:
-                asp_mask = (aspect_valid >= asp_low) | (aspect_valid < asp_high)
+                asp_mask = (aspect >= asp_low) | (aspect < asp_high)
             else:
-                asp_mask = (aspect_valid >= asp_low) & (aspect_valid < asp_high)
+                asp_mask = (aspect >= asp_low) & (aspect < asp_high)
 
-            hand_asp = hand_valid[asp_mask]
-            if hand_asp.size > 0:
-                hand_asp_sorted = np.sort(hand_asp)
-                below = np.sum(hand_asp_sorted <= bin1_max) / hand_asp_sorted.size
-                if below < min_aspect_fraction:
-                    idx_1pct = max(
-                        0, int(min_aspect_fraction * hand_asp_sorted.size) - 1
-                    )
-                    adjusted_bin1_max = max(
-                        adjusted_bin1_max, hand_asp_sorted[idx_1pct]
-                    )
+            hand_asp_sorted = np.sort(hand[asp_mask])
+            if hand_asp_sorted.size > 0:
+                bmin = hand_asp_sorted[
+                    int(min_aspect_fraction * hand_asp_sorted.size - 1)
+                ]
+            else:
+                bmin = bin1_max
 
-        above_bin1 = hand_sorted[hand_sorted > adjusted_bin1_max]
+            if bmin > bin1_max:
+                bin1_max = bmin
+
+        above_bin1 = hand_sorted[hand_sorted > bin1_max]
         if above_bin1.size > 0:
             n_above = above_bin1.size
-            b33 = above_bin1[int(0.33 * n_above) - 1]
-            b66 = above_bin1[int(0.66 * n_above) - 1]
-            bounds = np.array([0, adjusted_bin1_max, b33, b66, 1e6])
+            b33 = above_bin1[int(0.33 * n_above - 1)]
+            b66 = above_bin1[int(0.66 * n_above - 1)]
+            if b33 == b66:
+                b66 = 2 * b33 - bin1_max
+            bounds = np.array([0, bin1_max, b33, b66, 1e6])
         else:
-            bounds = np.array(
-                [
-                    0,
-                    adjusted_bin1_max,
-                    adjusted_bin1_max * 2,
-                    adjusted_bin1_max * 4,
-                    1e6,
-                ]
-            )
+            bounds = np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
     else:
         quartiles = [0.25, 0.5, 0.75, 1.0]
         bounds = [0.0]
