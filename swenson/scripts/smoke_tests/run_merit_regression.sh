@@ -45,7 +45,7 @@ cd "$SWENSON"
 module load conda 2>/dev/null
 conda activate ctsm
 
-# Use the UTM-aware pysheds fork (feature/utm-crs-support branch)
+# Use the UTM-aware pysheds fork (audit/pgrid-and-tests branch)
 export PYTHONPATH="${PYSHEDS_FORK}:${PYTHONPATH:-}"
 
 echo "=== MERIT Geographic Regression Test ==="
@@ -57,8 +57,8 @@ echo ""
 # Verify pysheds fork branch
 FORK_BRANCH=$(cd "$PYSHEDS_FORK" && git branch --show-current)
 echo "pysheds fork branch: $FORK_BRANCH"
-if [[ "$FORK_BRANCH" != "feature/utm-crs-support" ]]; then
-    echo "WARNING: Expected branch 'feature/utm-crs-support', got '$FORK_BRANCH'"
+if [[ "$FORK_BRANCH" != "audit/pgrid-and-tests" ]]; then
+    echo "WARNING: Expected branch 'audit/pgrid-and-tests', got '$FORK_BRANCH'"
 fi
 echo ""
 
@@ -124,6 +124,21 @@ if [[ ! -f output/merit_validation/stage4/stage4_results.json ]]; then
     exit 1
 fi
 
+# --- Stage 5: Circular Aspect Correlation ---
+echo "=== Stage 5: Circular Aspect Correlation ==="
+echo "Start: $(date)"
+python scripts/merit_validation/stage5_unit_fix.py
+echo "End: $(date)"
+echo ""
+
+# Quick check: verify stage 5 output exists
+if [[ ! -f output/merit_validation/stage5/stage5_results.json ]]; then
+    echo "FAIL: stage5_results.json not created"
+    exit 1
+fi
+echo "Stage 5 complete."
+echo ""
+
 # --- Results Summary ---
 echo "========================================"
 echo "=== REGRESSION TEST RESULTS ==="
@@ -170,12 +185,12 @@ display = {
 TOLERANCE = 0.01
 any_fail = False
 
-print(f'{\"Parameter\":<20} {\"Expected\":>10} {\"Actual\":>10} {\"Delta\":>10} {\"Status\":>8}')
-print('-' * 62)
+print(f'{\"Parameter\":<25} {\"Expected\":>10} {\"Actual\":>10} {\"Delta\":>10} {\"Status\":>8}')
+print('-' * 67)
 
 for param, exp in expected.items():
     if param not in metrics:
-        print(f'{display[param]:<20} {exp:>10.4f} {\"N/A\":>10} {\"\":>10} {\"MISSING\":>8}')
+        print(f'{display[param]:<25} {exp:>10.4f} {\"N/A\":>10} {\"\":>10} {\"MISSING\":>8}')
         any_fail = True
         continue
 
@@ -184,7 +199,19 @@ for param, exp in expected.items():
     status = 'PASS' if abs(delta) <= TOLERANCE else 'FAIL'
     if status == 'FAIL':
         any_fail = True
-    print(f'{display[param]:<20} {exp:>10.4f} {actual:>10.4f} {delta:>+10.4f} {status:>8}')
+    print(f'{display[param]:<25} {exp:>10.4f} {actual:>10.4f} {delta:>+10.4f} {status:>8}')
+
+# Stage 5: circular aspect correlation
+with open('output/merit_validation/stage5/stage5_results.json') as f:
+    s5 = json.load(f)
+
+aspect_circ = s5['corrected_metrics']['aspect']['correlation']
+exp_circ = 0.9999
+delta_circ = aspect_circ - exp_circ
+status_circ = 'PASS' if abs(delta_circ) <= TOLERANCE else 'FAIL'
+if status_circ == 'FAIL':
+    any_fail = True
+print(f'{\"Aspect (circular)\":<25} {exp_circ:>10.4f} {aspect_circ:>10.4f} {delta_circ:>+10.4f} {status_circ:>8}')
 
 print()
 print('* Aspect Pearson correlation is low (0.65) due to a known pre-existing')

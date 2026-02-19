@@ -54,6 +54,7 @@ swenson/
 │   ├── A-pysheds-utm.md       # Fix pysheds for UTM CRS
 │   ├── B-flow-resolution.md   # Resolve flow routing resolution
 │   ├── C-characteristic-length.md  # Establish trustworthy Lc
+│   ├── C-archive/             # Completed Phase C scripts (4 .py + 4 .sh)
 │   ├── D-rebuild-pipeline.md  # Rebuild pipeline with fixes
 │   ├── E-complete-parameters.md    # Complete the parameter set
 │   └── F-validate-deploy.md   # Validate and deploy
@@ -90,6 +91,7 @@ swenson/
 │   │   ├── run_pipeline.sh    # SLURM job wrapper
 │   │   ├── stitch_mosaic.py   # Create mosaic from tiles
 │   │   └── extract_subset.py  # Extract subset regions
+│   ├── smoke_tests/           # Phase A smoke tests (future)
 │   └── visualization/         # KML generation scripts
 │       ├── export_kml.py      # Tile grid KML
 │       └── export_perimeter_kml.py  # Selection perimeter KML

@@ -292,13 +292,15 @@ This sets nodata pixels to `max+1` before computing the Horn 1981 gradient, prev
 | `flowdir()` | 5 | test_utm, test_split_valley, test_depression_basin | Valid directions, topology |
 | `_crs_is_geographic()` | 2 | test_utm | Geographic vs projected detection |
 
-### Weak coverage (runs and returns something, values not validated)
+### Weak coverage — RESOLVED (2026-02-18, commit `ac71d9a`)
 
-| Method | Tests | Files | Issue |
-|--------|-------|-------|-------|
-| `river_network_length_and_slope()` | 1 | test_utm | Returns dict with correct keys — **values not checked numerically** |
-| `extract_profiles()` | 2 | test_hillslope | "Doesn't crash" + coverage > 0.9 threshold |
-| `create_channel_mask()` | (indirect) | test_utm, test_hillslope | Binary mask validated, but no edge case testing |
+All 3 methods now have analytical tests with closed-form validation:
+
+| Method | Tests | Files | Resolution |
+|--------|-------|-------|------------|
+| `river_network_length_and_slope()` | 3 | test_utm | Validates segment length, slope, reach count against V-valley geometry |
+| `extract_profiles()` | 3 | test_utm | Profile length matches D8 distance, validates profile values |
+| `create_channel_mask()` | 3 | test_utm | Center column classification, non-channel exclusion, ID uniqueness |
 
 ### No coverage (upstream methods — leave alone)
 
