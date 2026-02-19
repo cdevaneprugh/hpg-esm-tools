@@ -24,14 +24,15 @@ The MERIT validation (stages 1-9) demonstrated that our pysheds fork and pipelin
 | Distance (DTND) | 0.9990 |
 | Slope | 0.9966 |
 | Aspect | 0.9999 (circular) |
-| Width | 0.9604 |
-| Area fraction | 0.8157 |
+| Width | 0.9410 |
+| Area fraction | 0.8215 |
 
 This gives confidence that the *approach* is correct — we understand Swenson's methodology and can implement it.
 
 ### Bugs found and fixed during validation
 
 - **Width calculation** (stage 6): Fixed from 0.09 to 0.96 correlation. Root cause was using raw pixel areas instead of fitted trapezoidal areas.
+- **Polynomial fit weighting** (merit_regression.py, area_fraction_diagnostics.py): Our `lstsq`-based trapezoidal fit applied w^2 weighting where Swenson's `_fit_polynomial` applies w^1. Fixed to match Swenson's normal equations. Area fraction improved +0.006 (0.8157→0.8215), width changed from 0.9604 to 0.9410. See `scripts/merit_validation/area_fraction_research.md` for full analysis.
 - **North/South aspect swap** (stage 8): Fixed a Y-axis sign inversion in the gradient calculation that systematically swapped N and S aspects. Area fraction correlation improved from 0.64 to 0.82. The fix (switching to pgrid's `slope_aspect()`) only applied to the MERIT validation scripts — the OSBS pipeline could not use pgrid because its haversine math fails on UTM data. The same bug persisted in `run_pipeline.py` until an interim sign fix was applied (see problem #4). Full resolution requires Phase A (UTM-aware pgrid) and Phase D (replace `np.gradient` with Horn 1981 stencil).
 - **Gridcell alignment** (stage 7): Fixed region extraction to match the published 0.9x1.25 degree gridcell exactly.
 - **Mandatory 2m HAND bin constraint** (stage 7): Corrected our optional implementation to match Swenson's mandatory constraint per the paper.
@@ -395,6 +396,34 @@ These require scientific judgment, not engineering work:
 2. **Hillslope structure:** 4 aspects x 4 elevation bins (Swenson default) vs 1 aspect x 8 elevation bins? OSBS is nearly flat — aspects are nearly uniformly distributed and slopes are 0.01-0.06 m/m, so aspect-dependent insolation has negligible physical impact. More elevation bins may better capture TAI dynamics. But 4x4 enables direct comparison to the osbs2 baseline.
 
    **Technical detail:** CTSM is fully flexible — it reads `nhillslope` and `nmaxhillcol` from the input file (`surfrdMod.F90` lines 1082-1096), no hardcoded 4x4 requirement. A 1x8 configuration would skip aspect binning, put all non-stream pixels in one pool, bin by HAND into 8 bands, and fit one trapezoidal model with 4x more data points. The aspect risk: circular mean of a uniform distribution gives an arbitrary number, but insolation correction scales with `slope * cos(aspect - solar_azimuth)` — negligible at OSBS slopes (0.01-0.06 m/m). Practical option: generate both 4x4 and 1x8 configurations, let comparison speak for itself.
+
+   **What area fraction actually controls in CTSM (2026-02-19):** Area fraction is a weighting/scaling parameter, not a driver of per-column physics. It enters CTSM through three paths:
+
+   1. **Column weights (`col%wtlunit`, `HillslopeHydrologyMod.F90:520`):** Every gridcell-mean output (ZWT, GPP, ET, soil moisture — all h0 variables) is a `wtgcell`-weighted average of column values. `wtlunit(c) = (hill_area(c) / hillslope_area(nh)) * (pct_hillslope(nh) / 100)`. Wrong area fractions directly shift gridcell means toward over-weighted columns.
+
+   2. **Stream network scaling (`HillslopeHydrologyMod.F90:486-502`):** `nhill_per_landunit = gridcell_area * pct_hillslope / hillslope_area` — how many copies of the representative hillslope tile the gridcell. Determines stream channel number and length. 10% area error = 10% stream channel error.
+
+   3. **Lateral flow flux conversion (`SoilHydrologyMod.F90:2377`):** `qflx_latflow = volume / hill_area` — volumetric flow divided by column area to get specific flux (mm/s). Wrong area distorts water redistribution between columns.
+
+   Per-column physics (soil temperature, hydraulic conductivity, water table dynamics) depend on `hill_elev`, `hill_slope`, `hill_distance`, `hill_width` — not area. Area errors propagate through aggregation and flux scaling, not through the fundamental physics of individual columns.
+
+   **Why 1x8 eliminates the area fraction validation problem:** The 0.82 MERIT area fraction correlation (weakest of all 6 parameters — see `scripts/merit_validation/area_fraction_research.md`) is specific to the 4-aspect configuration. The gap comes from aspect binning splitting pixels into 4 pools where small HAND differences push Q25 across the 2.0m bin threshold differently per aspect. In 1-aspect mode:
+   - Area fraction becomes a simple 1D HAND histogram — no aspect partitioning, no aspect-dependent bin population variation.
+   - 4x more data per bin → more robust trapezoidal fit and bin statistics.
+   - The 2m lowest-bin constraint operates on one global Q25 instead of 4 per-aspect values.
+   - The 0.82 number does not predict 1-aspect performance; it measures a difficulty that 1-aspect bypasses entirely.
+
+   **What 1x8 gives up:** Aspect-dependent insolation correction. This enters CTSM at `SurfaceAlbedoMod.F90:264` via `shr_orb_cosinc()`, which adjusts solar incidence angle by `slope * cos(aspect - solar_azimuth)`. At OSBS slopes (0.01-0.06 m/m), the maximum correction is 3-6% of the cosine of the solar zenith angle — negligible for water/carbon cycling. Aspect does **not** enter the lateral flow equations directly (`SoilHydrologyMod.F90:2260-2372`).
+
+   **1x8 NetCDF structure:**
+
+   | Field | 4x4 value | 1x8 value |
+   |-------|-----------|-----------|
+   | `nhillslope` | 4 | 1 |
+   | `nmaxhillcol` | 16 | 8 |
+   | `pct_hillslope` | ~[25, 25, 25, 25] | [100] |
+   | `hillslope_index` | 1..4 (4 per aspect) | all 1 |
+   | Column weight | `(area/asp_area) * pct/100` | `area / total_area` |
 
 3. **Study boundary:** Interior tiles (150 tiles, ~150 km^2) are the current default. Any areas to specifically include or exclude?
 
