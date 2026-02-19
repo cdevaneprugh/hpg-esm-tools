@@ -48,13 +48,15 @@ TARGET_CENTER_LAT = 32.5131
 FFT_REGION_SIZES = [500, 1000, 3000]
 
 # Expected correlations (tolerance 0.01)
+# Width and area_fraction updated after fixing w^2→w^1 polynomial weighting
+# to match Swenson's _fit_polynomial (see area_fraction_research.md, Test I).
 EXPECTED = {
     "height": 0.9999,
     "distance": 0.9990,
     "slope": 0.9966,
     "aspect": 0.9999,
-    "width": 0.9604,
-    "area_fraction": 0.8157,
+    "width": 0.9410,
+    "area_fraction": 0.8215,
 }
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
@@ -251,7 +253,13 @@ def fit_trapezoidal_width(
     min_dtnd: float = 90,
     n_bins: int = 10,
 ) -> dict:
-    """Fit trapezoidal plan form following Swenson Eq. (4)."""
+    """
+    Fit trapezoidal plan form following Swenson Eq. (4).
+
+    Uses Swenson's _fit_polynomial weighting: W = diag(weights),
+    solving (G^T W G) coefs = G^T W y. This minimizes
+    sum_i w_i * (residual_i)^2 (w^1 weighting).
+    """
     if np.max(dtnd) < min_dtnd:
         return {
             "slope": 0,
@@ -277,8 +285,10 @@ def fit_trapezoidal_width(
     try:
         weights = A_cumsum
         G = np.column_stack([np.ones_like(d), d, d**2])
-        Gw = G * weights[:, np.newaxis]
-        coeffs = np.linalg.lstsq(Gw, A_cumsum * weights, rcond=None)[0]
+        W = np.diag(weights)
+        GtWG = G.T @ W @ G
+        GtWy = G.T @ W @ A_cumsum
+        coeffs = np.linalg.solve(GtWG, GtWy)
 
         trap_slope = -coeffs[2]
         trap_width = -coeffs[1]

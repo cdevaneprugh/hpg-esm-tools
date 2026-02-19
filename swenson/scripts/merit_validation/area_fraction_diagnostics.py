@@ -147,6 +147,44 @@ def identify_open_water(slope, max_slope=1e-4, niter=15):
     return [basin_boundary, basin_mask]
 
 
+def identify_basins(dem, basin_thresh=0.25, niter=10, buf=1, nodata=None):
+    """
+    Port of Swenson's identify_basins (representative_hillslope.py:263-296).
+
+    Creates a basin mask (1 = basin, 0 = outside) for large flat regions.
+    Flat areas produce spurious HAND/DTND values due to flow paths in the
+    flooded/inflated DEM. Masking them before pysheds conditioning prevents this.
+
+    Finds elevation values that occupy > basin_thresh fraction of the grid,
+    marks those pixels, then iteratively expands and prunes the mask.
+    """
+    imask = np.zeros(dem.shape)
+
+    if nodata is not None:
+        udem, ucnt = np.unique(dem[dem != nodata], return_counts=True)
+    else:
+        udem, ucnt = np.unique(dem, return_counts=True)
+    ufrac = ucnt / dem.size
+    ind = np.where(ufrac > basin_thresh)[0]
+
+    if ind.size > 0:
+        for i in ind:
+            eps = 1e-2
+            if np.abs(udem[i]) < eps:
+                eps = 1e-6
+            imask[np.abs(dem - udem[i]) < eps] = 1
+
+        for _ in range(niter):
+            imask = _expand_mask_buffer(imask, buf=buf)
+            for i in ind:
+                eps = 1e-2
+                if np.abs(udem[i]) < eps:
+                    eps = 1e-6
+                imask[_four_point_laplacian(1 - imask) >= 3] = 0
+
+    return imask
+
+
 # ---------------------------------------------------------------------------
 # Lc computation (same as merit_regression.py)
 # ---------------------------------------------------------------------------
@@ -179,7 +217,7 @@ def load_dem_with_coords(
 
 
 def compute_lc(dem_path: str) -> dict:
-    """Run FFT on 3 center regions + full tile. Returns median Lc in pixels."""
+    """Run FFT on 3 center regions + full tile (4x sub + native). Returns median Lc in pixels."""
     regions = []
 
     for size in FFT_REGION_SIZES:
@@ -198,7 +236,11 @@ def compute_lc(dem_path: str) -> dict:
             verbose=False,
         )
         regions.append(
-            {"lc_px": float(result["spatialScale"]), "res": float(result["res"])}
+            {
+                "lc_px": float(result["spatialScale"]),
+                "res": float(result["res"]),
+                "label": f"center_{size}",
+            }
         )
 
     # Full tile (4x subsample)
@@ -220,6 +262,30 @@ def compute_lc(dem_path: str) -> dict:
         {
             "lc_px": float(result["spatialScale"]) * 4,
             "res": float(result["res"]) / 4,
+            "label": "full_4x",
+        }
+    )
+
+    # Full tile (native resolution — no subsampling)
+    data = load_dem_with_coords(dem_path)
+    result = identify_spatial_scale_laplacian_dem(
+        elev=data["elev"],
+        elon=data["lon"],
+        elat=data["lat"],
+        max_hillslope_length=MAX_HILLSLOPE_LENGTH,
+        land_threshold=0.75,
+        min_land_elevation=0,
+        detrend_elevation=True,
+        blend_edges_flag=True,
+        zero_edges=True,
+        nlambda=NLAMBDA,
+        verbose=False,
+    )
+    regions.append(
+        {
+            "lc_px": float(result["spatialScale"]),
+            "res": float(result["res"]),
+            "label": "full_native",
         }
     )
 
@@ -228,14 +294,15 @@ def compute_lc(dem_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Flow routing: returns raw intermediate arrays
+# Flow routing: setup (A_thresh-independent) + full routing
 # ---------------------------------------------------------------------------
-def run_flow_routing(dem_path: str, accum_threshold: int) -> dict:
+def setup_flow_routing(dem_path: str) -> dict:
     """
-    Run DEM conditioning + flow routing + HAND/DTND + slope/aspect.
+    Load DEM, condition, compute fdir + acc + slope/aspect.
 
-    Returns all intermediate arrays needed for diagnostic tests, including
-    the raw and conditioned DEMs for flood detection.
+    Returns the live grid object and A_thresh-independent arrays for the
+    gridcell extent. Channel mask, HAND/DTND, and drainage_id are
+    A_thresh-dependent and must be computed by the caller.
     """
     gc_lon_min, gc_lon_max = TARGET_LON
     gc_lat_min, gc_lat_max = TARGET_LAT
@@ -289,7 +356,64 @@ def run_flow_routing(dem_path: str, accum_threshold: int) -> dict:
     grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP, routing="d8")
     grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP, routing="d8")
 
-    # Stream network + HAND/DTND
+    # Slope/aspect using pgrid's Horn 1981 (A_thresh-independent)
+    print("  Computing slope/aspect...")
+    grid.slope_aspect("dem")
+
+    # Build coordinate arrays
+    nrows, ncols = np.array(grid.dem).shape
+    transform = grid.affine
+    lon = np.array([transform.c + transform.a * (i + 0.5) for i in range(ncols)])
+    lat = np.array([transform.f + transform.e * (j + 0.5) for j in range(nrows)])
+
+    # Extract A_thresh-independent gridcell arrays
+    slope_gc = np.array(grid.slope)[gc_row_slice, gc_col_slice]
+    aspect_gc = np.array(grid.aspect)[gc_row_slice, gc_col_slice]
+    lon_gc = lon[gc_col_slice]
+    lat_gc = lat[gc_row_slice]
+
+    # Flood field: slope-based open water mask (Swenson's identify_open_water)
+    print("  Computing open water mask (identify_open_water)...")
+    slope_full = np.array(grid.slope)
+    _, basin_mask = identify_open_water(slope_full)
+    fflood_gc = basin_mask[gc_row_slice, gc_col_slice]
+
+    # Pixel areas
+    phi = DTR * lon_gc
+    theta = DTR * (90.0 - lat_gc)
+    dphi = np.abs(phi[1] - phi[0])
+    dtheta = np.abs(theta[0] - theta[1])
+    sin_theta = np.sin(theta)
+    pixel_areas = np.tile(sin_theta.reshape(-1, 1), (1, len(lon_gc)))
+    pixel_areas = pixel_areas * dtheta * dphi * RE**2
+
+    res_m = np.abs(lat_gc[0] - lat_gc[1]) * RE * np.pi / 180
+
+    return {
+        "grid": grid,
+        "gc_row_slice": gc_row_slice,
+        "gc_col_slice": gc_col_slice,
+        "slope_gc": slope_gc,
+        "aspect_gc": aspect_gc,
+        "pixel_areas": pixel_areas,
+        "fflood_gc": fflood_gc,
+        "res_m": res_m,
+    }
+
+
+def run_flow_routing(dem_path: str, accum_threshold: int) -> dict:
+    """
+    Run DEM conditioning + flow routing + HAND/DTND + slope/aspect.
+
+    Returns all intermediate arrays needed for diagnostic tests, including
+    the raw and conditioned DEMs for flood detection.
+    """
+    setup = setup_flow_routing(dem_path)
+    grid = setup["grid"]
+    gc_row_slice = setup["gc_row_slice"]
+    gc_col_slice = setup["gc_col_slice"]
+
+    # Stream network + HAND/DTND (A_thresh-dependent)
     acc_mask = grid.acc > accum_threshold
     grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
 
@@ -303,9 +427,156 @@ def run_flow_routing(dem_path: str, accum_threshold: int) -> dict:
         routing="d8",
     )
 
-    # Slope/aspect using pgrid's Horn 1981
-    print("  Computing slope/aspect...")
+    # Extract A_thresh-dependent gridcell arrays
+    hand_gc = np.array(grid.hand)[gc_row_slice, gc_col_slice]
+    dtnd_gc = np.array(grid.dtnd)[gc_row_slice, gc_col_slice]
+    drainage_id_gc = np.array(grid.drainage_id)[gc_row_slice, gc_col_slice]
+
+    return {
+        "hand": hand_gc.flatten(),
+        "dtnd": dtnd_gc.flatten(),
+        "slope": setup["slope_gc"].flatten(),
+        "aspect": setup["aspect_gc"].flatten(),
+        "area": setup["pixel_areas"].flatten(),
+        "fflood": setup["fflood_gc"].flatten(),
+        "drainage_id": drainage_id_gc.flatten(),
+        "res_m": setup["res_m"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Flow routing with full Swenson DEM conditioning (Test N)
+# ---------------------------------------------------------------------------
+def run_flow_routing_swenson(dem_path: str, accum_threshold: int) -> dict:
+    """
+    Run Swenson's full DEM conditioning + flow routing + HAND/DTND + slope/aspect.
+
+    Adds 5 missing steps from Swenson's CalcLandscapeCharacteristicsPysheds
+    (representative_hillslope.py:1457-1754):
+
+      1. identify_basins() — mask large flat regions as nodata before pysheds
+      2. identify_open_water(slope) — find low-slope regions after fill_depressions
+      3. Lower flooded areas by 0.1m before resolve_flats
+      4. Re-mask basin pixels after flowdir, before accumulation
+      5. Force basin boundary pixels into stream network
+
+    Returns same dict structure as run_flow_routing() for direct comparison,
+    plus extra diagnostic fields about the conditioning.
+    """
+    gc_lon_min, gc_lon_max = TARGET_LON
+    gc_lat_min, gc_lat_max = TARGET_LAT
+    lon_width = gc_lon_max - gc_lon_min
+    lat_height = gc_lat_max - gc_lat_min
+
+    exp_lon_min = TARGET_CENTER_LON - EXPANSION_FACTOR * lon_width / 2
+    exp_lon_max = TARGET_CENTER_LON + EXPANSION_FACTOR * lon_width / 2
+    exp_lat_min = TARGET_CENTER_LAT - EXPANSION_FACTOR * lat_height / 2
+    exp_lat_max = TARGET_CENTER_LAT + EXPANSION_FACTOR * lat_height / 2
+
+    with rasterio.open(dem_path) as src:
+        src_nodata = src.nodata
+        window = from_bounds(
+            exp_lon_min, exp_lat_min, exp_lon_max, exp_lat_max, src.transform
+        )
+        dem_data = src.read(1, window=window)
+        expanded_transform = src.window_transform(window)
+
+    fill_value = src_nodata if src_nodata is not None else -9999
+
+    # Gridcell extraction indices
+    col_min = int((gc_lon_min - expanded_transform.c) / expanded_transform.a)
+    col_max = int((gc_lon_max - expanded_transform.c) / expanded_transform.a)
+    row_min = int((gc_lat_max - expanded_transform.f) / expanded_transform.e)
+    row_max = int((gc_lat_min - expanded_transform.f) / expanded_transform.e)
+    col_min = max(0, col_min)
+    col_max = min(dem_data.shape[1], col_max)
+    row_min = max(0, row_min)
+    row_max = min(dem_data.shape[0], row_max)
+    gc_row_slice = slice(row_min, row_max)
+    gc_col_slice = slice(col_min, col_max)
+
+    print(f"  Expanded DEM: {dem_data.shape}")
+    print(f"  Gridcell extraction: rows={gc_row_slice}, cols={gc_col_slice}")
+
+    # --- Step 1: Pre-conditioning basin identification (Swenson lines 1514-1519) ---
+    print("  [Swenson step 1] Identifying basins (flat regions)...")
+    basin_mask_pre = identify_basins(dem_data, nodata=fill_value)
+    n_basin_pre = int(np.sum(basin_mask_pre > 0))
+    print(
+        f"    Masked {n_basin_pre} pixels "
+        f"({100 * n_basin_pre / dem_data.size:.2f}%) as nodata"
+    )
+    dem_data[basin_mask_pre > 0] = fill_value
+
+    # pysheds grid setup
+    grid = Grid()
+    grid.add_gridded_data(
+        dem_data,
+        data_name="dem",
+        affine=expanded_transform,
+        crs=PyprojProj("EPSG:4326"),
+        nodata=fill_value,
+    )
+
+    # Standard conditioning
+    print("  Conditioning DEM (fill_pits → fill_depressions)...")
+    grid.fill_pits("dem", out_name="pit_filled")
+    grid.fill_depressions("pit_filled", out_name="flooded")
+
+    # --- Steps 2-3: Open water identification + depression lowering ---
+    print("  [Swenson step 2-3] Open water detection + 0.1m lowering...")
     grid.slope_aspect("dem")
+    slope_full = np.array(grid.slope)
+    basin_boundary, basin_mask_water = identify_open_water(slope_full)
+    n_water = int(np.sum(basin_mask_water > 0))
+    n_boundary = int(np.sum(basin_boundary > 0))
+    print(f"    Open water pixels: {n_water}, boundary pixels: {n_boundary}")
+
+    # Lower flooded DEM at water pixels by 0.1m (ensures flow drains away)
+    grid.flooded[basin_mask_water > 0] -= 0.1
+
+    print("  Resolving flats...")
+    grid.resolve_flats("flooded", out_name="inflated")
+
+    print("  Computing flow direction...")
+    grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP, routing="d8")
+
+    # --- Step 4: Re-mask basin pixels after flowdir, before accumulation ---
+    print("  [Swenson step 4] Re-masking basin pixels from conditioned DEMs...")
+    grid.flooded[basin_mask_water > 0] = fill_value
+    grid.inflated[basin_mask_water > 0] = fill_value
+
+    print("  Computing accumulation...")
+    grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP, routing="d8")
+
+    # --- Step 5: Force basin boundary into stream network ---
+    print("  [Swenson step 5] Forcing basin boundary into stream network...")
+    n_stream_before = int(np.sum(grid.acc > accum_threshold))
+    grid.acc[basin_boundary > 0] = accum_threshold + 1
+    n_stream_after = int(np.sum(grid.acc > accum_threshold))
+    n_stream_added = n_stream_after - n_stream_before
+    print(
+        f"    Stream pixels: {n_stream_before} before → {n_stream_after} after "
+        f"(+{n_stream_added} from basin boundary)"
+    )
+
+    # Stream network + HAND/DTND
+    acc_mask = grid.acc > accum_threshold
+
+    grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
+
+    print("  Computing HAND/DTND (using inflated DEM)...")
+    grid.compute_hand(
+        "fdir",
+        "inflated",
+        grid.channel_mask,
+        grid.channel_id,
+        dirmap=DIRMAP,
+        routing="d8",
+    )
+
+    # Slope/aspect from original (basin-masked) DEM — already computed above
+    # grid.slope and grid.aspect are already set from the slope_aspect("dem") call
 
     # Build coordinate arrays
     nrows, ncols = np.array(grid.dem).shape
@@ -321,11 +592,8 @@ def run_flow_routing(dem_path: str, accum_threshold: int) -> dict:
     lon_gc = lon[gc_col_slice]
     lat_gc = lat[gc_row_slice]
 
-    # Flood field: slope-based open water mask (Swenson's identify_open_water)
-    print("  Computing open water mask (identify_open_water)...")
-    slope_full = np.array(grid.slope)
-    _, basin_mask = identify_open_water(slope_full)
-    fflood_gc = basin_mask[gc_row_slice, gc_col_slice]
+    # Flood field from open water mask (within gridcell)
+    fflood_gc = basin_mask_water[gc_row_slice, gc_col_slice]
 
     # Pixel areas
     phi = DTR * lon_gc
@@ -350,6 +618,12 @@ def run_flow_routing(dem_path: str, accum_threshold: int) -> dict:
         "fflood": fflood_gc.flatten(),
         "drainage_id": drainage_id_gc.flatten(),
         "res_m": res_m,
+        # Extra diagnostics
+        "n_basin_pre": n_basin_pre,
+        "n_water": n_water,
+        "n_boundary": n_boundary,
+        "n_stream_before": n_stream_before,
+        "n_stream_after": n_stream_after,
     }
 
 
@@ -426,21 +700,25 @@ def compute_hand_bins(
     hand: np.ndarray,
     aspect: np.ndarray,
     aspect_bins: list,
-    bin1_max: float = 2.0,
+    bin1_max: float | None = 2.0,
     min_aspect_fraction: float = 0.01,
 ) -> np.ndarray:
-    """Compute HAND bin boundaries following Swenson's SpecifyHandBounds()."""
+    """Compute HAND bin boundaries following Swenson's SpecifyHandBounds().
+
+    If bin1_max is None, skip the forced branch and always use quartile bounds.
+    """
     valid = (hand > 0) & np.isfinite(hand)
     hand_valid = hand[valid]
 
     if hand_valid.size == 0:
-        return np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
+        fallback = bin1_max if bin1_max is not None else 2.0
+        return np.array([0, fallback, fallback * 2, fallback * 4, 1e6])
 
     hand_sorted = np.sort(hand_valid)
     n = hand_sorted.size
     initial_q25 = hand_sorted[int(0.25 * n) - 1] if n > 0 else 0
 
-    if initial_q25 > bin1_max:
+    if bin1_max is not None and initial_q25 > bin1_max:
         for asp_low, asp_high in aspect_bins:
             if asp_low > asp_high:
                 asp_mask = (aspect >= asp_low) | (aspect < asp_high)
@@ -480,6 +758,26 @@ def compute_hand_bins(
     return bounds
 
 
+def _fit_polynomial_w1(x, y, ncoefs, weights=None):
+    """
+    Port of Swenson's _fit_polynomial (representative_hillslope.py:113-136).
+
+    Weighted normal equations: (G^T W G) coefs = G^T W y
+    where W = diag(weights). Minimizes sum_i w_i * (residual_i)^2.
+    """
+    g = np.column_stack([np.power(x, n) for n in range(ncoefs)])
+
+    if weights is None:
+        gtg = g.T @ g
+        gtd = g.T @ y
+    else:
+        W = np.diag(weights)
+        gtg = g.T @ W @ g
+        gtd = g.T @ W @ y
+
+    return np.linalg.solve(gtg, gtd)
+
+
 def fit_trapezoidal_width(
     dtnd: np.ndarray,
     area: np.ndarray,
@@ -487,7 +785,7 @@ def fit_trapezoidal_width(
     min_dtnd: float = 90,
     n_bins: int = 10,
 ) -> dict:
-    """Fit trapezoidal plan form following Swenson Eq. (4)."""
+    """Fit trapezoidal plan form following Swenson Eq. (4). Uses w^2 weighting (baseline)."""
     if np.max(dtnd) < min_dtnd:
         return {
             "slope": 0,
@@ -515,6 +813,57 @@ def fit_trapezoidal_width(
         G = np.column_stack([np.ones_like(d), d, d**2])
         Gw = G * weights[:, np.newaxis]
         coeffs = np.linalg.lstsq(Gw, A_cumsum * weights, rcond=None)[0]
+
+        trap_slope = -coeffs[2]
+        trap_width = -coeffs[1]
+        trap_area = coeffs[0]
+
+        if trap_slope < 0:
+            Atri = -(trap_width**2) / (4 * trap_slope)
+            if Atri < trap_area:
+                trap_width = np.sqrt(-4 * trap_slope * trap_area)
+
+        return {"slope": trap_slope, "width": max(trap_width, 1), "area": trap_area}
+    except Exception:
+        return {
+            "slope": 0,
+            "width": np.sum(area) / n_hillslopes / 100,
+            "area": np.sum(area) / n_hillslopes,
+        }
+
+
+def fit_trapezoidal_width_w1(
+    dtnd: np.ndarray,
+    area: np.ndarray,
+    n_hillslopes: int,
+    min_dtnd: float = 90,
+    n_bins: int = 10,
+) -> dict:
+    """Fit trapezoidal plan form using Swenson's w^1 weighting (corrected)."""
+    if np.max(dtnd) < min_dtnd:
+        return {
+            "slope": 0,
+            "width": np.sum(area) / n_hillslopes / 100,
+            "area": np.sum(area) / n_hillslopes,
+        }
+
+    dtnd_bins = np.linspace(min_dtnd, np.max(dtnd) + 1, n_bins + 1)
+    d = np.zeros(n_bins)
+    A_cumsum = np.zeros(n_bins)
+
+    for k in range(n_bins):
+        mask = dtnd >= dtnd_bins[k]
+        d[k] = dtnd_bins[k]
+        A_cumsum[k] = np.sum(area[mask])
+
+    A_cumsum /= n_hillslopes
+
+    if min_dtnd > 0:
+        d = np.concatenate([[0], d])
+        A_cumsum = np.concatenate([[np.sum(area) / n_hillslopes], A_cumsum])
+
+    try:
+        coeffs = _fit_polynomial_w1(d, A_cumsum, ncoefs=3, weights=A_cumsum)
 
         trap_slope = -coeffs[2]
         trap_width = -coeffs[1]
@@ -576,6 +925,8 @@ def compute_elements(
     res_m: float,
     skip_zero_hand_bins: bool = False,
     swenson_style: bool = False,
+    use_w1_fit: bool = False,
+    bin1_max_override: float | None = LOWEST_BIN_MAX,
 ) -> dict:
     """
     Compute 16 hillslope elements from flat arrays.
@@ -588,12 +939,18 @@ def compute_elements(
     the trapezoidal fit, and area fraction denominators. Bins still only
     contain HAND >= 0 pixels (bin bounds start at 0).
 
+    If use_w1_fit=True, uses Swenson's w^1 polynomial weighting instead of
+    the baseline w^2 lstsq weighting.
+
+    bin1_max_override controls the lowest bin upper bound. Default is
+    LOWEST_BIN_MAX (2.0). Pass None for pure quartile binning.
+
     Returns dict with 'elements' list and diagnostic intermediates.
     """
     valid = (hand_flat >= 0) & np.isfinite(hand_flat)
 
     hand_bounds = compute_hand_bins(
-        hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
+        hand_flat, aspect_flat, ASPECT_BINS, bin1_max=bin1_max_override
     )
 
     elements = []
@@ -651,7 +1008,8 @@ def compute_elements(
         diag["n_hillslopes"].append(n_hillslopes)
 
         # Trapezoidal fit
-        trap = fit_trapezoidal_width(
+        fit_fn = fit_trapezoidal_width_w1 if use_w1_fit else fit_trapezoidal_width
+        trap = fit_fn(
             dtnd_flat[asp_indices],
             area_flat[asp_indices],
             n_hillslopes,
@@ -1078,6 +1436,8 @@ def run_test(
     pub: dict,
     skip_zero_hand_bins: bool = False,
     swenson_style: bool = False,
+    use_w1_fit: bool = False,
+    bin1_max_override: float | None = LOWEST_BIN_MAX,
 ) -> dict:
     """Run hillslope computation on filtered arrays and report correlation."""
     n_pixels = hand.size
@@ -1094,6 +1454,8 @@ def run_test(
         res_m,
         skip_zero_hand_bins=skip_zero_hand_bins,
         swenson_style=swenson_style,
+        use_w1_fit=use_w1_fit,
+        bin1_max_override=bin1_max_override,
     )
     corrs = compute_all_correlations(result["elements"], pub)
 
@@ -1321,6 +1683,23 @@ def run_hypothesis_tests(arrays: dict, pub: dict) -> dict:
         swenson_style=True,
     )
 
+    # Test I: Fix polynomial fit weighting (w^1 instead of w^2)
+    print("\n  --- Test I: Corrected polynomial fit weighting (w^1) ---")
+    print("    Swenson's _fit_polynomial uses W=diag(w) → minimizes sum w_i * r_i^2")
+    print("    Our lstsq uses G*w, y*w → minimizes sum w_i^2 * r_i^2")
+    results["I_w1_fit"] = run_test(
+        "Test I: Corrected polynomial fit weighting (w^1)",
+        hand,
+        dtnd,
+        slope,
+        aspect,
+        area,
+        did,
+        res_m,
+        pub,
+        use_w1_fit=True,
+    )
+
     return results
 
 
@@ -1408,6 +1787,7 @@ def print_summary(test_results: dict) -> None:
         ("F_swenson_mask", "F: Swenson valid mask (incl neg HAND)"),
         ("G_swenson_tail", "G: Swenson mask + tail removal"),
         ("H_full_swenson", "H: Full Swenson (corrected fflood)"),
+        ("I_w1_fit", "I: Corrected poly fit weighting (w^1)"),
     ]:
         corr = test_results[key]["correlations"]["area_fraction"]
         delta = corr - baseline
@@ -1416,16 +1796,969 @@ def print_summary(test_results: dict) -> None:
     # Full correlation table: baseline vs key tests
     print(
         f"\n{'Parameter':<18s}  {'Baseline':>8s}  {'All (E)':>8s}  "
-        f"{'Swen (F)':>8s}  {'S+tail(G)':>9s}  {'Full(H)':>8s}"
+        f"{'Swen (F)':>8s}  {'S+tail(G)':>9s}  {'Full(H)':>8s}  {'w1(I)':>8s}"
     )
-    print("-" * 78)
+    print("-" * 88)
     for name in ("height", "distance", "slope", "aspect", "width", "area_fraction"):
         b = test_results["baseline"]["correlations"][name]
         e = test_results["E_all"]["correlations"][name]
         f = test_results["F_swenson_mask"]["correlations"][name]
         g = test_results["G_swenson_tail"]["correlations"][name]
         h = test_results["H_full_swenson"]["correlations"][name]
-        print(f"{name:<18s}  {b:>8.4f}  {e:>8.4f}  {f:>8.4f}  {g:>9.4f}  {h:>8.4f}")
+        i = test_results["I_w1_fit"]["correlations"][name]
+        print(
+            f"{name:<18s}  {b:>8.4f}  {e:>8.4f}  {f:>8.4f}  "
+            f"{g:>9.4f}  {h:>8.4f}  {i:>8.4f}"
+        )
+
+
+# ===========================================================================
+# Part 4: A_cumsum(d) curve diagnostics (Test J)
+# ===========================================================================
+def print_acumsum_diagnostics(arrays: dict) -> None:
+    """
+    Test J: For each aspect, print the raw A_cumsum(d) data, the fitted
+    quadratic (both w^2 and w^1), per-point residuals, and R^2.
+    """
+    hand = arrays["hand"]
+    dtnd = arrays["dtnd"]
+    aspect = arrays["aspect"]
+    area = arrays["area"]
+    drainage_id = arrays["drainage_id"]
+    res_m = arrays["res_m"]
+
+    valid = (hand >= 0) & np.isfinite(hand)
+
+    print("\n" + "=" * 78)
+    print("TEST J: A_cumsum(d) CURVE DIAGNOSTICS")
+    print("=" * 78)
+
+    for asp_idx, (asp_bin, asp_name) in enumerate(zip(ASPECT_BINS, ASPECT_NAMES)):
+        asp_mask = get_aspect_mask(aspect, asp_bin) & valid
+        asp_indices = np.where(asp_mask)[0]
+
+        if len(asp_indices) == 0:
+            print(f"\n  {asp_name}: no valid pixels")
+            continue
+
+        n_hillslopes = max(len(np.unique(drainage_id[asp_indices])), 1)
+
+        # Build A_cumsum(d) curve (same as fit_trapezoidal_width)
+        asp_dtnd = dtnd[asp_indices]
+        asp_area = area[asp_indices]
+
+        if np.max(asp_dtnd) < res_m:
+            print(f"\n  {asp_name}: max DTND < min_dtnd ({res_m:.1f}m), skipped")
+            continue
+
+        n_bins = 10
+        dtnd_bins = np.linspace(res_m, np.max(asp_dtnd) + 1, n_bins + 1)
+        d = np.zeros(n_bins)
+        A_cumsum = np.zeros(n_bins)
+
+        for k in range(n_bins):
+            mask = asp_dtnd >= dtnd_bins[k]
+            d[k] = dtnd_bins[k]
+            A_cumsum[k] = np.sum(asp_area[mask])
+
+        A_cumsum /= n_hillslopes
+
+        if res_m > 0:
+            d = np.concatenate([[0], d])
+            A_cumsum = np.concatenate([[np.sum(asp_area) / n_hillslopes], A_cumsum])
+
+        # Fit w^2 (baseline lstsq)
+        weights = A_cumsum
+        G = np.column_stack([np.ones_like(d), d, d**2])
+        Gw = G * weights[:, np.newaxis]
+        coeffs_w2 = np.linalg.lstsq(Gw, A_cumsum * weights, rcond=None)[0]
+
+        # Fit w^1 (Swenson's method)
+        coeffs_w1 = _fit_polynomial_w1(d, A_cumsum, ncoefs=3, weights=A_cumsum)
+
+        # Evaluate fits
+        fitted_w2 = coeffs_w2[0] + coeffs_w2[1] * d + coeffs_w2[2] * d**2
+        fitted_w1 = coeffs_w1[0] + coeffs_w1[1] * d + coeffs_w1[2] * d**2
+
+        # R^2 for each
+        ss_tot = np.sum((A_cumsum - np.mean(A_cumsum)) ** 2)
+        ss_res_w2 = np.sum((A_cumsum - fitted_w2) ** 2)
+        ss_res_w1 = np.sum((A_cumsum - fitted_w1) ** 2)
+        r2_w2 = 1 - ss_res_w2 / ss_tot if ss_tot > 0 else float("nan")
+        r2_w1 = 1 - ss_res_w1 / ss_tot if ss_tot > 0 else float("nan")
+
+        print(
+            f"\n  {asp_name} (n_hillslopes={n_hillslopes}, {len(asp_indices)} pixels)"
+        )
+        print(
+            f"    w^2 coeffs: a0={coeffs_w2[0]:.1f}, a1={coeffs_w2[1]:.4f}, "
+            f"a2={coeffs_w2[2]:.8f}  R^2={r2_w2:.6f}"
+        )
+        print(
+            f"    w^1 coeffs: a0={coeffs_w1[0]:.1f}, a1={coeffs_w1[1]:.4f}, "
+            f"a2={coeffs_w1[2]:.8f}  R^2={r2_w1:.6f}"
+        )
+
+        print(
+            f"    {'d(m)':>8s}  {'A_cumsum':>10s}  "
+            f"{'fit_w2':>10s}  {'res_w2':>10s}  {'%err_w2':>8s}  "
+            f"{'fit_w1':>10s}  {'res_w1':>10s}  {'%err_w1':>8s}"
+        )
+        print("    " + "-" * 84)
+
+        for j in range(len(d)):
+            res_w2 = A_cumsum[j] - fitted_w2[j]
+            res_w1 = A_cumsum[j] - fitted_w1[j]
+            pct_w2 = 100 * res_w2 / A_cumsum[j] if A_cumsum[j] != 0 else 0
+            pct_w1 = 100 * res_w1 / A_cumsum[j] if A_cumsum[j] != 0 else 0
+            print(
+                f"    {d[j]:>8.1f}  {A_cumsum[j]:>10.1f}  "
+                f"{fitted_w2[j]:>10.1f}  {res_w2:>+10.1f}  {pct_w2:>+7.2f}%  "
+                f"{fitted_w1[j]:>10.1f}  {res_w1:>+10.1f}  {pct_w1:>+7.2f}%"
+            )
+
+
+# ===========================================================================
+# Part 5: HAND CDF at bin-0 boundary (Test K)
+# ===========================================================================
+def print_hand_cdf_diagnostics(arrays: dict) -> None:
+    """
+    Test K: For each aspect, compute pixel density near the 2.0m HAND
+    bin boundary. High density means small HAND shifts move large numbers
+    of pixels across the boundary.
+    """
+    hand = arrays["hand"]
+    aspect = arrays["aspect"]
+
+    valid = (hand >= 0) & np.isfinite(hand)
+
+    print("\n" + "=" * 78)
+    print("TEST K: HAND CDF AT BIN-0 BOUNDARY (2.0m)")
+    print("=" * 78)
+
+    # Band widths to check
+    bands = [(1.0, 3.0), (1.5, 2.5), (1.8, 2.2)]
+
+    for band_lo, band_hi in bands:
+        print(
+            f"\n  HAND band [{band_lo:.1f}, {band_hi:.1f}]m "
+            f"(±{(band_hi - band_lo) / 2:.1f}m around 2.0m)"
+        )
+        print(
+            f"    {'Aspect':<8s}  {'In band':>8s}  {'Total':>8s}  "
+            f"{'% in band':>9s}  {'density':>12s}"
+        )
+        print("    " + "-" * 55)
+
+        for asp_idx, (asp_bin, asp_name) in enumerate(zip(ASPECT_BINS, ASPECT_NAMES)):
+            asp_mask = get_aspect_mask(aspect, asp_bin) & valid
+            n_asp = int(np.sum(asp_mask))
+
+            in_band = asp_mask & (hand >= band_lo) & (hand < band_hi)
+            n_band = int(np.sum(in_band))
+
+            pct = 100 * n_band / n_asp if n_asp > 0 else 0
+            # Density: pixels per meter of HAND (normalized by total aspect pixels)
+            density = n_band / (band_hi - band_lo) / n_asp if n_asp > 0 else 0
+
+            print(
+                f"    {asp_name:<8s}  {n_band:>8d}  {n_asp:>8d}  "
+                f"{pct:>8.2f}%  {density:>12.4f} /m"
+            )
+
+    # CDF slope at exactly 2.0m (approximate with narrow band)
+    eps = 0.1
+    print(f"\n  CDF slope approximation (HAND in [{2 - eps:.1f}, {2 + eps:.1f}]m):")
+    print(
+        f"    {'Aspect':<8s}  {'Pixels':>8s}  {'Total':>8s}  "
+        f"{'CDF slope':>12s}  {'Interpretation'}"
+    )
+    print("    " + "-" * 65)
+
+    for asp_idx, (asp_bin, asp_name) in enumerate(zip(ASPECT_BINS, ASPECT_NAMES)):
+        asp_mask = get_aspect_mask(aspect, asp_bin) & valid
+        n_asp = int(np.sum(asp_mask))
+
+        narrow = asp_mask & (hand >= 2.0 - eps) & (hand < 2.0 + eps)
+        n_narrow = int(np.sum(narrow))
+
+        # CDF slope = fraction of pixels per unit HAND at this point
+        cdf_slope = n_narrow / (2 * eps) / n_asp if n_asp > 0 else 0
+
+        if cdf_slope > 0.10:
+            interp = "HIGH sensitivity"
+        elif cdf_slope > 0.05:
+            interp = "moderate sensitivity"
+        else:
+            interp = "low sensitivity"
+
+        print(
+            f"    {asp_name:<8s}  {n_narrow:>8d}  {n_asp:>8d}  "
+            f"{cdf_slope:>12.4f} /m  {interp}"
+        )
+
+
+# ===========================================================================
+# Part 6: Q25 diagnostic and bin1_max sensitivity (Test L)
+# ===========================================================================
+def print_q25_diagnostic(arrays: dict) -> None:
+    """Print Q25 of hand[hand > 0] and which branch compute_hand_bins takes."""
+    hand = arrays["hand"]
+    aspect = arrays["aspect"]
+
+    valid = (hand > 0) & np.isfinite(hand)
+    hand_valid = hand[valid]
+    n_stream = int(np.sum(hand == 0))
+    n_valid = hand_valid.size
+
+    print("\n" + "=" * 78)
+    print("Q25 DIAGNOSTIC: HAND distribution and bin branch")
+    print("=" * 78)
+
+    if n_valid == 0:
+        print("  No valid HAND > 0 pixels!")
+        return
+
+    hand_sorted = np.sort(hand_valid)
+    q25 = hand_sorted[int(0.25 * n_valid) - 1]
+    q50 = hand_sorted[int(0.50 * n_valid) - 1]
+    q75 = hand_sorted[int(0.75 * n_valid) - 1]
+
+    print(f"  HAND > 0 pixels: {n_valid}")
+    print(f"  HAND == 0 pixels (stream): {n_stream}")
+    print(f"  HAND < 0 pixels: {int(np.sum((hand < 0) & np.isfinite(hand)))}")
+    print(f"  Q25 = {q25:.4f} m")
+    print(f"  Q50 = {q50:.4f} m")
+    print(f"  Q75 = {q75:.4f} m")
+    print(f"  LOWEST_BIN_MAX = {LOWEST_BIN_MAX} m")
+
+    if q25 > LOWEST_BIN_MAX:
+        print(f"  Branch: FORCED (Q25={q25:.4f} > bin1_max={LOWEST_BIN_MAX})")
+        print(
+            "    → Uses min-aspect-fraction + 33rd/66th percentile of hand > bin1_max"
+        )
+    else:
+        print(f"  Branch: QUARTILE (Q25={q25:.4f} <= bin1_max={LOWEST_BIN_MAX})")
+        print(f"    → Uses quartile bounds [0, {q25:.4f}, {q50:.4f}, {q75:.4f}, 1e6]")
+
+    # Show what bounds each branch produces
+    bounds_forced = compute_hand_bins(
+        hand, aspect, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
+    )
+    bounds_quartile = compute_hand_bins(hand, aspect, ASPECT_BINS, bin1_max=None)
+
+    print(f"\n  Forced branch bounds:   {bounds_forced.tolist()}")
+    print(f"  Quartile branch bounds: {bounds_quartile.tolist()}")
+
+
+def run_bin1max_sweep(arrays: dict, pub: dict) -> dict:
+    """
+    Test L: Sweep bin1_max values and report correlations at each.
+
+    Tests whether the forced 2m HAND bin constraint is causing the area
+    fraction gap by trying alternative bin1_max values.
+    """
+    hand = arrays["hand"]
+    dtnd = arrays["dtnd"]
+    slope = arrays["slope"]
+    aspect = arrays["aspect"]
+    area = arrays["area"]
+    did = arrays["drainage_id"]
+    res_m = arrays["res_m"]
+
+    sweep_values: list[float | None] = [1.0, 1.5, 2.0, 2.5, 3.0, 5.0, None]
+
+    print("\n" + "=" * 78)
+    print("TEST L: bin1_max SENSITIVITY SWEEP")
+    print("=" * 78)
+    print("  Sweeping bin1_max to test whether the forced 2m HAND constraint")
+    print("  is causing the area fraction gap. All runs use w^1 fit.")
+
+    results = {}
+
+    for val in sweep_values:
+        label = f"bin1_max={val}" if val is not None else "bin1_max=None (quartiles)"
+
+        result = compute_elements(
+            hand,
+            dtnd,
+            slope,
+            aspect,
+            area,
+            did,
+            res_m,
+            use_w1_fit=True,
+            bin1_max_override=val,
+        )
+        corrs = compute_all_correlations(result["elements"], pub)
+        diag = result["diagnostics"]
+
+        # Per-aspect sub-correlations
+        our_area = np.array([e["area"] for e in result["elements"]])
+        pub_area = pub["area"]
+        our_frac = our_area / our_area.sum() if our_area.sum() > 0 else our_area
+        pub_frac = pub_area / pub_area.sum() if pub_area.sum() > 0 else pub_area
+
+        asp_corrs = []
+        for asp_idx in range(N_ASPECT_BINS):
+            sl = slice(asp_idx * N_HAND_BINS, (asp_idx + 1) * N_HAND_BINS)
+            o = our_frac[sl]
+            p = pub_frac[sl]
+            if np.std(o) > 0 and np.std(p) > 0:
+                asp_corrs.append(float(np.corrcoef(o, p)[0, 1]))
+            else:
+                asp_corrs.append(float("nan"))
+
+        print(f"\n  --- {label} ---")
+        print(f"    HAND bounds: {diag['hand_bounds']}")
+        print(f"    Area fraction corr: {corrs['area_fraction']:.4f}")
+        print(
+            f"    Per-aspect: N={asp_corrs[0]:.4f}  E={asp_corrs[1]:.4f}  "
+            f"S={asp_corrs[2]:.4f}  W={asp_corrs[3]:.4f}"
+        )
+        print("    All params: ", end="")
+        for name in ("height", "distance", "slope", "aspect", "width", "area_fraction"):
+            print(f"{name}={corrs[name]:.4f}  ", end="")
+        print()
+
+        results[str(val)] = {
+            "bin1_max": val,
+            "hand_bounds": diag["hand_bounds"],
+            "correlations": corrs,
+            "aspect_corrs": asp_corrs,
+        }
+
+    # Summary table
+    print("\n  --- Summary ---")
+    print(
+        f"  {'bin1_max':>12s}  {'Area frac':>9s}  "
+        f"{'North':>7s}  {'East':>7s}  {'South':>7s}  {'West':>7s}  "
+        f"{'Height':>7s}  {'Width':>7s}"
+    )
+    print("  " + "-" * 82)
+
+    for val in sweep_values:
+        key = str(val)
+        r = results[key]
+        label = f"{val}" if val is not None else "None(Q)"
+        print(
+            f"  {label:>12s}  {r['correlations']['area_fraction']:>9.4f}  "
+            f"{r['aspect_corrs'][0]:>7.4f}  {r['aspect_corrs'][1]:>7.4f}  "
+            f"{r['aspect_corrs'][2]:>7.4f}  {r['aspect_corrs'][3]:>7.4f}  "
+            f"{r['correlations']['height']:>7.4f}  "
+            f"{r['correlations']['width']:>7.4f}"
+        )
+
+    return results
+
+
+# ===========================================================================
+# Part 7: Infer Swenson's bin boundaries from published data (Test M)
+# ===========================================================================
+def infer_published_boundaries(arrays: dict, pub: dict) -> None:
+    """
+    Infer Swenson's HAND bin boundaries from published mean HAND values.
+
+    Prints raw published areas and mean HAND (never printed before), then
+    sweeps bin1_max candidates to find which boundaries best reproduce the
+    published per-element mean HAND. Compares inferred boundaries to our
+    forced and quartile bounds.
+
+    Not wired into main() — call manually for one-off analysis.
+    """
+    hand = arrays["hand"]
+    aspect = arrays["aspect"]
+    area = arrays["area"]
+
+    pub_height = pub["height"]  # mean HAND per element (16 values)
+    pub_area_raw = pub["area"]  # raw area per element (16 values)
+
+    valid = (hand > 0) & np.isfinite(hand)
+
+    # Reference bounds from our data
+    bounds_forced = compute_hand_bins(
+        hand, aspect, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
+    )
+    bounds_quartile = compute_hand_bins(hand, aspect, ASPECT_BINS, bin1_max=None)
+
+    print("\n" + "=" * 78)
+    print("TEST M: BOUNDARY INFERENCE FROM PUBLISHED DATA")
+    print("=" * 78)
+
+    # ----- Part 1: Raw published data -----
+    total_pub_area = float(np.sum(pub_area_raw))
+
+    print("\n  --- Raw published data per element ---")
+    print(
+        f"  {'Elem':>4s}  {'Aspect':<6s}  {'Bin':>3s}  "
+        f"{'Pub area (m²)':>14s}  {'Pub HAND (m)':>12s}  {'Pub frac':>8s}"
+    )
+    print("  " + "-" * 58)
+
+    for i in range(16):
+        asp_idx = i // N_HAND_BINS
+        h_idx = i % N_HAND_BINS
+        frac = pub_area_raw[i] / total_pub_area if total_pub_area > 0 else 0
+        print(
+            f"  {i:>4d}  {ASPECT_NAMES[asp_idx]:<6s}  {h_idx:>3d}  "
+            f"{pub_area_raw[i]:>14.1f}  {pub_height[i]:>12.4f}  {frac:>8.4f}"
+        )
+
+    # Per-aspect totals
+    print(f"\n  {'Aspect':<8s}  {'Total area (m²)':>16s}  {'Frac':>8s}")
+    print("  " + "-" * 36)
+    for asp_idx, asp_name in enumerate(ASPECT_NAMES):
+        sl = slice(asp_idx * N_HAND_BINS, (asp_idx + 1) * N_HAND_BINS)
+        asp_area_sum = float(np.sum(pub_area_raw[sl]))
+        asp_frac = asp_area_sum / total_pub_area if total_pub_area > 0 else 0
+        print(f"  {asp_name:<8s}  {asp_area_sum:>16.1f}  {asp_frac:>8.4f}")
+
+    print(f"\n  Total published area: {total_pub_area:.1f} m²")
+
+    # Our total area for scale comparison
+    our_total_area = float(np.sum(area[valid]))
+    print(f"  Our total area (hand>0): {our_total_area:.1f} m²")
+    if our_total_area > 0:
+        print(f"  Ratio (pub/ours): {total_pub_area / our_total_area:.4f}")
+
+    # ----- Part 2: Compute mean HAND for reference bound sets -----
+    def _compute_bin_means(bounds: np.ndarray) -> np.ndarray:
+        """Compute mean HAND in each of 16 aspect-bin combinations."""
+        means = np.zeros(16)
+        for a_idx, asp_bin in enumerate(ASPECT_BINS):
+            asp_mask = get_aspect_mask(aspect, asp_bin) & valid
+            for h_idx in range(N_HAND_BINS):
+                h_lower = bounds[h_idx]
+                h_upper = bounds[h_idx + 1]
+                bin_mask = asp_mask & (hand >= h_lower) & (hand < h_upper)
+                if np.any(bin_mask):
+                    means[a_idx * N_HAND_BINS + h_idx] = float(np.mean(hand[bin_mask]))
+        return means
+
+    forced_means = _compute_bin_means(bounds_forced)
+    quartile_means = _compute_bin_means(bounds_quartile)
+
+    forced_rmse = float(np.sqrt(np.mean((forced_means - pub_height) ** 2)))
+    quartile_rmse = float(np.sqrt(np.mean((quartile_means - pub_height) ** 2)))
+
+    # ----- Part 3: Sweep bin1_max candidates -----
+    sweep_values = np.arange(0.5, 5.01, 0.01)
+
+    best_rmse = np.inf
+    best_bin1max = None
+    best_bounds = None
+    best_means = None
+
+    # Track RMSE curve for printing
+    rmse_curve = []
+
+    for val in sweep_values:
+        bounds = compute_hand_bins(hand, aspect, ASPECT_BINS, bin1_max=float(val))
+        means = _compute_bin_means(bounds)
+        rmse = float(np.sqrt(np.mean((means - pub_height) ** 2)))
+        rmse_curve.append((float(val), rmse, bounds.tolist()))
+
+        if rmse < best_rmse:
+            best_rmse = rmse
+            best_bin1max = float(val)
+            best_bounds = bounds.copy()
+            best_means = means.copy()
+
+    # ----- Part 4: Results -----
+    print("\n  --- Sweep results ---")
+    print(f"  Best-fit bin1_max: {best_bin1max:.2f} m (RMSE = {best_rmse:.4f} m)")
+    print(f"  Forced (2.0m) RMSE:  {forced_rmse:.4f} m")
+    print(f"  Quartile RMSE:       {quartile_rmse:.4f} m")
+
+    # Print RMSE at sampled points
+    print("\n  RMSE curve (sampled):")
+    print(f"  {'bin1_max':>8s}  {'RMSE':>8s}  {'Branch':>10s}  {'Bounds'}")
+    print("  " + "-" * 70)
+    # Print at integer + 0.5 steps, plus the best-fit point
+    sample_vals = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+    hand_sorted = np.sort(hand[valid])
+    q25 = hand_sorted[int(0.25 * hand_sorted.size) - 1]
+    printed_best = False
+    for val, rmse, bounds in rmse_curve:
+        if round(val, 2) in sample_vals or (not printed_best and val >= best_bin1max):
+            if val >= best_bin1max and not printed_best:
+                # Print best-fit row first if it falls between samples
+                if round(val, 2) != round(best_bin1max, 2):
+                    best_branch = "forced" if q25 > best_bin1max else "quartile"
+                    print(
+                        f"  {best_bin1max:>8.2f}  {best_rmse:>8.4f}  "
+                        f"{best_branch:>10s}  "
+                        f"{[f'{b:.2f}' for b in best_bounds.tolist()]}  <-- BEST"
+                    )
+                printed_best = True
+            branch = "forced" if q25 > val else "quartile"
+            marker = "  <-- BEST" if round(val, 2) == round(best_bin1max, 2) else ""
+            if round(val, 2) in sample_vals:
+                print(
+                    f"  {val:>8.2f}  {rmse:>8.4f}  {branch:>10s}  "
+                    f"{[f'{b:.2f}' for b in bounds]}{marker}"
+                )
+
+    # Boundary comparison table
+    print("\n  --- Boundary comparison ---")
+    print(
+        f"  {'Source':<22s}  {'b0':>6s}  {'b1':>6s}  "
+        f"{'b2':>6s}  {'b3':>6s}  {'b4':>8s}  {'RMSE':>8s}"
+    )
+    print("  " + "-" * 68)
+
+    for label, bounds, rmse in [
+        ("Forced (2.0m)", bounds_forced, forced_rmse),
+        ("Quartile", bounds_quartile, quartile_rmse),
+        (f"Best-fit ({best_bin1max:.2f}m)", best_bounds, best_rmse),
+    ]:
+        print(
+            f"  {label:<22s}  {bounds[0]:>6.2f}  {bounds[1]:>6.2f}  "
+            f"{bounds[2]:>6.2f}  {bounds[3]:>6.2f}  "
+            f"{bounds[4]:>8.0f}  {rmse:>8.4f}"
+        )
+
+    # Per-element comparison
+    print("\n  --- Per-element mean HAND comparison ---")
+    print(
+        f"  {'Elem':>4s}  {'Aspect':<6s}  {'Bin':>3s}  "
+        f"{'Published':>9s}  {'Forced':>8s}  {'Quartile':>8s}  {'Best-fit':>8s}"
+    )
+    print("  " + "-" * 60)
+
+    for i in range(16):
+        asp_idx = i // N_HAND_BINS
+        h_idx = i % N_HAND_BINS
+        print(
+            f"  {i:>4d}  {ASPECT_NAMES[asp_idx]:<6s}  {h_idx:>3d}  "
+            f"{pub_height[i]:>9.4f}  {forced_means[i]:>8.4f}  "
+            f"{quartile_means[i]:>8.4f}  {best_means[i]:>8.4f}"
+        )
+
+    # Interpretation
+    print("\n  --- Interpretation ---")
+    print(f"  Our Q25: {q25:.4f} m")
+    print(f"  Our forced branch triggers at bin1_max < {q25:.4f}")
+    if best_bin1max < q25:
+        print(
+            f"  Best-fit ({best_bin1max:.2f}) < Q25 ({q25:.2f}) "
+            f"→ Swenson likely uses FORCED branch"
+        )
+    else:
+        print(
+            f"  Best-fit ({best_bin1max:.2f}) >= Q25 ({q25:.2f}) "
+            f"→ Swenson likely uses QUARTILE branch"
+        )
+
+    if abs(best_rmse - forced_rmse) < 0.1:
+        print(
+            f"  Forced RMSE ({forced_rmse:.4f}) ≈ best RMSE ({best_rmse:.4f}) "
+            f"→ forced branch is close to optimal"
+        )
+    elif forced_rmse < quartile_rmse:
+        print(
+            f"  Forced RMSE ({forced_rmse:.4f}) < quartile RMSE "
+            f"({quartile_rmse:.4f}) → forced branch is better"
+        )
+    else:
+        print(
+            f"  Quartile RMSE ({quartile_rmse:.4f}) < forced RMSE "
+            f"({forced_rmse:.4f}) → quartile branch is better"
+        )
+
+
+# ===========================================================================
+# Part 8: Swenson DEM conditioning (Test N)
+# ===========================================================================
+def run_test_n(accum_threshold: int, pub: dict, arrays_original: dict) -> dict:
+    """
+    Test N: Re-run flow routing with Swenson's full DEM conditioning and
+    compare all 6 correlations to the original (unconditioned) results.
+
+    Tests whether the 5 missing conditioning steps explain the systematic
+    HAND offset (0.2-0.4m) seen in Test M.
+    """
+    print("\n" + "=" * 78)
+    print("TEST N: SWENSON DEM CONDITIONING")
+    print("=" * 78)
+    print("  Adding 5 missing DEM conditioning steps from Swenson's code:")
+    print("    1. identify_basins() — mask large flat regions before pysheds")
+    print("    2. identify_open_water(slope) — find low-slope regions")
+    print("    3. Lower flooded areas by 0.1m before resolve_flats")
+    print("    4. Re-mask basin pixels after flowdir, before accumulation")
+    print("    5. Force basin boundary pixels into stream network")
+    print()
+
+    # Run flow routing with full Swenson conditioning
+    t0 = time.time()
+    arrays = run_flow_routing_swenson(MERIT_DEM, accum_threshold)
+    print(f"  Flow routing complete ({time.time() - t0:.0f}s)")
+
+    hand = arrays["hand"]
+    dtnd = arrays["dtnd"]
+    slope = arrays["slope"]
+    aspect = arrays["aspect"]
+    area = arrays["area"]
+    fflood = arrays["fflood"]
+    did = arrays["drainage_id"]
+    res_m = arrays["res_m"]
+
+    # --- Array comparison ---
+    hand_orig = arrays_original["hand"]
+    dtnd_orig = arrays_original["dtnd"]
+
+    print("\n  --- Array comparison (Swenson-conditioned vs original) ---")
+
+    valid_orig = (hand_orig >= 0) & np.isfinite(hand_orig)
+    valid_new = (hand >= 0) & np.isfinite(hand)
+
+    print(f"  {'Metric':<30s}  {'Original':>12s}  {'Swenson':>12s}  {'Delta':>12s}")
+    print("  " + "-" * 70)
+
+    for label, orig, new in [
+        ("Valid pixels (HAND>=0)", np.sum(valid_orig), np.sum(valid_new)),
+        ("Mean HAND (valid)", np.mean(hand_orig[valid_orig]), np.mean(hand[valid_new])),
+        (
+            "Median HAND (valid)",
+            np.median(hand_orig[valid_orig]),
+            np.median(hand[valid_new]),
+        ),
+        ("Mean DTND (valid)", np.mean(dtnd_orig[valid_orig]), np.mean(dtnd[valid_new])),
+        (
+            "Median DTND (valid)",
+            np.median(dtnd_orig[valid_orig]),
+            np.median(dtnd[valid_new]),
+        ),
+    ]:
+        delta = float(new) - float(orig)
+        print(
+            f"  {label:<30s}  {float(orig):>12.4f}  {float(new):>12.4f}  {delta:>+12.4f}"
+        )
+
+    # Per-bin HAND comparison
+    valid_both = valid_orig & valid_new
+    if np.any(valid_both):
+        hand_diff = hand[valid_both] - hand_orig[valid_both]
+        print(
+            f"\n  HAND difference (Swenson - original) where both valid:"
+            f"\n    mean={np.mean(hand_diff):+.4f}m, "
+            f"median={np.median(hand_diff):+.4f}m, "
+            f"std={np.std(hand_diff):.4f}m"
+        )
+
+    # --- Baseline (no filters, w1 fit) ---
+    results = {}
+
+    print("\n  --- N.baseline: Swenson conditioning, no pixel filters ---")
+    results["N_baseline"] = run_test(
+        "N.baseline: Swenson conditioning, no filters",
+        hand,
+        dtnd,
+        slope,
+        aspect,
+        area,
+        did,
+        res_m,
+        pub,
+        use_w1_fit=True,
+    )
+
+    # --- With Swenson-style valid mask ---
+    print("\n  --- N.swenson_mask: + Swenson valid mask (include neg HAND) ---")
+    results["N_swenson_mask"] = run_test(
+        "N.swenson_mask: + Swenson valid mask",
+        hand,
+        dtnd,
+        slope,
+        aspect,
+        area,
+        did,
+        res_m,
+        pub,
+        swenson_style=True,
+        use_w1_fit=True,
+    )
+
+    # --- Full Swenson pipeline (tail + flood + clip + skip + mask + w1) ---
+    print("\n  --- N.full: + all pixel filters ---")
+    keep_idx = tail_index(dtnd, hand)
+    h_n = hand[keep_idx].copy()
+    d_n = dtnd[keep_idx].copy()
+    s_n = slope[keep_idx]
+    a_n = aspect[keep_idx]
+    ar_n = area[keep_idx]
+    did_n = did[keep_idx]
+    ff_n = fflood[keep_idx]
+
+    h_n = apply_flood_filter(h_n, ff_n)
+    d_n[d_n < 1.0] = 1.0
+
+    n_tail = hand.size - keep_idx.size
+    n_flood = int(np.sum(h_n == -1))
+    print(
+        f"    After filters: {h_n.size} pixels "
+        f"(removed {n_tail} by tail, {n_flood} marked flood)"
+    )
+
+    results["N_full"] = run_test(
+        "N.full: Swenson conditioning + all filters",
+        h_n,
+        d_n,
+        s_n,
+        a_n,
+        ar_n,
+        did_n,
+        res_m,
+        pub,
+        skip_zero_hand_bins=True,
+        swenson_style=True,
+        use_w1_fit=True,
+    )
+
+    # --- Per-element HAND comparison against published ---
+    print("\n  --- Per-element mean HAND: Swenson-conditioned vs published ---")
+    baseline_elems = results["N_baseline"]["elements"]
+    full_elems = results["N_full"]["elements"]
+    pub_height = pub["height"]
+
+    print(
+        f"  {'Elem':>4s}  {'Aspect':<6s}  {'Bin':>3s}  "
+        f"{'Published':>9s}  {'N.base':>8s}  {'N.full':>8s}  "
+        f"{'Offset(b)':>9s}  {'Offset(f)':>9s}"
+    )
+    print("  " + "-" * 72)
+
+    offsets_base = []
+    offsets_full = []
+    for i in range(16):
+        asp_idx = i // N_HAND_BINS
+        h_idx = i % N_HAND_BINS
+        h_pub = pub_height[i]
+        h_base = baseline_elems[i]["height"]
+        h_full = full_elems[i]["height"]
+        off_b = h_base - h_pub
+        off_f = h_full - h_pub
+        offsets_base.append(off_b)
+        offsets_full.append(off_f)
+        print(
+            f"  {i:>4d}  {ASPECT_NAMES[asp_idx]:<6s}  {h_idx:>3d}  "
+            f"{h_pub:>9.4f}  {h_base:>8.4f}  {h_full:>8.4f}  "
+            f"{off_b:>+9.4f}  {off_f:>+9.4f}"
+        )
+
+    print(
+        f"\n  Mean HAND offset (baseline): {np.mean(offsets_base):+.4f}m "
+        f"(was ~+0.3m before conditioning)"
+    )
+    print(f"  Mean HAND offset (full):     {np.mean(offsets_full):+.4f}m")
+
+    # --- Summary ---
+    print("\n  --- Test N summary ---")
+    print(
+        f"  {'Config':<45s}  {'Height':>7s}  {'Dist':>7s}  "
+        f"{'Slope':>7s}  {'Aspect':>7s}  {'Width':>7s}  {'AreaFr':>7s}"
+    )
+    print("  " + "-" * 95)
+    for key, label in [
+        ("N_baseline", "N.baseline (conditioning only, w1)"),
+        ("N_swenson_mask", "N.swenson_mask (+ neg-HAND mask)"),
+        ("N_full", "N.full (+ all filters)"),
+    ]:
+        c = results[key]["correlations"]
+        print(
+            f"  {label:<45s}  {c['height']:>7.4f}  {c['distance']:>7.4f}  "
+            f"{c['slope']:>7.4f}  {c['aspect']:>7.4f}  {c['width']:>7.4f}  "
+            f"{c['area_fraction']:>7.4f}"
+        )
+
+    return results
+
+
+# ===========================================================================
+# Part 9: A_thresh sweep (Test O)
+# ===========================================================================
+def run_test_o(pub: dict, lc_regions: list) -> dict:
+    """
+    Test O: Sweep A_thresh to find optimal stream network density.
+
+    Runs DEM conditioning + flow routing once, then for each A_thresh value
+    recomputes only the channel mask + HAND/DTND. This avoids redundant
+    conditioning (~15 min) per threshold.
+
+    Parameters
+    ----------
+    pub : dict
+        Published 16-element parameter vectors.
+    lc_regions : list
+        Region results from compute_lc(), for reporting full-tile native Lc.
+    """
+    print("\n" + "=" * 78)
+    print("TEST O: A_THRESH SWEEP")
+    print("=" * 78)
+    print("  Sweeping accumulation threshold to find which A_thresh maximizes")
+    print("  area_fraction correlation. Routing computed once; only channel mask")
+    print("  + HAND/DTND recomputed per threshold.")
+
+    # Report full-tile native Lc
+    native = [r for r in lc_regions if r["label"] == "full_native"]
+    if native:
+        r = native[0]
+        lc_m = r["lc_px"] * r["res"]
+        a_thresh_native = int(0.5 * r["lc_px"] ** 2)
+        print(f"\n  Full-tile native FFT: Lc = {r['lc_px']:.1f} px ({lc_m:.0f} m)")
+        print(f"  → A_thresh = {a_thresh_native}")
+
+    # Step 1: One-time DEM conditioning + flow routing
+    print("\n  --- Setup: DEM conditioning + flow routing ---")
+    t0 = time.time()
+    setup = setup_flow_routing(MERIT_DEM)
+    grid = setup["grid"]
+    gc_row_slice = setup["gc_row_slice"]
+    gc_col_slice = setup["gc_col_slice"]
+    print(f"  Setup complete ({time.time() - t0:.0f}s)")
+
+    # A_thresh-independent arrays (pre-computed, flattened)
+    slope_flat = setup["slope_gc"].flatten()
+    aspect_flat = setup["aspect_gc"].flatten()
+    area_flat = setup["pixel_areas"].flatten()
+    res_m = setup["res_m"]
+    total_pixels = setup["slope_gc"].size
+
+    # Step 2: Sweep A_thresh values
+    sweep_values = [20, 25, 28, 30, 33, 34, 36, 38, 40, 42, 46, 50, 55, 60, 70, 80, 100]
+
+    results = []
+
+    for a_thresh in sweep_values:
+        t1 = time.time()
+
+        # Re-compute channel mask + HAND/DTND for this threshold
+        acc_mask = grid.acc > a_thresh
+        grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
+        grid.compute_hand(
+            "fdir",
+            "dem",
+            grid.channel_mask,
+            grid.channel_id,
+            dirmap=DIRMAP,
+            routing="d8",
+        )
+
+        # Extract A_thresh-dependent gridcell arrays
+        hand_gc = np.array(grid.hand)[gc_row_slice, gc_col_slice].flatten()
+        dtnd_gc = np.array(grid.dtnd)[gc_row_slice, gc_col_slice].flatten()
+        drainage_id_gc = np.array(grid.drainage_id)[
+            gc_row_slice, gc_col_slice
+        ].flatten()
+
+        # Stream pixel count within gridcell
+        channel_gc = np.array(grid.channel_mask)[gc_row_slice, gc_col_slice]
+        n_stream_gc = int(np.sum(channel_gc))
+        stream_pct = 100 * n_stream_gc / total_pixels
+
+        # Compute elements + correlations (w^1 fit to match best known config)
+        result = compute_elements(
+            hand_gc,
+            dtnd_gc,
+            slope_flat,
+            aspect_flat,
+            area_flat,
+            drainage_id_gc,
+            res_m,
+            use_w1_fit=True,
+        )
+        corrs = compute_all_correlations(result["elements"], pub)
+
+        lc_px = np.sqrt(2 * a_thresh)
+        lc_m = lc_px * res_m
+
+        elapsed = time.time() - t1
+
+        results.append(
+            {
+                "a_thresh": a_thresh,
+                "lc_px": lc_px,
+                "lc_m": lc_m,
+                "n_stream_gc": n_stream_gc,
+                "stream_pct": stream_pct,
+                "correlations": corrs,
+                "elapsed": elapsed,
+            }
+        )
+
+        print(
+            f"  A_thresh={a_thresh:>3d}  "
+            f"area_frac={corrs['area_fraction']:.4f}  "
+            f"stream={stream_pct:.2f}%  ({elapsed:.0f}s)"
+        )
+
+    # Print sweep table
+    print("\n  --- Sweep results ---")
+    print(
+        f"  {'A_thresh':>8s}  {'Lc_px':>6s}  {'Lc_m':>6s}  "
+        f"{'stream%':>7s}  {'height':>7s}  {'dist':>7s}  {'slope':>7s}  "
+        f"{'aspect':>7s}  {'width':>7s}  {'area_fr':>7s}"
+    )
+    print("  " + "-" * 88)
+
+    for r in results:
+        c = r["correlations"]
+        print(
+            f"  {r['a_thresh']:>8d}  {r['lc_px']:>6.1f}  {r['lc_m']:>6.0f}  "
+            f"{r['stream_pct']:>6.2f}%  {c['height']:>7.4f}  {c['distance']:>7.4f}  "
+            f"{c['slope']:>7.4f}  {c['aspect']:>7.4f}  {c['width']:>7.4f}  "
+            f"{c['area_fraction']:>7.4f}"
+        )
+
+    # Find best A_thresh for area_fraction
+    best_idx = max(
+        range(len(results)),
+        key=lambda i: results[i]["correlations"]["area_fraction"],
+    )
+    best = results[best_idx]
+    best_a = best["a_thresh"]
+    best_lc_px = best["lc_px"]
+    best_corr = best["correlations"]["area_fraction"]
+
+    # Find current (A_thresh=33 or 34) for comparison
+    current_corrs = [
+        r["correlations"]["area_fraction"] for r in results if r["a_thresh"] in (33, 34)
+    ]
+    current_corr = max(current_corrs) if current_corrs else float("nan")
+
+    print(
+        f"\n  Best A_thresh: {best_a} "
+        f"(Lc_px = {best_lc_px:.1f}, area_frac = {best_corr:.4f})"
+    )
+    print(f"  Current A_thresh ~33-34 (area_frac = {current_corr:.4f})")
+    print(f"  Improvement: {best_corr - current_corr:+.4f}")
+
+    # Full-tile native comparison
+    if native:
+        native_a = int(0.5 * native[0]["lc_px"] ** 2)
+        native_results = [r for r in results if r["a_thresh"] == native_a]
+        if native_results:
+            nc = native_results[0]["correlations"]["area_fraction"]
+            print(f"  Full-tile native A_thresh={native_a} (area_frac = {nc:.4f})")
+
+    # Interpretation
+    if abs(best_corr - current_corr) < 0.01:
+        print(
+            "\n  Conclusion: A_thresh has minimal effect on area_fraction."
+            "\n  The 0.82 gap is NOT from Lc differences."
+        )
+    else:
+        print(
+            f"\n  Conclusion: A_thresh matters. "
+            f"Optimal Lc_px ~ {best_lc_px:.1f} (vs current ~8.25)."
+        )
+        if best_corr > current_corr:
+            print(
+                f"  Area fraction improves by {best_corr - current_corr:+.4f} "
+                f"at A_thresh={best_a}."
+            )
+
+    return {"sweep": results, "best_idx": best_idx}
 
 
 # ===========================================================================
@@ -1444,6 +2777,9 @@ def main():
     t0 = time.time()
     lc = compute_lc(MERIT_DEM)
     accum_threshold = int(0.5 * lc["median_lc_px"] ** 2)
+    for r in lc["regions"]:
+        lc_m = r["lc_px"] * r["res"]
+        print(f"    {r['label']:<15s}: Lc = {r['lc_px']:.1f} px ({lc_m:.0f} m)")
     print(f"  Median Lc: {lc['median_lc_px']:.1f} px, A_thresh = {accum_threshold}")
     print(f"  ({time.time() - t0:.0f}s)")
 
@@ -1482,6 +2818,14 @@ def main():
     print_visibility(baseline["elements"], pub, baseline["diagnostics"])
     print(f"  ({time.time() - t0:.0f}s)")
 
+    # Step 4b: A_cumsum curve diagnostics (Test J)
+    print("\n=== Step 4b: A_cumsum(d) Curve Diagnostics (Test J) ===")
+    print_acumsum_diagnostics(arrays)
+
+    # Step 4c: HAND CDF at bin boundary (Test K)
+    print("\n=== Step 4c: HAND CDF at Bin-0 Boundary (Test K) ===")
+    print_hand_cdf_diagnostics(arrays)
+
     # Step 5: Hypothesis testing
     print("\n=== Step 5: Hypothesis Testing ===")
     t0 = time.time()
@@ -1494,6 +2838,24 @@ def main():
 
     # Summary
     print_summary(test_results)
+
+    # Step 7: Boundary inference from published data (Test M) — TEMPORARY
+    print("\n=== Step 7: Boundary Inference (Test M) ===")
+    t0 = time.time()
+    infer_published_boundaries(arrays, pub)
+    print(f"  ({time.time() - t0:.0f}s)")
+
+    # Step 8: Swenson DEM conditioning (Test N)
+    print("\n=== Step 8: Swenson DEM Conditioning (Test N) ===")
+    t0 = time.time()
+    run_test_n(accum_threshold, pub, arrays)
+    print(f"  ({time.time() - t0:.0f}s)")
+
+    # Step 9: A_thresh sweep (Test O)
+    print("\n=== Step 9: A_thresh Sweep (Test O) ===")
+    t0 = time.time()
+    run_test_o(pub, lc["regions"])
+    print(f"  ({time.time() - t0:.0f}s)")
 
     total = time.time() - start_time
     print(f"\nTotal time: {total:.0f}s ({total / 60:.1f} min)")
