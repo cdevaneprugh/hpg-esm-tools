@@ -50,11 +50,11 @@ FFT_REGION_SIZES = [500, 1000, 3000]
 # Expected correlations (tolerance 0.01)
 EXPECTED = {
     "height": 0.9999,
-    "distance": 0.9982,
+    "distance": 0.9990,
     "slope": 0.9966,
     "aspect": 0.9999,
-    "width": 0.9597,
-    "area_fraction": 0.8200,
+    "width": 0.9604,
+    "area_fraction": 0.8157,
 }
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
@@ -290,7 +290,7 @@ def fit_trapezoidal_width(
         trap_width = -coeffs[1]
         trap_area = coeffs[0]
 
-        if trap_slope < 0 and trap_width > 0:
+        if trap_slope < 0:
             Atri = -(trap_width**2) / (4 * trap_slope)
             if Atri < trap_area:
                 trap_width = np.sqrt(-4 * trap_slope * trap_area)
@@ -548,10 +548,11 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
             median_dtnd = float(dtnd_sorted[len(dtnd_sorted) // 2])
             fitted_area = fitted_areas[h_idx]
 
-            da = sum(fitted_areas[:h_idx]) if h_idx > 0 else 0
+            # Width: solve quadratic at lower edge of bin
+            da_width = sum(fitted_areas[:h_idx]) if h_idx > 0 else 0
             if trap_slope != 0:
                 try:
-                    le = quadratic([trap_slope, trap_width, -da])
+                    le = quadratic([trap_slope, trap_width, -da_width])
                     width = trap_width + 2 * trap_slope * le
                 except RuntimeError:
                     width = trap_width * (1 - 0.15 * h_idx)
@@ -560,10 +561,21 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
 
             width = max(float(width), 1)
 
+            # Distance: trapezoid-derived midpoint distance
+            # (Swenson representative_hillslope.py:847-859)
+            da_dist = sum(fitted_areas[: h_idx + 1]) - fitted_areas[h_idx] / 2
+            if trap_slope != 0:
+                try:
+                    distance = float(quadratic([trap_slope, trap_width, -da_dist]))
+                except RuntimeError:
+                    distance = median_dtnd
+            else:
+                distance = median_dtnd
+
             elements.append(
                 {
                     "height": mean_hand,
-                    "distance": median_dtnd,
+                    "distance": distance,
                     "area": fitted_area,
                     "slope": mean_slope,
                     "aspect": mean_aspect,

@@ -9,7 +9,7 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 
 ## Pipeline Orientation
 
-The central technical problem is that pysheds assumes a geographic CRS while our NEON LIDAR data is in UTM (EPSG:32617). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The validation pipeline in `scripts/merit_validation/` shares methodology; code duplication between the two is being resolved in Phase D.
+The central technical problem is that pysheds assumes a geographic CRS while our NEON LIDAR data is in UTM (EPSG:32617). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The MERIT validation pipeline has been consolidated into a single regression script (`scripts/merit_validation/merit_regression.py`) that validates the geographic CRS code path after pysheds fork changes. The original 9 stage scripts are archived in `audit/merit_validation_stages/`.
 
 ## Phase Workflow
 
@@ -60,14 +60,15 @@ swenson/
 │   └── F-validate-deploy.md   # Validate and deploy
 │
 ├── audit/
-│   └── 240210-validation_and_initial_implementation/
-│       ├── audit-summary-240210.md         # Frozen snapshot of STATUS.md at audit time
-│       ├── claude-audit.md                 # Personal audit notes
-│       ├── osbs_pipeline_audit.md          # Issue catalog
-│       ├── flow-routing-resolution.md      # Testing plan
-│       ├── progress-tracking.md            # Historical implementation log
-│       ├── claude_merit_validation_audit/  # Audit re-run results
-│       └── logs/                           # Historical SLURM logs
+│   ├── 240210-validation_and_initial_implementation/
+│   │   ├── audit-summary-240210.md         # Frozen snapshot of STATUS.md at audit time
+│   │   ├── claude-audit.md                 # Personal audit notes
+│   │   ├── osbs_pipeline_audit.md          # Issue catalog
+│   │   ├── flow-routing-resolution.md      # Testing plan
+│   │   ├── progress-tracking.md            # Historical implementation log
+│   │   ├── claude_merit_validation_audit/  # Audit re-run results
+│   │   └── logs/                           # Historical SLURM logs
+│   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── data/
 │   ├── neon/
@@ -80,12 +81,15 @@ swenson/
 │
 ├── output/
 │   ├── google-earth/          # KML files for Google Earth
+│   ├── merit_validation/      # Regression test output (results.json, summary.txt)
 │   ├── osbs/                  # Pipeline runs (YYYY-MM-DD_<desc>/)
 │   └── plots/                 # Comparison plots
 │
 ├── scripts/
 │   ├── spatial_scale.py       # Shared FFT module
-│   ├── merit_validation/      # Stages 1-9 (MERIT DEM validation)
+│   ├── merit_validation/      # MERIT geographic regression test
+│   │   ├── merit_regression.py  # Single-file regression (Lc + 6 params vs published)
+│   │   └── merit_regression.sh  # SLURM wrapper
 │   ├── osbs/                  # Pipeline scripts
 │   │   ├── run_pipeline.py    # Main hillslope pipeline
 │   │   ├── run_pipeline.sh    # SLURM job wrapper
@@ -115,6 +119,28 @@ python scripts/osbs/run_pipeline.py
 ```
 
 Output goes to: `output/osbs/YYYY-MM-DD_<descriptor>/`
+
+## MERIT Regression Test
+
+Validates the pysheds fork's geographic CRS code path. Run after any changes to `$PYSHEDS_FORK/pysheds/pgrid.py`.
+
+```bash
+cd $TOOLS/swenson
+sbatch scripts/merit_validation/merit_regression.sh
+```
+
+Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `output/merit_validation/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL.
+
+**Pass criteria:** All 6 parameter correlations within 0.01 of expected, Lc within 5% of 763m.
+
+| Parameter | Expected correlation |
+|-----------|---------------------|
+| Height (HAND) | 0.9999 |
+| Distance (DTND) | 0.9990 |
+| Slope | 0.9966 |
+| Aspect (circular) | 0.9999 |
+| Width | 0.9604 |
+| Area fraction | 0.8157 |
 
 ## pysheds Setup
 

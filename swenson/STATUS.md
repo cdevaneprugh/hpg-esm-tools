@@ -21,11 +21,11 @@ The MERIT validation (stages 1-9) demonstrated that our pysheds fork and pipelin
 | Parameter | Correlation with published |
 |-----------|---------------------------|
 | Height (HAND) | 0.9999 |
-| Distance (DTND) | 0.9982 |
+| Distance (DTND) | 0.9990 |
 | Slope | 0.9966 |
 | Aspect | 0.9999 (circular) |
-| Width | 0.9597 |
-| Area fraction | 0.8200 |
+| Width | 0.9604 |
+| Area fraction | 0.8157 |
 
 This gives confidence that the *approach* is correct — we understand Swenson's methodology and can implement it.
 
