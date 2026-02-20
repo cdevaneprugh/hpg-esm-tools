@@ -151,10 +151,10 @@ grid.compute_hand(
 will change. Direction unknown with the basin chain in place. The expected
 correlation values in the regression must be updated after this change.
 
-- [ ] Implement
-- [ ] Run regression, record new correlations
-- [ ] Update expected correlations in `merit_regression.py`
-- [ ] Verify all correlations still within scientifically reasonable range
+- [x] Implement
+- [x] Run regression, record new correlations
+- [x] Update expected correlations in `merit_regression.py`
+- [x] Verify all correlations still within scientifically reasonable range
 
 ---
 

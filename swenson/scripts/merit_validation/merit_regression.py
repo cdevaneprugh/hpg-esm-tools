@@ -50,13 +50,15 @@ FFT_REGION_SIZES = [500, 1000, 3000]
 # Expected correlations (tolerance 0.01)
 # Width and area_fraction updated after fixing w^2→w^1 polynomial weighting
 # to match Swenson's _fit_polynomial (see area_fraction_research.md, Test I).
+# Height, slope, width, area_fraction updated after switching compute_hand
+# to use inflated DEM (matches Swenson rh:1685). See dem_conditioning_todo.md item 3.
 EXPECTED = {
-    "height": 0.9999,
-    "distance": 0.9990,
-    "slope": 0.9966,
+    "height": 0.9977,
+    "distance": 0.9986,
+    "slope": 0.9827,
     "aspect": 0.9999,
-    "width": 0.9410,
-    "area_fraction": 0.8215,
+    "width": 0.9471,
+    "area_fraction": 0.8284,
 }
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
@@ -607,7 +609,12 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
 
     print("  Computing HAND/DTND...")
     grid.compute_hand(
-        "fdir", "dem", grid.channel_mask, grid.channel_id, dirmap=DIRMAP, routing="d8"
+        "fdir",
+        "inflated",
+        grid.channel_mask,
+        grid.channel_id,
+        dirmap=DIRMAP,
+        routing="d8",
     )
     hand = grid.hand
     dtnd = grid.dtnd
