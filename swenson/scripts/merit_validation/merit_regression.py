@@ -52,13 +52,15 @@ FFT_REGION_SIZES = [500, 1000, 3000]
 # to match Swenson's _fit_polynomial (see area_fraction_research.md, Test I).
 # Height, slope, width, area_fraction updated after switching compute_hand
 # to use inflated DEM (matches Swenson rh:1685). See dem_conditioning_todo.md item 3.
+# Slope, distance, aspect, width, area_fraction updated after adding catchment-level
+# aspect averaging (Swenson rh:1725-1751). See dem_conditioning_todo.md item 4.
 EXPECTED = {
     "height": 0.9977,
-    "distance": 0.9986,
-    "slope": 0.9827,
-    "aspect": 0.9999,
-    "width": 0.9471,
-    "area_fraction": 0.8284,
+    "distance": 0.9987,
+    "slope": 0.9850,
+    "aspect": 1.0000,
+    "width": 0.9465,
+    "area_fraction": 0.9047,
 }
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
@@ -341,6 +343,77 @@ def circular_mean_aspect(aspects: np.ndarray) -> float:
     return mean_aspect
 
 
+def catchment_mean_aspect(
+    drainage_id: np.ndarray,
+    aspect: np.ndarray,
+    hillslope: np.ndarray,
+    chunksize: int = 500,
+) -> np.ndarray:
+    """Replace per-pixel aspect with catchment-side circular mean.
+
+    For each catchment (unique drainage_id), for each hillslope side
+    (headwater=1, right bank=2, left bank=3), compute the circular mean
+    aspect of all pixels in that group plus channel pixels (type 4).
+    Assign the mean back to every pixel in the group.
+
+    Follows Swenson's set_aspect_to_hillslope_mean_serial
+    (terrain_utils.py:236-279).
+
+    Parameters
+    ----------
+    drainage_id : 2D ndarray — catchment ID per pixel (from compute_hand)
+    aspect : 2D ndarray — per-pixel aspect in degrees
+    hillslope : 2D ndarray — hillslope classification
+        1=headwater, 2=right bank, 3=left bank, 4=channel
+
+    Returns
+    -------
+    2D ndarray — aspect with catchment-side means replacing pixel values
+    """
+    valid_drain = np.isfinite(drainage_id) & (drainage_id > 0)
+    uid = np.unique(drainage_id[valid_drain])
+    hillslope_types = np.unique(hillslope[hillslope > 0]).astype(int)
+
+    out = np.zeros(aspect.shape)
+    valid_aspect = np.isfinite(aspect.flat)
+
+    nchunks = int(max(1, int(uid.size // chunksize)))
+    cs = int(min(chunksize, uid.size - 1))
+
+    for n in range(nchunks):
+        n1, n2 = int(n * cs), int((n + 1) * cs)
+        if n == nchunks - 1:
+            n2 = uid.size - 1
+        if n1 == n2:
+            cind = np.where(valid_aspect & (drainage_id.flat == uid[n1]))[0]
+        else:
+            cind = np.where(
+                valid_aspect
+                & (drainage_id.flat >= uid[n1])
+                & (drainage_id.flat < uid[n2])
+            )[0]
+
+        for did in uid[n1 : n2 + 1]:
+            dind = cind[drainage_id.flat[cind] == did]
+            # Type 4 (channels) combined with each other type; skip type 4 itself
+            for ht in hillslope_types[: hillslope_types.size - 1]:
+                sel = (hillslope.flat[dind] == 4) | (hillslope.flat[dind] == ht)
+                ind = dind[sel]
+                if ind.size > 0:
+                    mean_asp = (
+                        np.arctan2(
+                            np.mean(np.sin(DTR * aspect.flat[ind])),
+                            np.mean(np.cos(DTR * aspect.flat[ind])),
+                        )
+                        / DTR
+                    )
+                    if mean_asp < 0:
+                        mean_asp += 360.0
+                    out.flat[ind] = mean_asp
+
+    return out
+
+
 def compute_pixel_areas(lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
     """Compute pixel areas using spherical coordinates (Swenson method)."""
     phi = DTR * lon
@@ -618,6 +691,21 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     )
     hand = grid.hand
     dtnd = grid.dtnd
+
+    # --- Classify hillslope sides (Swenson rh:1692) ---
+    print("  Computing hillslope classification...")
+    grid.compute_hillslope(
+        "fdir", "channel_mask", "bank_mask", dirmap=DIRMAP, routing="d8"
+    )
+
+    # --- Catchment-level aspect averaging (Swenson rh:1725-1751) ---
+    # Replace per-pixel aspect with circular mean within each catchment side.
+    # Ensures all pixels on the same side of a catchment share one aspect value,
+    # preventing local noise from splitting catchments across aspect bins.
+    print("  Averaging aspect within catchment sides...")
+    aspect = catchment_mean_aspect(
+        np.array(grid.drainage_id), aspect, np.array(grid.hillslope)
+    )
 
     # --- Extract gridcell ---
     nrows, ncols = np.array(grid.dem).shape

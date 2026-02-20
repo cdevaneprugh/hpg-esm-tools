@@ -234,12 +234,13 @@ binning within catchment units.
 meaningfully. May slightly affect area fraction since aspect binning
 (N/E/S/W assignment) uses the averaged values.
 
-- [ ] Port `_calculate_hillslope_mean_aspect` from terrain_utils.py
-- [ ] Port `set_aspect_to_hillslope_mean_parallel` from terrain_utils.py
-- [ ] Add `compute_hillslope` call after `compute_hand`
-- [ ] Apply catchment aspect averaging before parameter computation
-- [ ] Run regression, record new correlations
-- [ ] Update expected correlations if changed
+- [x] Port `set_aspect_to_hillslope_mean_serial` from terrain_utils.py
+  (ported as `catchment_mean_aspect()` inline in merit_regression.py)
+- [x] Add `compute_hillslope` call after `compute_hand`
+- [x] Apply catchment aspect averaging before parameter computation
+- [x] Run regression, record new correlations
+  Area fraction: 0.8284 → 0.9047 (+0.0763). Slope: +0.0023. Others: <0.001.
+- [x] Update expected correlations if changed
 
 ---
 
