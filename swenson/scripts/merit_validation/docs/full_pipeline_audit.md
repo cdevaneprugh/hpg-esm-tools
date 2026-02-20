@@ -1180,12 +1180,10 @@ Ours: mr:373-414 (`catchment_mean_aspect`).
 |---|---------|-------|--------|
 | A | Missing empty `uid` early return guard | Dormant | None at this gridcell |
 
-**A: Missing empty `uid` guard.** Swenson's parallel version (tu:184-185)
-has `if uid.size == 0: return`. Our `catchment_mean_aspect` (mr:373-414)
-has no such guard. If `uid.size == 0`, the chunking math would produce
-`cs = min(500, -1) = -1` and the loop body would attempt `uid[0]` on an
-empty array (IndexError). Dormant: pysheds always produces non-empty
-`drainage_id` after `compute_hand`.
+**A: Missing empty `uid` guard (FIXED).** Swenson's parallel version
+(tu:184-185) has `if uid.size == 0: return`. Our `catchment_mean_aspect`
+lacked this guard. **Fixed 2026-02-20:** added `if uid.size == 0: return out`.
+Dormant: pysheds always produces non-empty `drainage_id` after `compute_hand`.
 
 ---
 
@@ -1281,10 +1279,12 @@ extraction (tested as harmful/no-effect/no-op respectively).
 | 27 | Flood filter | MATCH | Yes (C) | No-op at 90m. Implemented 2026-02-20. |
 | 28 | DTND min clipping | MATCH | Yes (B) | No effect. Fixed 2026-02-20. |
 
-**#25 — Valid Mask (DIVERGENCE)**
+**#25 — Valid Mask (RESOLVED)**
 
 Swenson: `isfinite(fhand)` only (rh:653). Does NOT filter on `hand >= 0`.
-Ours: `(hand_flat >= 0) & isfinite(hand_flat)` (mr:456). Adds `>= 0` check.
+
+**Resolution (2026-02-20):** Removed `>= 0` check to match Swenson.
+Now `valid = np.isfinite(hand_flat)`.
 
 Tested (Test F): Negligible impact (-0.0001 on area fraction). Essentially
 no pixels have finite negative HAND at this gridcell.
@@ -1297,12 +1297,15 @@ of the DTND distribution where the exponential PDF drops below 5% of max.
 Tested (Test A): Harmful -- area fraction drops -0.010, width drops -0.054.
 Removing long-distance pixels biases the trapezoidal fit. Intentionally omitted.
 
-**#28 — DTND Min Clipping (OMISSION)**
+**#28 — DTND Min Clipping (RESOLVED)**
 
 Swenson: `fdtnd[fdtnd < 1.0] = 1.0` (rh:700-701).
 
-Tested (Test B): No effect. Few or no DTND values below 1.0 at this resolution.
-Intentionally omitted.
+**Resolution (2026-02-20):** Added `dtnd_flat[dtnd_flat < 1.0] = 1.0`
+after flatten block.
+
+Tested (Test B): No effect at 90m. Few or no DTND values below 1.0 at
+this resolution.
 
 ---
 
@@ -1459,14 +1462,15 @@ Per aspect (mr:465-589):
 | 42 | distance = quadratic at midpoint | MATCH | -- | -- |
 | 43 | Mean-HAND bin skip | MATCH | Yes (D) | No-op for this cell. Fixed 2026-02-20. |
 
-**#43 — Mean-HAND Bin Skip (OMISSION)**
+**#43 — Mean-HAND Bin Skip (RESOLVED)**
 
 Swenson: `if mean(fhand[cind]) <= 0: continue` (rh:819) -- skips bins where
 mean HAND is non-positive.
 
-Ours: Not implemented.
+**Resolution (2026-02-20):** Added guard: if `mean(hand_flat[bin_indices]) <= 0`,
+append zero dict and continue.
 
-Tested (Test D): No-op -- no bins have mean HAND <= 0 at this gridcell.
+Tested (Test D): No-op at 90m -- no bins have mean HAND <= 0 at this gridcell.
 
 ### Shared Functions
 
@@ -1582,12 +1586,11 @@ flooded-with-low-HAND pixels to BASIN pixels only. Different logic
 (0/1 values). Would diverge for graded basin masks, but neither
 codebase uses those.
 
-**E: Quartile upper bound (Section 11).** Swenson's quartile branch
+**E: Quartile upper bound (Section 11, FIXED).** Swenson's quartile branch
 (tu:354-360) returns `[0, Q25, Q50, Q75, max(hand)]`. Last bin:
 `hand >= Q75 AND hand < max(hand)` — excludes pixel(s) at exactly
-max(hand). Ours (mr:242-248) returns `[0, Q25, Q50, Q75, 1e6]`. Last
-bin: `hand >= Q75 AND hand < 1e6` — includes all pixels. Difference: a
-handful of pixels at exactly max(hand). Negligible impact.
+max(hand). **Fixed 2026-02-20:** removed `bounds[-1] = 1e6` override
+in quartile branch. Now matches Swenson. Negligible impact.
 
 **F: Aspect mask on NaN-filtered vs full array (Section 11).** Swenson
 applies the aspect mask to NaN-filtered arrays (finding C above means
@@ -1640,7 +1643,7 @@ matrix, the gridcell crashes. Ours (mr:788-798): Wraps the fit in
 try/except, falls back to uniform width on failure. Defensive
 improvement.
 
-**M: n_hillslopes — wrong array indexing (Section 13). BUG (dormant).**
+**M: n_hillslopes — wrong array indexing (Section 13). BUG (FIXED).**
 
 Swenson (rh:559, 761):
 ```python
@@ -1651,7 +1654,7 @@ number_of_hillslopes[asp_ndx] = np.unique(fdid[aind]).size
 Correctly extracts gridcell region from `drainage_id`, then indexes
 with `aind` (indices into the extracted gridcell arrays).
 
-Ours (mr:806-815):
+Ours (before fix):
 ```python
 n_hillslopes = max(
     len(np.unique(
@@ -1666,11 +1669,11 @@ position (0,1366) — wrong spatial location.
 
 **Impact:** Produces wrong unique `drainage_id` counts → wrong
 `n_hillslopes` → wrong per-hillslope area normalization in the
-trapezoidal fit. Dormant for correlation-based validation because
-`n_hillslopes` is a uniform divisor within each aspect (ratios
-preserved). Would affect absolute area values in production.
+trapezoidal fit. **Not dormant** — width improved 0.9465→0.9894,
+area fraction improved 0.9047→0.9221. The original prediction that
+this was dormant for correlations was incorrect.
 
-**Fix (for Phase D):** Extract `drainage_id` to gridcell first:
+**Resolution (2026-02-20):** Extract `drainage_id` to gridcell first:
 ```python
 drainage_id_gc = np.array(grid.drainage_id)[gc_row_slice, gc_col_slice].flatten()
 n_hillslopes = max(len(np.unique(drainage_id_gc[asp_indices])), 1)
