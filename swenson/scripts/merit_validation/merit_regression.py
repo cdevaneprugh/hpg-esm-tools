@@ -353,6 +353,116 @@ def compute_pixel_areas(lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Basin / open water detection (from Swenson geospatial_utils.py)
+# ---------------------------------------------------------------------------
+def _four_point_laplacian(mask: np.ndarray) -> np.ndarray:
+    """4-neighbor Laplacian on a 0/1 mask. Returns abs value per pixel."""
+    jm = mask.shape[0]
+    laplacian = -4.0 * np.copy(mask)
+    laplacian += mask * np.roll(mask, 1, axis=1) + mask * np.roll(mask, -1, axis=1)
+    temp = np.roll(mask, 1, axis=0)
+    temp[0, :] = mask[1, :]
+    laplacian += mask * temp
+    temp = np.roll(mask, -1, axis=0)
+    temp[jm - 1, :] = mask[jm - 2, :]
+    laplacian += mask * temp
+    return np.abs(laplacian)
+
+
+def _expand_mask_buffer(mask: np.ndarray, buf: int = 1) -> np.ndarray:
+    """Spatial dilation: set pixel to 1 if any neighbor within buf is 1."""
+    omask = np.copy(mask)
+    offset = mask.shape[1]
+    # Identify interior pixels (exclude buf-width border)
+    a = np.arange(mask.size)
+    top = []
+    for i in range(buf):
+        top.extend((i * offset + np.arange(offset)[buf:-buf]).tolist())
+    top = np.array(top, dtype=int)
+    bottom = mask.size - 1 - top
+    left = []
+    for i in range(buf):
+        left.extend(np.arange(i, mask.size, offset))
+    left = np.array(left, dtype=int)
+    right = mask.size - 1 - left
+    exclude = np.unique(np.concatenate([top, left, right, bottom]))
+    inside = np.delete(a, exclude)
+
+    lmask = np.where(_four_point_laplacian(mask) > 0, 1, 0)
+    ind = inside[(lmask.flat[inside] > 0)]
+    for k in range(-buf, buf + 1):
+        if k != 0:
+            omask.flat[ind + k] = 1
+        for j in range(buf):
+            j1 = j + 1
+            omask.flat[ind + k + j1 * offset] = 1
+            omask.flat[ind + k - j1 * offset] = 1
+    return omask
+
+
+def erode_dilate_mask(mask: np.ndarray, buf: int = 1, niter: int = 10) -> np.ndarray:
+    """Morphological open: erode niter times, dilate niter+1, intersect with original."""
+    x = np.copy(mask)
+    for _ in range(niter):
+        x = 1 - _expand_mask_buffer(1 - x, buf=buf)
+    for _ in range(niter + 1):
+        x = _expand_mask_buffer(x, buf=buf)
+    return np.where((x > 0) & (mask > 0), 1, 0)
+
+
+def identify_basins(
+    dem: np.ndarray,
+    basin_thresh: float = 0.25,
+    niter: int = 10,
+    buf: int = 1,
+    nodata: float | None = None,
+) -> np.ndarray:
+    """
+    Detect flat basin floors in DEM via elevation histogram.
+
+    Any elevation value occurring in >basin_thresh fraction of pixels
+    is considered a basin floor. Morphological cleanup removes noise.
+    Returns 0/1 mask (1 = basin pixel).
+    """
+    imask = np.zeros(dem.shape)
+
+    if nodata is not None:
+        udem, ucnt = np.unique(dem[dem != nodata], return_counts=True)
+    else:
+        udem, ucnt = np.unique(dem, return_counts=True)
+    ufrac = ucnt / dem.size
+    ind = np.where(ufrac > basin_thresh)[0]
+
+    if ind.size > 0:
+        for i in ind:
+            eps = 1e-2
+            if np.abs(udem[i]) < eps:
+                eps = 1e-6
+            imask[np.abs(dem - udem[i]) < eps] = 1
+
+        for _ in range(niter):
+            imask = _expand_mask_buffer(imask, buf=buf)
+            imask[_four_point_laplacian(1 - imask) >= 3] = 0
+
+    return imask
+
+
+def identify_open_water(
+    slope: np.ndarray, max_slope: float = 1e-4, niter: int = 15
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Detect coherent open water from slope field.
+
+    Returns (basin_boundary, basin_mask) where basin_boundary is a 2-pixel
+    ring around each water body.
+    """
+    basin_mask = erode_dilate_mask(np.where(slope < max_slope, 1, 0), niter=niter)
+    sup_basin_mask = _expand_mask_buffer(basin_mask, buf=2)
+    basin_boundary = sup_basin_mask - basin_mask
+    return basin_boundary, basin_mask
+
+
+# ---------------------------------------------------------------------------
 # Hillslope parameter computation (from stage 3)
 # ---------------------------------------------------------------------------
 def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
@@ -392,29 +502,96 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     gc_row_slice = slice(row_min, row_max)
     gc_col_slice = slice(col_min, col_max)
 
+    nodata_val = src_nodata if src_nodata is not None else -9999
+
     print(f"  Expanded DEM: {dem_data.shape}")
     print(f"  Gridcell extraction: rows={gc_row_slice}, cols={gc_col_slice}")
 
-    # pysheds flow routing
+    # --- Basin detection (pre-pysheds) ---
+    print("  Detecting basins in raw DEM...")
+    basin_pre_mask = identify_basins(dem_data, nodata=nodata_val)
+    n_basin_pre = int(np.sum(basin_pre_mask > 0))
+    print(f"    Pre-conditioning basin pixels: {n_basin_pre}")
+    dem_data[basin_pre_mask > 0] = nodata_val
+
+    # --- pysheds Grid creation ---
     grid = Grid()
     grid.add_gridded_data(
         dem_data,
         data_name="dem",
         affine=expanded_transform,
         crs=PyprojProj("EPSG:4326"),
-        nodata=src_nodata if src_nodata is not None else -9999,
+        nodata=nodata_val,
     )
 
+    # --- Standard conditioning ---
     print("  Conditioning DEM...")
     grid.fill_pits("dem", out_name="pit_filled")
     grid.fill_depressions("pit_filled", out_name="flooded")
+
+    # --- Slope/aspect on original DEM (for water detection + final output) ---
+    print("  Computing slope/aspect...")
+    grid.slope_aspect("dem")
+    slope = np.array(grid.slope)
+    aspect = np.array(grid.aspect)
+
+    # --- Open water detection ---
+    print("  Detecting open water from slope field...")
+    basin_boundary, basin_mask = identify_open_water(slope)
+    n_water = int(np.sum(basin_mask > 0))
+    n_boundary = int(np.sum(basin_boundary > 0))
+    print(f"    Open water pixels: {n_water}, boundary pixels: {n_boundary}")
+
+    # --- Lower basin pixels in flooded DEM to force flow through them ---
+    flooded_arr = np.array(grid.flooded)
+    flooded_arr[basin_mask > 0] -= 0.1
+    grid.add_gridded_data(
+        flooded_arr,
+        data_name="flooded",
+        affine=grid.affine,
+        crs=grid.crs,
+        nodata=grid.nodata,
+    )
+
+    # --- Resolve flats (on modified flooded DEM) ---
     grid.resolve_flats("flooded", out_name="inflated")
 
+    # --- Flow direction ---
     print("  Computing flow direction + accumulation...")
     grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP, routing="d8")
+
+    # --- Re-mask basins after flowdir (before accumulation) ---
+    inflated_arr = np.array(grid.inflated)
+    inflated_arr[basin_mask > 0] = np.nan
+    grid.add_gridded_data(
+        inflated_arr,
+        data_name="inflated",
+        affine=grid.affine,
+        crs=grid.crs,
+        nodata=grid.nodata,
+    )
+
+    # --- Accumulation ---
     grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP, routing="d8")
 
-    # Stream network + HAND/DTND
+    # --- Force basin boundaries into stream network ---
+    acc_arr = np.array(grid.acc)
+    acc_arr[basin_boundary > 0] = accum_threshold + 1
+    grid.add_gridded_data(
+        acc_arr,
+        data_name="acc",
+        affine=grid.affine,
+        crs=grid.crs,
+        nodata=grid.nodata,
+    )
+
+    # --- A_thresh safety valve ---
+    if np.nanmax(acc_arr) < accum_threshold:
+        old_thresh = accum_threshold
+        accum_threshold = int(np.nanmax(acc_arr) / 100)
+        print(f"    A_thresh reduced: {old_thresh} -> {accum_threshold}")
+
+    # --- Stream network + HAND/DTND (using modified acc) ---
     acc_mask = grid.acc > accum_threshold
     grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
 
@@ -425,13 +602,7 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     hand = grid.hand
     dtnd = grid.dtnd
 
-    # Slope/aspect using pgrid's Horn 1981
-    print("  Computing slope/aspect...")
-    grid.slope_aspect("dem")
-    slope = np.array(grid.slope)
-    aspect = np.array(grid.aspect)
-
-    # Extract gridcell
+    # --- Extract gridcell ---
     nrows, ncols = np.array(grid.dem).shape
     transform = grid.affine
     lon = np.array([transform.c + transform.a * (i + 0.5) for i in range(ncols)])
@@ -447,7 +618,23 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     pixel_areas = compute_pixel_areas(lon_gc, lat_gc)
     res_m = np.abs(lat_gc[0] - lat_gc[1]) * RE * np.pi / 180
 
-    # Flatten
+    # --- Flood filter: mark basin pixels with low HAND as invalid ---
+    basin_mask_gc = basin_mask[gc_row_slice, gc_col_slice].flatten()
+    n_flooded_gc = int(np.sum(basin_mask_gc > 0))
+    if n_flooded_gc > 0:
+        hand_gc_flat_temp = hand_gc.flatten()
+        for ft in np.linspace(0, 20, 50):
+            flooded_low_hand = (basin_mask_gc > ft) & (hand_gc_flat_temp < 2.0)
+            if np.sum(flooded_low_hand) / n_flooded_gc < 0.95:
+                hand_gc_flat_temp[flooded_low_hand] = -1
+                print(
+                    f"    Flood filter: threshold={ft:.2f}, "
+                    f"marked {int(np.sum(flooded_low_hand))} pixels invalid"
+                )
+                hand_gc = hand_gc_flat_temp.reshape(hand_gc.shape)
+                break
+
+    # --- Flatten ---
     hand_flat = hand_gc.flatten()
     dtnd_flat = dtnd_gc.flatten()
     slope_flat = slope_gc.flatten()

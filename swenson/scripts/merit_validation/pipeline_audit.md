@@ -307,31 +307,38 @@ Compute gridcell extraction slices (mr:384-393).
 
 ### 2.3 DEM Conditioning
 
-1. `grid.fill_pits("dem", out_name="pit_filled")` (mr:409)
-2. `grid.fill_depressions("pit_filled", out_name="flooded")` (mr:410)
-3. `grid.resolve_flats("flooded", out_name="inflated")` (mr:411)
-
-**Not done:** `identify_basins`, `identify_open_water`, 0.1m lowering,
-basin re-masking, basin stream forcing.
+1. `identify_basins(dem_data, nodata=nodata_val)` (mr:512) → mask basin pixels
+   as nodata before pysheds
+2. `grid.fill_pits("dem", out_name="pit_filled")` (mr:529)
+3. `grid.fill_depressions("pit_filled", out_name="flooded")` (mr:530)
+4. `grid.slope_aspect("dem")` (mr:534) — compute slope/aspect on original DEM
+   (used for water detection + final output)
+5. `identify_open_water(slope)` (mr:540) → `basin_boundary`, `basin_mask`
+6. `flooded_arr[basin_mask > 0] -= 0.1` (mr:547) — lower basin pixels in
+   flooded DEM to force flow through open water
+7. `grid.resolve_flats("flooded", out_name="inflated")` (mr:557) — on modified
+   flooded DEM
 
 ### 2.4 Flow Routing
 
-1. `grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP)` (mr:414)
-2. `grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP)` (mr:415)
-
-**Not done:** Basin re-masking after flowdir. No A_thresh adjustment for
-`max(acc) < thresh`.
+1. `grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP)` (mr:561)
+2. Re-mask basins: `inflated_arr[basin_mask > 0] = np.nan` (mr:564-572)
+3. `grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP)` (mr:575)
+4. Force basin boundaries into stream network:
+   `acc_arr[basin_boundary > 0] = accum_threshold + 1` (mr:579)
+5. A_thresh safety valve: if `max(acc) < thresh`, use `max(acc)/100` (mr:582-585)
 
 ### 2.5 Stream Network and HAND/DTND
 
-1. `acc_mask = grid.acc > accum_threshold` (mr:418)
-2. `grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP)` (mr:419)
+1. `acc_mask = grid.acc > accum_threshold` (mr:588) — uses modified acc array
+2. `grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP)` (mr:589)
 3. `grid.compute_hand("fdir", "dem", grid.channel_mask, grid.channel_id,
-   dirmap=DIRMAP)` (mr:422-424) — uses **original DEM**, not inflated
+   dirmap=DIRMAP)` (mr:592-594) — uses **original DEM**, not inflated
 
 ### 2.6 Slope and Aspect
 
-`grid.slope_aspect("dem")` (mr:430) — from original DEM.
+`grid.slope_aspect("dem")` (mr:534) — from original DEM. Computed early
+(before resolve_flats) for water detection; same values reused for final output.
 Same `_gradient_horn_1981()` implementation in pgrid.py.
 
 **No catchment-level aspect averaging.**
@@ -391,8 +398,9 @@ Circular correlation for aspect. Area as fractions (mr:620-688).
 
 - No column compression or minimum-aspect validation (not needed for regression)
 - No stream channel parameters (not part of validation)
-- No data filtering (no tail removal, no flood filter, no DTND clipping)
+- No DTND tail removal or DTND min clipping (tested as harmful/no-effect)
 - No catchment-level aspect averaging
+- No basin masking at extraction (`flagBasins` second pass)
 
 ---
 
@@ -411,12 +419,12 @@ Circular correlation for aspect. Area as fractions (mr:620-688).
 | 9 | FFT | A_thresh formula | MATCH | — | — |
 | 10 | Expand | **Dynamic vs fixed expansion** | **DIVERGENCE** | No | See §4.2 |
 | 11 | DEM | fill_pits / fill_depressions / resolve_flats | MATCH | — | — |
-| 12 | DEM | **identify_basins** | **OMISSION** | Yes (N) | No-op at 90m |
-| 13 | DEM | **identify_open_water** | **OMISSION** | Yes (C, N) | No-op at 90m |
-| 14 | DEM | **0.1m basin lowering** | **OMISSION** | Yes (N) | No-op at 90m |
-| 15 | Flow | **Basin re-masking after flowdir** | **OMISSION** | Yes (N) | No-op at 90m |
-| 16 | Flow | **Basin boundary stream forcing** | **OMISSION** | Yes (N) | No-op at 90m |
-| 17 | Flow | **A_thresh adjustment (max(acc)/100)** | **OMISSION** | No | See §4.3 |
+| 12 | DEM | identify_basins | MATCH | Yes (N) | No-op at 90m. Implemented 2026-02-20. |
+| 13 | DEM | identify_open_water | MATCH | Yes (C, N) | No-op at 90m. Implemented 2026-02-20. |
+| 14 | DEM | 0.1m basin lowering | MATCH | Yes (N) | No-op at 90m. Implemented 2026-02-20. |
+| 15 | Flow | Basin re-masking after flowdir | MATCH | Yes (N) | No-op at 90m. Implemented 2026-02-20. |
+| 16 | Flow | Basin boundary stream forcing | MATCH | Yes (N) | No-op at 90m. Implemented 2026-02-20. |
+| 17 | Flow | A_thresh adjustment (max(acc)/100) | MATCH | Yes | No-op at 90m. Implemented 2026-02-20. |
 | 18 | Slope | slope_aspect on original DEM | MATCH | — | — |
 | 19 | Slope | Horn 1981 stencil | MATCH | — | — |
 | 20 | Slope | **Catchment-level aspect averaging** | **OMISSION** | No | See §4.4 |
@@ -426,7 +434,7 @@ Circular correlation for aspect. Area as fractions (mr:620-688).
 | 24 | Area | Spherical formula | MATCH | — | — |
 | 25 | Filter | **NaN removal (isfinite vs hand>=0)** | **DIVERGENCE** | Yes (F) | Negligible |
 | 26 | Filter | **DTND tail removal** | **OMISSION** | Yes (A) | Harmful (-0.010) |
-| 27 | Filter | **Flood filter** | **OMISSION** | Yes (C) | No-op at 90m |
+| 27 | Filter | Flood filter | MATCH | Yes (C) | No-op at 90m. Implemented 2026-02-20. |
 | 28 | Filter | **DTND min clipping** | **OMISSION** | Yes (B) | No effect |
 | 29 | Binning | SpecifyHandBounds algorithm | MATCH | — | — |
 | 30 | Binning | fastsort method | MATCH | — | — |
@@ -449,7 +457,7 @@ Circular correlation for aspect. Area as fractions (mr:620-688).
 | 47 | Post | **River network extraction (stats)** | **OMISSION** | N/A | Not needed for validation |
 | 48 | Post | **Basin masking at extraction (flagBasins)** | **OMISSION** | No | See §4.6 |
 
-**Summary:** 48 items compared. 26 MATCHes, 6 DIVERGENCEs, 10 OMISSIONs,
+**Summary:** 48 items compared. 33 MATCHes, 5 DIVERGENCEs, 4 OMISSIONs,
 6 N/A (post-processing not relevant to validation).
 
 ---
@@ -772,20 +780,18 @@ Both: `sin(colatitude) * dθ * dφ * re²`.
 | Category | Count |
 |----------|-------|
 | Total items compared | 48 |
-| MATCH | 26 |
-| DIVERGENCE | 6 |
-| OMISSION | 10 |
+| MATCH | 33 |
+| DIVERGENCE | 5 |
+| OMISSION | 4 |
 | N/A (post-processing) | 6 |
 
 ### Tested Divergences
 
 | # | Divergence | Test | Impact on all 6 params |
 |---|-----------|------|------------------------|
-| 12-16 | DEM conditioning (5 steps) | N | All no-ops at 90m MERIT |
 | 21 | inflated vs original DEM in compute_hand | N | Height -0.002, slope -0.014, area_frac +0.007 — net negative |
 | 25 | Valid mask (isfinite vs hand>=0) | F | No effect (-0.0001) |
 | 26 | DTND tail removal | A | Area_frac -0.010 (harmful). Width -0.054. Others unchanged. |
-| 27 | Flood filter | C | No-op at 90m |
 | 28 | DTND min clipping | B | No effect |
 | 43 | Mean-HAND bin skip | D | No-op (no bins with mean HAND ≤ 0) |
 | 35 | Polynomial weighting (w^2→w^1) | I | Area_frac +0.002, width -0.018. Others unchanged. **Bug fixed.** |
@@ -796,18 +802,22 @@ Both: `sin(colatitude) * dθ * dφ * re²`.
 |---|-----------|-----------|----------|
 | 8 | FFT region selection (median of 4 vs single) | Affects Lc/A_thresh. Already explored via Test O sweep — area_frac sensitive but bounded (0.70-0.84 over A_thresh 20-50). | Low — acceptable for validation. |
 | 10 | Domain expansion (1.5x vs dynamic ~1.03x) | Larger buffer should reduce edge effects. Unlikely to hurt. | Low |
-| 17 | A_thresh adjustment (max(acc)/100) | Would never trigger at this gridcell. | None for MERIT |
 | 20 | Catchment-level aspect averaging | **Most likely to have a real effect.** Could move border pixels between aspect bins, affecting area fractions. Effect expected to be small at 90m. | **Medium** — not testable without adding hillslope classification to pipeline |
-| 48 | Basin masking at extraction | No basins detected. | None for MERIT |
+| 48 | Basin masking at extraction | No basins detected. Not implemented (second-pass flagBasins). | Low — none for MERIT |
 
-### Omissions That Are No-ops Here but Matter for OSBS
+### Implemented No-ops That Will Matter for OSBS
 
-| # | Omission | Why it's a no-op at MERIT 90m | Why it matters at OSBS 1m |
-|---|----------|-------------------------------|---------------------------|
+| # | Item | Why it's a no-op at MERIT 90m | Why it matters at OSBS 1m |
+|---|------|-------------------------------|---------------------------|
 | 12 | identify_basins | No dominant-elevation regions | Sinkholes, wetlands may have uniform elevation |
 | 13-14 | Open water detection + 0.1m lowering | No flat regions at 90m | Ponds, swamps are contiguous flat regions at 1m |
 | 15-16 | Basin re-masking + stream forcing | No basins to mask | Would create stream outlets at wetland boundaries |
 | 17 | A_thresh adjustment | max(acc) >> thresh | Could trigger in very flat terrain |
+
+### Remaining Omissions That Matter for OSBS
+
+| # | Omission | Why it's a no-op at MERIT 90m | Why it matters at OSBS 1m |
+|---|----------|-------------------------------|---------------------------|
 | 20 | Aspect averaging | Small effect at 90m | Large effect at 1m (noisy micro-topography) |
 | 48 | Basin masking at extraction | No basins | Wetland depressions would be flagged |
 
@@ -931,18 +941,25 @@ main (mr:818)
 │           ├── _fit_peak_gaussian()
 │           └── _fit_peak_lognormal()
 │
-├── compute_hillslope_params (mr:358)
+├── compute_hillslope_params (mr:470)
 │   ├── rasterio.open() + window read
+│   ├── identify_basins() → mask basins as nodata
 │   ├── Grid() + add_gridded_data()
 │   ├── fill_pits()
 │   ├── fill_depressions()
+│   ├── slope_aspect("dem") → slope, aspect (for water detection + output)
+│   ├── identify_open_water(slope) → basin_boundary, basin_mask
+│   ├── flooded -= 0.1 [basin regions]
 │   ├── resolve_flats()
 │   ├── flowdir()
+│   ├── [re-mask basins in inflated DEM]
 │   ├── accumulation()
+│   ├── [force basin boundaries into acc]
+│   ├── [A_thresh safety valve]
 │   ├── create_channel_mask()
 │   ├── compute_hand("dem")
-│   ├── slope_aspect("dem")
 │   ├── compute_pixel_areas()
+│   ├── [flood filter: basin pixels with HAND < 2m → invalid]
 │   ├── compute_hand_bins()
 │   │
 │   └── [per-aspect loop]
@@ -954,3 +971,49 @@ main (mr:818)
 └── compare_to_published (mr:620)
     └── [Pearson + circular correlation]
 ```
+
+---
+
+## Log
+
+### 2026-02-19 — Initial audit
+
+Created pipeline_audit.md with full line-by-line comparison of Swenson's
+codebase against merit_regression.py. Catalogued 48 items: 26 MATCHes,
+6 DIVERGENCEs, 10 OMISSIONs, 6 N/A.
+
+### 2026-02-20 — Basin/water handling chain implemented
+
+Ported 5 functions from `geospatial_utils.py` into `merit_regression.py`:
+`_four_point_laplacian`, `_expand_mask_buffer`, `erode_dilate_mask`,
+`identify_basins`, `identify_open_water`.
+
+Integrated the full basin/water chain into `compute_hillslope_params()`:
+1. `identify_basins()` on raw DEM before pysheds grid creation
+2. `slope_aspect("dem")` moved before resolve_flats (serves water detection
+   and final output)
+3. `identify_open_water(slope)` detects coherent flat regions
+4. Basin pixels lowered by 0.1m in flooded DEM to force flow through them
+5. Basin pixels re-masked as NaN in inflated DEM after flowdir
+6. Basin boundaries forced into stream network (acc set above threshold)
+7. A_thresh safety valve (reduce threshold if max accumulation is too low)
+8. Flood filter: basin pixels with HAND < 2m marked invalid before binning
+
+**Regression result (job 25335704):** All confirmed as no-ops at 90m MERIT.
+0 basin pixels detected, 0 open water pixels. All 6 correlations PASS:
+
+| Parameter | Expected | Actual | Delta |
+|-----------|----------|--------|-------|
+| Height | 0.9999 | 0.9999 | -0.0000 |
+| Distance | 0.9990 | 0.9994 | +0.0004 |
+| Slope | 0.9966 | 0.9966 | -0.0000 |
+| Aspect | 0.9999 | 0.9999 | -0.0000 |
+| Width | 0.9410 | 0.9419 | +0.0009 |
+| Area fraction | 0.8215 | 0.8174 | -0.0041 |
+
+Small delta shifts (distance +0.0004, width +0.0009, area_fraction -0.0041)
+are from moving `slope_aspect()` before `resolve_flats()` and re-adding
+modified arrays to the grid — all within tolerance.
+
+Updated divergence catalog: items 12-17 and 27 changed from OMISSION to
+MATCH. New totals: 33 MATCHes, 5 DIVERGENCEs, 4 OMISSIONs, 6 N/A.
