@@ -28,9 +28,9 @@ function verification, and DEM conditioning notes under one roof.
 | Category | Count |
 |----------|-------|
 | Total items compared | 48 |
-| MATCH | 38 |
-| DIVERGENCE | 3 |
-| OMISSION | 4 |
+| MATCH | 42 |
+| DIVERGENCE | 2 |
+| OMISSION | 1 |
 | N/A (post-processing) | 3 |
 
 ### Current Expected Correlations
@@ -41,15 +41,15 @@ function verification, and DEM conditioning notes under one roof.
 | Distance | 0.9987 |
 | Slope | 0.9850 |
 | Aspect | 1.0000 |
-| Width | 0.9465 |
-| Area fraction | 0.9047 |
+| Width | 0.9894 |
+| Area fraction | 0.9221 |
 
 ### Pipeline Fidelity Rating
 
 **High fidelity for the geographic CRS path.** The MERIT validation confirms
 that our pipeline correctly implements Swenson's methodology for geographic
-(lat/lon) data. All 6 parameters match at >=0.90 correlation, with 5 at >=0.95.
-The remaining gap in area fraction (0.90) is attributable to stream network
+(lat/lon) data. All 6 parameters match at >=0.92 correlation, with 5 at >=0.98.
+The remaining gap in area fraction (0.92) is attributable to stream network
 differences (A_thresh, domain expansion) rather than algorithmic errors.
 
 **Untested for OSBS (UTM).** The 6 DEM conditioning steps that are no-ops at
@@ -1276,10 +1276,10 @@ extraction (tested as harmful/no-effect/no-op respectively).
 
 | # | Item | Status | Tested? | Impact |
 |---|------|--------|---------|--------|
-| 25 | **NaN removal (isfinite vs hand>=0)** | **DIVERGENCE** | Yes (F) | Negligible |
+| 25 | NaN removal (isfinite vs hand>=0) | MATCH | Yes (F) | Negligible. Fixed 2026-02-20. |
 | 26 | **DTND tail removal** | **OMISSION** | Yes (A) | Harmful (-0.010) |
 | 27 | Flood filter | MATCH | Yes (C) | No-op at 90m. Implemented 2026-02-20. |
-| 28 | **DTND min clipping** | **OMISSION** | Yes (B) | No effect |
+| 28 | DTND min clipping | MATCH | Yes (B) | No effect. Fixed 2026-02-20. |
 
 **#25 — Valid Mask (DIVERGENCE)**
 
@@ -1457,7 +1457,7 @@ Per aspect (mr:465-589):
 | 40 | area = trap_area x fraction | MATCH | -- | -- |
 | 41 | width = quadratic at lower edge | MATCH | -- | -- |
 | 42 | distance = quadratic at midpoint | MATCH | -- | -- |
-| 43 | **Mean-HAND bin skip** | **OMISSION** | Yes (D) | No-op for this cell |
+| 43 | Mean-HAND bin skip | MATCH | Yes (D) | No-op for this cell. Fixed 2026-02-20. |
 
 **#43 — Mean-HAND Bin Skip (OMISSION)**
 
@@ -1548,7 +1548,7 @@ equivalent approaches, or defensive improvements.
 | J | 12 | Width minimum clamp `max(width, 1)` | Dormant |
 | K | 12 | Dead code: duplicate width guard at rh:782-785 | Informational |
 | L | 12 | Exception handling around fit | Defensive improvement |
-| **M** | **13** | **n_hillslopes: wrong array indexing** | **BUG (dormant)** |
+| **M** | **13** | **n_hillslopes: wrong array indexing** | **BUG (FIXED 2026-02-20)** |
 | N | 13 | Median DTND index off by 1 | Dormant |
 | O | 13 | Empty bin: `continue` vs explicit zero dict | Equivalent |
 | P | 13 | Quadratic fallbacks in ours, Swenson crashes | Defensive improvement |
@@ -2009,3 +2009,39 @@ Other notable findings:
 
 No divergence table changes. No regression impact (Finding M dormant
 for correlations). Audit of all 14 sections now complete.
+
+### 2026-02-20 — Six easy-win fixes applied
+
+Applied 6 fixes identified in the mismatch analysis:
+
+1. **Finding M (n_hillslopes BUG):** Extracted `drainage_id` to gridcell
+   region before indexing. Was indexing the full expanded grid (~3.2M elements)
+   with gridcell-level indices (~1.4M elements). **Not dormant** — width
+   improved 0.9465→0.9894, area fraction improved 0.9047→0.9221.
+2. **#25 (valid mask):** Removed `hand >= 0` check, now `isfinite` only.
+3. **#28 (DTND min clipping):** Added `dtnd[dtnd < 1.0] = 1.0`.
+4. **#43 (mean-HAND bin skip):** Added guard for bins with mean HAND <= 0.
+5. **Finding E (quartile upper bound):** Removed `bounds[-1] = 1e6` override
+   in quartile branch to match Swenson (tu:353-361).
+6. **Finding A (empty uid guard):** Added `if uid.size == 0: return out`
+   in `catchment_mean_aspect`.
+
+Also dropped two planned fixes after verification:
+- Width min clamp: already implemented at mr:306 and mr:889.
+- Dead code removal: inflated_dem re-masking at mr:649-657 is NOT dead code.
+
+**Regression result (job 25366112):** Lc PASS (763m). All 6 correlations
+within tolerance. Width and area fraction both improved — the n_hillslopes
+bug was NOT dormant for correlations as predicted.
+
+| Parameter | Before | After | Delta |
+|-----------|--------|-------|-------|
+| Height | 0.9977 | 0.9977 | +0.0000 |
+| Distance | 0.9987 | 0.9987 | +0.0000 |
+| Slope | 0.9850 | 0.9850 | -0.0000 |
+| Aspect | 1.0000 | 1.0000 | -0.0000 |
+| Width | 0.9465 | 0.9894 | +0.0429 |
+| Area fraction | 0.9047 | 0.9221 | +0.0174 |
+
+Updated expected correlations in `merit_regression.py` to new baseline.
+Updated counts: 42 MATCH, 2 DIVERGENCE, 1 OMISSION, 3 N/A.

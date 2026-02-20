@@ -54,13 +54,16 @@ FFT_REGION_SIZES = [500, 1000, 3000]
 # to use inflated DEM (matches Swenson rh:1685). See dem_conditioning_todo.md item 3.
 # Slope, distance, aspect, width, area_fraction updated after adding catchment-level
 # aspect averaging (Swenson rh:1725-1751). See dem_conditioning_todo.md item 4.
+# Width, area_fraction updated after fixing n_hillslopes array indexing bug
+# (Finding M): drainage_id was indexed from the full expanded grid instead of
+# the extracted gridcell, producing wrong unique counts. See full_pipeline_audit.md.
 EXPECTED = {
     "height": 0.9977,
     "distance": 0.9987,
     "slope": 0.9850,
     "aspect": 1.0000,
-    "width": 0.9465,
-    "area_fraction": 0.9047,
+    "width": 0.9894,
+    "area_fraction": 0.9221,
 }
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
@@ -239,12 +242,14 @@ def compute_hand_bins(
         else:
             bounds = np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
     else:
+        # Swenson (tu:353-361): quartile branch. Last bound is
+        # hand_sorted[-1] = max(hand), so the last bin is
+        # [Q75, max(hand)) — excludes pixels at exactly max(hand).
         quartiles = [0.25, 0.5, 0.75, 1.0]
         bounds = [0.0]
         for q in quartiles:
             idx = max(0, int(q * n) - 1)
             bounds.append(hand_sorted[idx])
-        bounds[-1] = 1e6
         bounds = np.array(bounds)
 
     return bounds
@@ -375,6 +380,11 @@ def catchment_mean_aspect(
     hillslope_types = np.unique(hillslope[hillslope > 0]).astype(int)
 
     out = np.zeros(aspect.shape)
+
+    # Swenson (tu:184-185): guard against empty drainage_id.
+    # Can occur if all drainage_id values are NaN or zero.
+    if uid.size == 0:
+        return out
     valid_aspect = np.isfinite(aspect.flat)
 
     nchunks = int(max(1, int(uid.size // chunksize)))
@@ -776,12 +786,27 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     slope_flat = slope_gc.flatten()
     aspect_flat = aspect_gc.flatten()
     area_flat = pixel_areas.flatten()
-    valid = (hand_flat >= 0) & np.isfinite(hand_flat)
+
+    # Swenson (rh:699-700): clip DTND to minimum 1.0 meter.
+    # Prevents near-zero DTND values at stream-adjacent pixels from
+    # creating degenerate bins in the trapezoidal width fit.
+    smallest_dtnd = 1.0  # meters
+    dtnd_flat[dtnd_flat < smallest_dtnd] = smallest_dtnd
+
+    # Swenson (rh:653): valid mask is isfinite only, no hand >= 0 check.
+    # Pixels with finite negative HAND are included in the population.
+    valid = np.isfinite(hand_flat)
 
     # HAND bins
     hand_bounds = compute_hand_bins(
         hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
     )
+
+    # Extract drainage_id to gridcell region for n_hillslopes counting.
+    # (Swenson rh:555) — using the full expanded grid.drainage_id with
+    # gridcell-level indices maps to wrong spatial locations because the
+    # row widths differ between expanded grid and extracted gridcell.
+    drainage_id_gc = np.array(grid.drainage_id)[gc_row_slice, gc_col_slice].flatten()
 
     # Compute 16 elements
     elements = []
@@ -803,16 +828,9 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
                 )
             continue
 
-        n_hillslopes = max(
-            len(
-                np.unique(
-                    grid.drainage_id.flatten()[asp_indices]
-                    if hasattr(grid, "drainage_id")
-                    else [1]
-                )
-            ),
-            1,
-        )
+        # Swenson (rh:761): count unique drainage IDs per aspect bin
+        # using the gridcell-extracted drainage_id array.
+        n_hillslopes = max(len(np.unique(drainage_id_gc[asp_indices])), 1)
 
         # Trapezoidal fit
         trap = fit_trapezoidal_width(
@@ -863,6 +881,22 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
                         "area": 0,
                         "slope": 0,
                         "aspect": float((asp_bin[0] + asp_bin[1]) / 2 % 360),
+                        "width": 0,
+                    }
+                )
+                continue
+
+            # Swenson (rh:820-822): skip bins where mean HAND <= 0.
+            # These are bins dominated by near-channel pixels with no
+            # meaningful elevation above the drainage.
+            if np.mean(hand_flat[bin_indices]) <= 0:
+                elements.append(
+                    {
+                        "height": 0,
+                        "distance": 0,
+                        "area": 0,
+                        "slope": 0,
+                        "aspect": 0,
                         "width": 0,
                     }
                 )
