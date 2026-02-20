@@ -302,7 +302,7 @@ physically motivated value instead of a guess.
 **Expected regression impact:** No change to correlations. New stdout output
 only.
 
-- [ ] Add `extract_river_network` call with MemoryError handling
-- [ ] Add `river_network_length_and_slope` call with MemoryError handling
-- [ ] Print stream network stats (reach count, length, slope)
-- [ ] Run regression, confirm correlations unchanged
+- [x] Add `extract_river_network` call with MemoryError handling
+- [x] Add `river_network_length_and_slope` call with MemoryError handling
+- [x] Print stream network stats (reach count, length, slope)
+- [x] Run regression, confirm correlations unchanged

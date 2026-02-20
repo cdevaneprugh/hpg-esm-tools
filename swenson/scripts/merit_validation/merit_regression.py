@@ -680,6 +680,37 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     acc_mask = (grid.acc > accum_threshold) & np.isfinite(np.array(grid.inflated))
     grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
 
+    # --- Stream network extraction (Swenson rh:1608-1614) ---
+    print("  Extracting river network...")
+    try:
+        branches = grid.extract_river_network(
+            "fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8"
+        )
+        n_streams = len(branches["features"])
+        print(f"    Stream reaches: {n_streams}")
+    except MemoryError:
+        print("  WARNING: MemoryError in extract_river_network, skipping")
+        branches = None
+
+    # --- Stream network length + slope (Swenson rh:1655-1673) ---
+    # river_network_length_and_slope accesses self.inflated_dem (pgrid.py:3269)
+    # and self.acc (pgrid.py:3284) by hardcoded attribute name. Our pipeline
+    # stores the inflated DEM as grid.inflated, so alias it.
+    grid.inflated_dem = grid.inflated
+    print("  Computing network length and slope...")
+    try:
+        net_stats = grid.river_network_length_and_slope(
+            "fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8"
+        )
+        print(f"    Network length: {net_stats['length']:.0f} m")
+        print(f"    Mean network slope: {net_stats['slope']:.6f} m/m")
+        print(f"    Main channel length: {net_stats['mch_length']:.0f} m")
+        print(f"    Main channel slope: {net_stats['mch_slope']:.6f} m/m")
+        print(f"    Reaches with positive slope: {len(net_stats['reach_slopes'])}")
+    except MemoryError:
+        print("  WARNING: MemoryError in river_network_length_and_slope, skipping")
+        net_stats = None
+
     print("  Computing HAND/DTND...")
     grid.compute_hand(
         "fdir",
