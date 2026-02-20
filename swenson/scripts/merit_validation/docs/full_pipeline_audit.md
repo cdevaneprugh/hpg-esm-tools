@@ -56,6 +56,49 @@ differences (A_thresh, domain expansion) rather than algorithmic errors.
 90m MERIT would become active at 1m OSBS data. The UTM code path in pgrid.py
 (Phase A) has not been validated against this audit.
 
+### OSBS Assessment (2026-02-20)
+
+All 17 remaining differences (2 DIVERGENCE, 1 OMISSION, 8 dormant deep-audit
+findings, 6 production guards) were ranked for OSBS 1m impact. Key decisions:
+
+**Domain expansion:** Swenson expanded gridcell domains because he was
+creating a global dataset — extracting each gridcell from larger MERIT tiles.
+For OSBS, we process the full NEON LIDAR mosaic edge-to-edge. There is no
+larger DEM to expand into. The expansion factor serves no purpose and should
+be removed from the OSBS pipeline. Keep for MERIT validation where it serves
+its intended purpose.
+
+**Synthetic lake bottoms (PI suggestion):** NEON LIDAR measures flat water
+surfaces over lakes/ponds — technically inaccurate because the actual surface
+is obscured by water. The PI has suggested filling flat lake areas with
+synthetic cone-shaped bottoms derived from nearby slope data. This would:
+
+- Eliminate the flat-surface problem for `identify_basins()` and
+  `resolve_flats()`
+- Give flow routing a surface to work with through lake areas
+- Reduce or eliminate the resolve_flats performance bottleneck (fewer large
+  flat regions)
+- Reduce the need for post-extraction basin masking (#48)
+- NEON DTM returns water surface elevation (a real number, not nodata) for
+  lakes, so lakes appear as flat constant-elevation regions, not as nodata gaps
+
+This is a pre-processing step that would go before the pipeline. Several
+items below are affected by whether synthetic lake bottoms are implemented.
+
+**OSBS action plan:**
+
+| Priority | Item | Action |
+|----------|------|--------|
+| 1 | NaN pre-filtering (S8-14 C+F) | Implement synchronized filtering |
+| ~~2~~ | ~~resolve_flats fallback (S3-A)~~ | ~~Switch to original DEM fallback~~ Done 2026-02-20 |
+| 3 | trap_width min clamp (S8-14 J) | Add `max(width, 1)` |
+| 4 | max(dtnd) guard (S8-14 H) | Add degenerate-catchment guard |
+| 5 | MemoryError handling (S4-6 C) | Abort + log memory suggestion |
+| ~~6~~ | ~~DTND tail removal (#26)~~ | ~~Retest on current pipeline~~ Beneficial, enabled. Done 2026-02-20 |
+| 7 | Flood filter (S8-14 D) | Keep our logic, Swenson's skip inapplicable |
+| 8 | Domain expansion (#10) | Remove for OSBS |
+| 9 | Basin masking (#48) | Defer, revisit after synthetic lake bottoms |
+
 ---
 
 ## 1. Spectral Analysis (FFT / Lc)
@@ -200,6 +243,12 @@ a single FFT (less sensitive to local anomalies), but it does not replicate
 Swenson's exact Lc. This is acceptable for validation purposes -- the goal is
 to verify the pipeline produces correct results for a given A_thresh, not to
 reproduce Swenson's exact A_thresh.
+
+**OSBS assessment:** Not applicable. Phase C established Lc ~300m for OSBS
+via a restricted-wavelength FFT approach, which is different from (and more
+principled than) either Swenson's single-region FFT or our multi-region
+median. This divergence is specific to the MERIT validation pipeline and
+does not affect OSBS.
 
 ### Shared Functions
 
@@ -404,6 +453,15 @@ border catchments partially resolved, but he handles this via subregion splittin
 for very fine grids (gs_ratio > 400). For this MERIT gridcell, neither approach
 causes problems.
 
+**OSBS assessment:** Not applicable. Swenson expanded the gridcell domain
+because he was creating a global dataset — each gridcell is extracted from a
+larger MERIT tile, and expansion ensures flow routing near the boundary has
+full upstream context. For OSBS, we process the full NEON LIDAR mosaic
+edge-to-edge. There is no larger DEM to expand into. Edge effects are an
+inherent property of the survey boundary, not something expansion can fix.
+Keep for MERIT validation (where it serves its intended purpose). Remove for
+OSBS pipeline.
+
 ### Deep Audit Findings (2026-02-20)
 
 Line-by-line comparison of Swenson's `representative_hillslope.py`
@@ -423,6 +481,12 @@ MERIT) throughout.
 No nodata pixels exist in this fully-land MERIT gridcell — both approaches
 read the same elevation values. Would matter for coastal cells where
 zero-filled ocean pixels differ from -9999 nodata in basin detection logic.
+
+**OSBS note:** NEON DTM over water returns the water surface elevation — a
+real number, not nodata. Lakes appear as flat constant-elevation regions, not
+as nodata gaps. The zeroFill distinction does not affect lake pixels. Nodata
+in NEON tiles occurs at survey boundaries and inter-tile gaps, which
+connected-component extraction already handles.
 
 **Finding B: No longitude wrapping (benign)**
 
@@ -544,19 +608,20 @@ Line-by-line comparison of Swenson's `representative_hillslope.py`
 against our `merit_regression.py` (mr:370-740). Findings A-I supplement
 the divergence table above.
 
-**Finding A: resolve_flats fallback target (functional divergence, dormant)**
+**Finding A: resolve_flats fallback target (RESOLVED)**
 
 Swenson (rh:1562-1567): The `resolve_flats` try/except ValueError block
 falls back to `grid.add_gridded_data(dem)` — the **original** basin-masked
 DEM (before `fill_pits` / `fill_depressions`). This reverts all DEM
 conditioning on failure.
 
-Ours (mr:636-642): Falls back to `grid.flooded` — the depression-filled,
-basin-lowered DEM. This preserves pit-filling and depression-filling.
-
-Only triggers on ValueError from `resolve_flats`. Does not trigger for
-this MERIT gridcell. Our approach is arguably more sensible (preserves
-the more-processed DEM), while Swenson's reverts to the rawest state.
+**Resolution (2026-02-20):** Switched to Swenson's approach — fallback now
+uses `grid.dem` (original DEM) instead of `grid.flooded`. No-op for this
+MERIT gridcell (resolve_flats succeeds), but safer for OSBS where extensive
+flat regions could trigger the ValueError. Note: if synthetic lake bottoms
+(PI suggestion) are implemented as a pre-processing step, `resolve_flats`
+may no longer fail because the flat lake surfaces would be replaced with
+sloped synthetic bottoms.
 
 **Note:** The DEM Conditioning Notes above originally stated Swenson falls
 back to the flooded DEM — this was incorrect and has been corrected.
@@ -574,6 +639,14 @@ Both guards would pass for this gridcell (land fraction = 1.0, relief
 >> 0.001m). These are production filters for the global pipeline that
 skip ocean cells and perfectly flat cells. Not needed for single-gridcell
 validation.
+
+**OSBS note:** Large flat lakes at OSBS could in principle affect the
+min_relief check (`max(elev) - min(elev) < 0.001`). However, OSBS has ~40m
+of total relief across the domain — even a sub-region that is 50% lake
+would still have surrounding upland elevations pulling max-min well above
+0.001m. The guard cannot trigger for the full mosaic. If synthetic lake
+bottoms are implemented, lakes would have non-zero relief, further reducing
+any concern.
 
 **Finding C: No validity check after fill_pits (no-op for MERIT)**
 
@@ -919,6 +992,13 @@ more forgiving (stream stats are informational, not used by the 6-param
 computation). Both are reasonable — the stream network extraction and
 length/slope computation are independent of HAND/DTND/hillslope
 classification.
+
+**OSBS decision (2026-02-20):** Abort and alert the user to request more
+memory. This is an HPC cluster — there is no physical memory constraint, the
+user just needs to know what to request in the SLURM `--mem` flag. The
+except block should log the current memory allocation and suggest a specific
+`--mem` value. Stream network stats are informational, but aborting on
+MemoryError prevents partial runs that silently lack diagnostics.
 
 **Finding D: Section 3 Finding G correction — nanmax/max reversed
 (factual correction)**
@@ -1267,15 +1347,14 @@ Applied in order:
 **Flood filter:** Basin pixels with HAND < 2m marked invalid before binning
 (mr:590). Implemented 2026-02-20 as part of basin/water handling chain.
 
-**Not implemented:** DTND tail removal, DTND min clipping, basin masking at
-extraction (tested as harmful/no-effect/no-op respectively).
+**Not implemented:** Basin masking at extraction (tested as no-op).
 
 ### Divergences
 
 | # | Item | Status | Tested? | Impact |
 |---|------|--------|---------|--------|
 | 25 | NaN removal (isfinite vs hand>=0) | MATCH | Yes (F) | Negligible. Fixed 2026-02-20. |
-| 26 | **DTND tail removal** | **OMISSION** | Yes (A) | Harmful (-0.010) |
+| 26 | DTND tail removal | MATCH | Yes (A, retest) | Beneficial (+0.002). Enabled 2026-02-20. |
 | 27 | Flood filter | MATCH | Yes (C) | No-op at 90m. Implemented 2026-02-20. |
 | 28 | DTND min clipping | MATCH | Yes (B) | No effect. Fixed 2026-02-20. |
 
@@ -1289,13 +1368,20 @@ Now `valid = np.isfinite(hand_flat)`.
 Tested (Test F): Negligible impact (-0.0001 on area fraction). Essentially
 no pixels have finite negative HAND at this gridcell.
 
-**#26 — DTND Tail Removal (OMISSION)**
+**#26 — DTND Tail Removal (RESOLVED)**
 
 Swenson: `TailIndex(fdtnd, fhand)` (tu:286-296) removes pixels at the far end
 of the DTND distribution where the exponential PDF drops below 5% of max.
 
-Tested (Test A): Harmful -- area fraction drops -0.010, width drops -0.054.
-Removing long-distance pixels biases the trapezoidal fit. Intentionally omitted.
+Original test (area_fraction_research Test A): Harmful -- area fraction
+dropped -0.010, width dropped -0.054. Intentionally omitted at the time.
+
+**Retest (2026-02-20):** After 6 pipeline fixes (basin/water handling,
+catchment-level aspect averaging, n_hillslopes bug, DTND min clipping,
+valid mask, DEM conditioning chain), tail removal is now **beneficial**.
+33,199 pixels removed. Width improved +0.0025 (0.9894->0.9919), area
+fraction improved +0.0023 (0.9221->0.9244). All other parameters within
+tolerance. `REMOVE_TAIL_DTND = True` enabled as default.
 
 **#28 — DTND Min Clipping (RESOLVED)**
 
@@ -1527,6 +1613,14 @@ unclear whether Swenson's published data was generated with it enabled.
 **Impact:** None for this gridcell (no basins detected). Would matter for flat
 terrain like OSBS where wetland depressions would be flagged.
 
+**OSBS note (2026-02-20):** Deferred. The capability exists
+(`identify_basins` is already ported) but is not wired into the gridcell
+extraction stage. If synthetic lake bottoms (PI suggestion) are implemented
+as a pre-processing step, basin masking at extraction becomes less necessary
+— the lakes would no longer present as flat basins. Revisit after the
+synthetic bottom implementation to determine if a second-pass basin detection
+adds value.
+
 ### Deep Audit of Sections 8-14 (2026-02-20)
 
 Line-by-line comparison of pixel area, gridcell extraction, data
@@ -1577,6 +1671,16 @@ mr:220 (`hand[asp_mask]`) includes zeros and NaN, but `np.sort` puts
 NaN at end so the 1%-ile from the sorted front is unaffected.
 Functionally equivalent. Dormant.
 
+**OSBS decision (2026-02-20):** Implement synchronized NaN filtering. At
+OSBS, basin masking injects NaN into HAND/DTND (basin interiors have no
+drainage target), but slope/aspect are computed from the original DEM before
+basin masking — they are finite everywhere. Without synchronized filtering,
+a bin could include slope values from basin-interior pixels that have NaN
+HAND. `nanmean(slope)` would silently include them; Swenson's approach
+excludes them. This is a real data integrity issue at 1m with real basins.
+Requires restructuring the flatten/filter logic to do one joint
+`isfinite(hand)` mask on all arrays before binning.
+
 **D: Flood filter denominator (Section 10).** Swenson (rh:576):
 `non_flat_fraction = ind.size / fhand.size` — ratio of non-basin pixels
 to ALL gridcell pixels. If >99% is basin, skip. Ours (mr:764):
@@ -1585,6 +1689,13 @@ flooded-with-low-HAND pixels to BASIN pixels only. Different logic
 (threshold sweep vs binary fraction). Dormant for binary basin masks
 (0/1 values). Would diverge for graded basin masks, but neither
 codebase uses those.
+
+**OSBS note (2026-02-20):** Swenson's logic is a "skip the gridcell"
+production filter — if >99% of pixels are basin, the gridcell is too flat to
+process. This is meaningless for a single-gridcell OSBS dataset: we cannot
+skip our only gridcell. Our threshold sweep approach (mark flooded pixels
+invalid, exclude from binning) is more appropriate for a single-domain
+workflow. Keep our current logic.
 
 **E: Quartile upper bound (Section 11, FIXED).** Swenson's quartile branch
 (tu:354-360) returns `[0, Q25, Q50, Q75, max(hand)]`. Last bin:
@@ -1614,6 +1725,13 @@ may produce nonsensical coefficients. Dormant: min_dtnd = 1.0 after
 DTND clipping, and DTND is always >= 1.0 post-clipping. Would only
 matter if clipping were removed.
 
+**OSBS decision (2026-02-20):** Implement this guard. At 1m OSBS, a
+catchment where every pixel is within 1m of the stream (a tiny flat
+depression) would have all DTND values clipped to 1.0 after min-clip. The
+fit would receive a single-point range. Low risk to add — 3-4 lines of
+guard logic that skip the trapezoidal fit for this aspect. Safety net for
+degenerate catchments that costs nothing.
+
 **I: Linear algebra (Section 12).** Swenson (rh:133-134):
 `covm = np.linalg.inv(gtg); coefs = dot(covm, gtd)` — explicit matrix
 inversion. Ours (mr:295): `coeffs = np.linalg.solve(GtWG, GtWy)` —
@@ -1628,6 +1746,12 @@ Ours: No explicit clamp on `trap_width`. The quadratic solver handles
 negative widths via the discriminant check. Dormant: the fit almost
 always produces positive widths for real terrain. Would matter for
 degenerate catchments with very few pixels.
+
+**OSBS decision (2026-02-20):** Implement. Add `trap_width = max(trap_width,
+1)` after the polynomial fit. At 1m with tiny or irregular catchments, a
+near-zero fitted width would propagate through the width calculation
+producing nonsensically narrow hillslope elements. One `max()` call — pure
+safety net.
 
 **K: Dead code in Swenson (Section 12).** Swenson (rh:782-785):
 ```python
@@ -2048,3 +2172,34 @@ bug was NOT dormant for correlations as predicted.
 
 Updated expected correlations in `merit_regression.py` to new baseline.
 Updated counts: 42 MATCH, 2 DIVERGENCE, 1 OMISSION, 3 N/A.
+
+### 2026-02-20 — OSBS assessment of remaining differences
+
+Ranked all 17 remaining differences (2 DIVERGENCE, 1 OMISSION, 8 dormant
+findings, 6 production guards) for OSBS 1m pipeline impact. Added OSBS
+assessment notes to each affected item. Key decisions:
+
+- **NaN pre-filtering (C+F):** Implement synchronized filtering for OSBS.
+  Basin masking creates NaN in HAND/DTND but not slope/aspect, risking
+  desynchronized arrays during binning.
+- ~~**resolve_flats fallback (S3-A):**~~ Switched to original DEM. Done 2026-02-20.
+- **trap_width clamp (J):** Add `max(width, 1)`.
+- **max(dtnd) guard (H):** Add degenerate-catchment guard.
+- **MemoryError (S4-6 C):** Abort + alert for more memory (HPC context).
+- ~~**DTND tail removal (#26):**~~ Retested 2026-02-20, now beneficial.
+  Enabled (`REMOVE_TAIL_DTND = True`).
+- **Flood filter (D):** Keep our logic — Swenson's "skip gridcell" is
+  meaningless for a single-gridcell dataset.
+- **Domain expansion (#10):** Keep for MERIT, remove for OSBS (no larger
+  DEM to expand into).
+- **Basin masking (#48):** Defer until synthetic lake bottom implementation.
+
+Two cross-cutting topics documented:
+
+1. **Domain expansion rationale:** Swenson expanded domains for his global
+   pipeline. Not applicable to OSBS mosaic processing.
+2. **Synthetic lake bottoms (PI suggestion):** Fill flat LIDAR lake surfaces
+   with cone-shaped synthetic bottoms using nearby slope data. Would
+   eliminate flat-surface issues for identify_basins, resolve_flats, and
+   basin masking. Pre-processing step before the pipeline. Affects severity
+   of items S3-A, S3-B, #48, S8-14 C/D.

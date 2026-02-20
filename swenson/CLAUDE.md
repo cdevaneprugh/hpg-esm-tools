@@ -135,12 +135,12 @@ Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then 
 
 | Parameter | Expected correlation |
 |-----------|---------------------|
-| Height (HAND) | 0.9977 |
-| Distance (DTND) | 0.9987 |
-| Slope | 0.9850 |
+| Height (HAND) | 0.9979 |
+| Distance (DTND) | 0.9992 |
+| Slope | 0.9839 |
 | Aspect (circular) | 1.0000 |
-| Width | 0.9894 |
-| Area fraction | 0.9221 |
+| Width | 0.9919 |
+| Area fraction | 0.9244 |
 
 ## pysheds Setup
 

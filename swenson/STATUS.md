@@ -20,14 +20,14 @@ The MERIT validation (stages 1-9) demonstrated that our pysheds fork and pipelin
 
 | Parameter | Correlation with published |
 |-----------|---------------------------|
-| Height (HAND) | 0.9977 |
-| Distance (DTND) | 0.9987 |
-| Slope | 0.9850 |
+| Height (HAND) | 0.9979 |
+| Distance (DTND) | 0.9992 |
+| Slope | 0.9839 |
 | Aspect | 1.0000 (circular) |
-| Width | 0.9894 |
-| Area fraction | 0.9221 |
+| Width | 0.9919 |
+| Area fraction | 0.9244 |
 
-This gives confidence that the *approach* is correct — we understand Swenson's methodology and can implement it. (Correlations updated 2026-02-20 after full pipeline audit and 6 fixes including n_hillslopes bug, DEM conditioning chain, and catchment-level aspect averaging.)
+This gives confidence that the *approach* is correct — we understand Swenson's methodology and can implement it. (Correlations updated 2026-02-20 after full pipeline audit, resolve_flats fallback fix, DTND tail removal, and 6 prior fixes including n_hillslopes bug, DEM conditioning chain, and catchment-level aspect averaging.)
 
 ### Bugs found and fixed during validation
 

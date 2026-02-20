@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 import numpy as np
 import rasterio
 import xarray as xr
+from scipy.stats import expon
 from pyproj import Proj as PyprojProj
 from pysheds.pgrid import Grid
 from rasterio.windows import from_bounds
@@ -57,16 +58,20 @@ FFT_REGION_SIZES = [500, 1000, 3000]
 # Width, area_fraction updated after fixing n_hillslopes array indexing bug
 # (Finding M): drainage_id was indexed from the full expanded grid instead of
 # the extracted gridcell, producing wrong unique counts. See full_pipeline_audit.md.
+# Height, distance, width, area_fraction updated after adding DTND tail removal
+# (Swenson rh:665-676, tu:286-296). Tail removal now beneficial (+0.0025 width,
+# +0.0023 area_fraction). See full_pipeline_audit.md #26.
 EXPECTED = {
-    "height": 0.9977,
-    "distance": 0.9987,
-    "slope": 0.9850,
+    "height": 0.9979,
+    "distance": 0.9992,
+    "slope": 0.9839,
     "aspect": 1.0000,
-    "width": 0.9894,
-    "area_fraction": 0.9221,
+    "width": 0.9919,
+    "area_fraction": 0.9244,
 }
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
+REMOVE_TAIL_DTND = True
 LC_TOLERANCE_PCT = 5.0
 
 # Flow routing
@@ -547,6 +552,46 @@ def identify_open_water(
     return basin_boundary, basin_mask
 
 
+def tail_index(
+    dtnd: np.ndarray, hand: np.ndarray, npdf_bins: int = 5000, hval: float = 0.05
+) -> np.ndarray:
+    """
+    Return indices of pixels with DTND below the tail threshold.
+
+    Swenson (tu:286-296): fits exponential distribution to DTND (where
+    HAND > 0), normalized by its standard deviation. Finds the DTND value
+    where the fitted PDF drops to hval (5%) of its maximum. Pixels beyond
+    that threshold are considered outliers from DEM flooding/inflation.
+
+    Parameters
+    ----------
+    dtnd : array of DTND values
+    hand : array of HAND values (same shape)
+    npdf_bins : number of bins for PDF evaluation
+    hval : fraction of max PDF to use as tail cutoff (0.05 = 5%)
+
+    Returns
+    -------
+    indices where dtnd < tail cutoff threshold
+    """
+    positive_hand = hand > 0
+    if np.sum(positive_hand) == 0:
+        return np.arange(dtnd.size)
+
+    dtnd_pos = dtnd[positive_hand]
+    std_dtnd = np.std(dtnd_pos)
+    if std_dtnd == 0:
+        return np.arange(dtnd.size)
+
+    fit_loc, fit_beta = expon.fit(dtnd_pos / std_dtnd)
+    rv = expon(loc=fit_loc, scale=fit_beta)
+
+    pbins = np.linspace(0, np.max(dtnd), npdf_bins)
+    rvpdf = rv.pdf(pbins / std_dtnd)
+    r1 = np.argmin(np.abs(rvpdf - hval * np.max(rvpdf)))
+    return np.where(dtnd < pbins[r1])[0]
+
+
 # ---------------------------------------------------------------------------
 # Hillslope parameter computation (from stage 3)
 # ---------------------------------------------------------------------------
@@ -642,9 +687,13 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     try:
         grid.resolve_flats("flooded", out_name="inflated")
     except ValueError:
-        print("  WARNING: resolve_flats failed, using flooded DEM as inflated")
+        # Swenson (rh:1562-1567): on resolve_flats failure, fall back to
+        # the original DEM (before fill_pits/fill_depressions). Reverting
+        # all conditioning is safer than routing on an uninflated flooded
+        # DEM where flats have arbitrary flow direction.
+        print("  WARNING: resolve_flats failed, falling back to original DEM")
         grid.add_gridded_data(
-            np.array(grid.flooded),
+            np.array(grid.dem),
             data_name="inflated",
             affine=grid.affine,
             crs=grid.crs,
@@ -796,6 +845,18 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     # Swenson (rh:653): valid mask is isfinite only, no hand >= 0 check.
     # Pixels with finite negative HAND are included in the population.
     valid = np.isfinite(hand_flat)
+
+    # Swenson (rh:665-676): eliminate tails of DTND distribution.
+    # Large DTND values can occur where DEM is flooded/inflated.
+    if REMOVE_TAIL_DTND:
+        tail_ind = tail_index(dtnd_flat[valid], hand_flat[valid])
+        # Map tail_ind (indices into valid-only arrays) back to full arrays.
+        valid_indices = np.where(valid)[0]
+        keep = np.zeros(valid.shape, dtype=bool)
+        keep[valid_indices[tail_ind]] = True
+        n_removed = int(np.sum(valid) - np.sum(keep))
+        print(f"    DTND tail removal: {n_removed} pixels removed")
+        valid = keep
 
     # HAND bins
     hand_bounds = compute_hand_bins(
