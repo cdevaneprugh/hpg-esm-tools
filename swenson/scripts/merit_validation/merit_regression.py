@@ -1159,10 +1159,6 @@ def main():
     # Step 2: Compute hillslope params
     print("\n=== Step 2: Hillslope Parameters ===")
     t0 = time.time()
-    accum_threshold = int(0.5 * (lc_results["median_lc_m"] / 92.3) ** 2)
-    # 92.3m is approximate MERIT pixel size at this latitude
-    # But we need to use the pixel-based threshold from Lc_px
-    # Use the median Lc in pixels to compute threshold
     lc_px_values = [r["lc_px"] for r in lc_results["regions"]]
     median_lc_px = float(np.median(lc_px_values))
     accum_threshold = int(0.5 * median_lc_px**2)
