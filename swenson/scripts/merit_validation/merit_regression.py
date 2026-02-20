@@ -274,7 +274,7 @@ def fit_trapezoidal_width(
     solving (G^T W G) coefs = G^T W y. This minimizes
     sum_i w_i * (residual_i)^2 (w^1 weighting).
     """
-    if np.max(dtnd) < min_dtnd:
+    if np.max(dtnd) <= min_dtnd:
         return {
             "slope": 0,
             "width": np.sum(area) / n_hillslopes / 100,
@@ -748,8 +748,13 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
         n_streams = len(branches["features"])
         print(f"    Stream reaches: {n_streams}")
     except MemoryError:
-        print("  WARNING: MemoryError in extract_river_network, skipping")
-        branches = None
+        import resource
+
+        max_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+        print("  FATAL: MemoryError in extract_river_network")
+        print(f"  Current peak RSS: {max_rss_gb:.1f} GB")
+        print(f"  Suggestion: increase SLURM --mem to {int(max_rss_gb * 2)}gb")
+        sys.exit(1)
 
     # --- Stream network length + slope (Swenson rh:1655-1673) ---
     # river_network_length_and_slope accesses self.inflated_dem (pgrid.py:3269)
@@ -767,8 +772,13 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
         print(f"    Main channel slope: {net_stats['mch_slope']:.6f} m/m")
         print(f"    Reaches with positive slope: {len(net_stats['reach_slopes'])}")
     except MemoryError:
-        print("  WARNING: MemoryError in river_network_length_and_slope, skipping")
-        net_stats = None
+        import resource
+
+        max_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+        print("  FATAL: MemoryError in river_network_length_and_slope")
+        print(f"  Current peak RSS: {max_rss_gb:.1f} GB")
+        print(f"  Suggestion: increase SLURM --mem to {int(max_rss_gb * 2)}gb")
+        sys.exit(1)
 
     print("  Computing HAND/DTND...")
     grid.compute_hand(

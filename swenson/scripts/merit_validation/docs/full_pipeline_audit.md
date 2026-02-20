@@ -37,12 +37,12 @@ function verification, and DEM conditioning notes under one roof.
 
 | Parameter | Correlation |
 |-----------|-------------|
-| Height | 0.9977 |
-| Distance | 0.9987 |
-| Slope | 0.9850 |
+| Height | 0.9979 |
+| Distance | 0.9992 |
+| Slope | 0.9839 |
 | Aspect | 1.0000 |
-| Width | 0.9894 |
-| Area fraction | 0.9221 |
+| Width | 0.9919 |
+| Area fraction | 0.9244 |
 
 ### Pipeline Fidelity Rating
 
@@ -91,11 +91,11 @@ items below are affected by whether synthetic lake bottoms are implemented.
 |----------|------|--------|
 | 1 | NaN pre-filtering (S8-14 C+F) | Implement synchronized filtering |
 | ~~2~~ | ~~resolve_flats fallback (S3-A)~~ | ~~Switch to original DEM fallback~~ Done 2026-02-20 |
-| 3 | trap_width min clamp (S8-14 J) | Add `max(width, 1)` |
-| 4 | max(dtnd) guard (S8-14 H) | Add degenerate-catchment guard |
-| 5 | MemoryError handling (S4-6 C) | Abort + log memory suggestion |
+| ~~3~~ | ~~trap_width min clamp (S8-14 J)~~ | ~~Add `max(width, 1)`~~ Already implemented (mr:316, mr:984). Done 2026-02-20 |
+| ~~4~~ | ~~max(dtnd) guard (S8-14 H)~~ | ~~Add degenerate-catchment guard~~ Changed `<` to `<=` at mr:277. Done 2026-02-20 |
+| ~~5~~ | ~~MemoryError handling (S4-6 C)~~ | ~~Abort + log memory suggestion~~ Replaced with sys.exit(1) + RSS report. Done 2026-02-20 |
 | ~~6~~ | ~~DTND tail removal (#26)~~ | ~~Retest on current pipeline~~ Beneficial, enabled. Done 2026-02-20 |
-| 7 | Flood filter (S8-14 D) | Keep our logic, Swenson's skip inapplicable |
+| ~~7~~ | ~~Flood filter (S8-14 D)~~ | ~~Keep our logic, Swenson's skip inapplicable~~ Confirmed 2026-02-20 |
 | 8 | Domain expansion (#10) | Remove for OSBS |
 | 9 | Basin masking (#48) | Defer, revisit after synthetic lake bottoms |
 
@@ -993,10 +993,15 @@ computation). Both are reasonable — the stream network extraction and
 length/slope computation are independent of HAND/DTND/hillslope
 classification.
 
-**OSBS decision (2026-02-20):** Abort and alert the user to request more
-memory. This is an HPC cluster — there is no physical memory constraint, the
-user just needs to know what to request in the SLURM `--mem` flag. The
-except block should log the current memory allocation and suggest a specific
+**Resolution (2026-02-20):** Replaced both `except MemoryError` blocks with
+`sys.exit(1)` + peak RSS reporting via `resource.getrusage()` + suggestion
+to double the SLURM `--mem` allocation. No more silent degradation —
+MemoryError now aborts with an actionable message.
+
+**OSBS note (2026-02-20):** This is an HPC cluster — there is no physical
+memory constraint, the user just needs to know what to request in the SLURM
+`--mem` flag. The except block now logs the current memory allocation and
+suggests a specific
 `--mem` value. Stream network stats are informational, but aborting on
 MemoryError prevents partial runs that silently lack diagnostics.
 
@@ -1725,12 +1730,16 @@ may produce nonsensical coefficients. Dormant: min_dtnd = 1.0 after
 DTND clipping, and DTND is always >= 1.0 post-clipping. Would only
 matter if clipping were removed.
 
-**OSBS decision (2026-02-20):** Implement this guard. At 1m OSBS, a
-catchment where every pixel is within 1m of the stream (a tiny flat
-depression) would have all DTND values clipped to 1.0 after min-clip. The
-fit would receive a single-point range. Low risk to add — 3-4 lines of
-guard logic that skip the trapezoidal fit for this aspect. Safety net for
-degenerate catchments that costs nothing.
+**Resolution (2026-02-20):** Changed `<` to `<=` at mr:277:
+`if np.max(dtnd) <= min_dtnd`. When all DTND values equal `min_dtnd`
+(e.g., all clipped to 1.0), the guard now triggers and returns the
+fallback values. No behavioral change for MERIT (DTND spans hundreds of
+meters). Catches the edge case at OSBS where tiny flat catchments have
+all DTND clipped to 1.0.
+
+**OSBS note (2026-02-20):** At 1m OSBS, a catchment where every pixel is
+within 1m of the stream (a tiny flat depression) would have all DTND
+values clipped to 1.0 after min-clip. The `<=` guard catches this.
 
 **I: Linear algebra (Section 12).** Swenson (rh:133-134):
 `covm = np.linalg.inv(gtg); coefs = dot(covm, gtd)` — explicit matrix
@@ -1747,11 +1756,10 @@ negative widths via the discriminant check. Dormant: the fit almost
 always produces positive widths for real terrain. Would matter for
 degenerate catchments with very few pixels.
 
-**OSBS decision (2026-02-20):** Implement. Add `trap_width = max(trap_width,
-1)` after the polynomial fit. At 1m with tiny or irregular catchments, a
-near-zero fitted width would propagate through the width calculation
-producing nonsensically narrow hillslope elements. One `max()` call — pure
-safety net.
+**Resolution (2026-02-20):** Already implemented. `max(trap_width, 1)` exists
+at mr:316 inside `fit_trapezoidal_width()`. Per-element `max(float(width), 1)`
+exists at mr:984. Both present since the initial consolidation commit
+(efd3a99). No additional change needed.
 
 **K: Dead code in Swenson (Section 12).** Swenson (rh:782-785):
 ```python
@@ -2183,13 +2191,12 @@ assessment notes to each affected item. Key decisions:
   Basin masking creates NaN in HAND/DTND but not slope/aspect, risking
   desynchronized arrays during binning.
 - ~~**resolve_flats fallback (S3-A):**~~ Switched to original DEM. Done 2026-02-20.
-- **trap_width clamp (J):** Add `max(width, 1)`.
-- **max(dtnd) guard (H):** Add degenerate-catchment guard.
-- **MemoryError (S4-6 C):** Abort + alert for more memory (HPC context).
+- ~~**trap_width clamp (J):**~~ Already implemented (mr:316, mr:984). Done 2026-02-20.
+- ~~**max(dtnd) guard (H):**~~ Changed `<` to `<=` at mr:277. Done 2026-02-20.
+- ~~**MemoryError (S4-6 C):**~~ Abort + RSS report + SLURM suggestion. Done 2026-02-20.
 - ~~**DTND tail removal (#26):**~~ Retested 2026-02-20, now beneficial.
   Enabled (`REMOVE_TAIL_DTND = True`).
-- **Flood filter (D):** Keep our logic — Swenson's "skip gridcell" is
-  meaningless for a single-gridcell dataset.
+- ~~**Flood filter (D):**~~ Keep our logic — confirmed appropriate. Done 2026-02-20.
 - **Domain expansion (#10):** Keep for MERIT, remove for OSBS (no larger
   DEM to expand into).
 - **Basin masking (#48):** Defer until synthetic lake bottom implementation.
@@ -2203,3 +2210,27 @@ Two cross-cutting topics documented:
    eliminate flat-surface issues for identify_basins, resolve_flats, and
    basin masking. Pre-processing step before the pipeline. Affects severity
    of items S3-A, S3-B, #48, S8-14 C/D.
+
+### 2026-02-20 — Remaining OSBS action items (3, 4, 5, 7) resolved
+
+Closed out 4 action items from the OSBS assessment:
+
+1. **Item 3 (trap_width clamp, S8-14 J):** Already implemented at mr:316
+   (`max(trap_width, 1)` in `fit_trapezoidal_width`) and mr:984
+   (`max(float(width), 1)` per element). Both present since initial
+   consolidation commit (efd3a99). Marked as done.
+2. **Item 4 (max(dtnd) guard, S8-14 H):** Changed `<` to `<=` at mr:277.
+   When all DTND values equal `min_dtnd` (e.g., all clipped to 1.0), the
+   guard now triggers and returns fallback values. No behavioral change for
+   MERIT.
+3. **Item 5 (MemoryError handling, S4-6 C):** Replaced both `except
+   MemoryError` blocks (mr:750-752, mr:769-771) with `sys.exit(1)` + peak
+   RSS reporting via `resource.getrusage()` + suggestion to double SLURM
+   `--mem`. No more silent degradation.
+4. **Item 7 (flood filter, S8-14 D):** Confirmed our logic is appropriate.
+   Swenson's "skip gridcell" is a production filter for his global dataset;
+   meaningless for single-domain OSBS processing. No code change.
+
+Updated action plan table, Finding H/J/C resolution notes, and summary
+correlations. All OSBS action items now resolved except items 1 (NaN
+pre-filtering), 8 (domain expansion), and 9 (basin masking at extraction).
