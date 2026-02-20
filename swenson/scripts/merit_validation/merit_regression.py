@@ -72,6 +72,7 @@ EXPECTED = {
 TOLERANCE = 0.01
 EXPECTED_LC_M = 763.0
 REMOVE_TAIL_DTND = True
+FLAG_BASINS = True
 LC_TOLERANCE_PCT = 5.0
 
 # Flow routing
@@ -856,6 +857,23 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     # Pixels with finite negative HAND are included in the population.
     valid = np.isfinite(hand_flat)
 
+    # Swenson (rh:570-596): remove basin pixels from hillslope computation.
+    # Basin floors produce anomalous HAND/DTND from flow paths across
+    # flooded/inflated DEM surfaces.
+    if FLAG_BASINS:
+        basin_gc = basin_pre_mask[gc_row_slice, gc_col_slice].flatten()
+        n_basin_gc = int(np.sum(basin_gc > 0))
+        if n_basin_gc > 0:
+            non_flat_fraction = np.sum(basin_gc == 0) / basin_gc.size
+            if non_flat_fraction > 0.01:
+                valid = valid & (basin_gc == 0)
+                print(f"    Basin masking: {n_basin_gc} pixels removed")
+            else:
+                raise ValueError(
+                    f"Gridcell too flat for hillslope computation "
+                    f"(non_flat_fraction={non_flat_fraction:.4f})"
+                )
+
     # Swenson (rh:665-676): eliminate tails of DTND distribution.
     # Large DTND values can occur where DEM is flooded/inflated.
     if REMOVE_TAIL_DTND:
@@ -868,21 +886,32 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
         print(f"    DTND tail removal: {n_removed} pixels removed")
         valid = keep
 
+    # Extract drainage_id to gridcell region for n_hillslopes counting.
+    # (Swenson rh:555) — using the full expanded grid.drainage_id with
+    # gridcell-level indices maps to wrong spatial locations because the
+    # row widths differ between expanded grid and extracted gridcell.
+    # Must extract before physical filtering (needs full-size array for slicing).
+    drainage_id_gc = np.array(grid.drainage_id)[gc_row_slice, gc_col_slice].flatten()
+
+    # Swenson (rh:653-663, 666-676): physically filter all arrays to valid
+    # pixels only.  Downstream functions (compute_hand_bins, per-aspect loop)
+    # receive clean arrays with no NaN and no tail pixels.
+    hand_flat = hand_flat[valid]
+    dtnd_flat = dtnd_flat[valid]
+    slope_flat = slope_flat[valid]
+    aspect_flat = aspect_flat[valid]
+    area_flat = area_flat[valid]
+    drainage_id_gc = drainage_id_gc[valid]
+
     # HAND bins
     hand_bounds = compute_hand_bins(
         hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
     )
 
-    # Extract drainage_id to gridcell region for n_hillslopes counting.
-    # (Swenson rh:555) — using the full expanded grid.drainage_id with
-    # gridcell-level indices maps to wrong spatial locations because the
-    # row widths differ between expanded grid and extracted gridcell.
-    drainage_id_gc = np.array(grid.drainage_id)[gc_row_slice, gc_col_slice].flatten()
-
     # Compute 16 elements
     elements = []
     for asp_idx, (asp_bin, asp_name) in enumerate(zip(ASPECT_BINS, ASPECT_NAMES)):
-        asp_mask = get_aspect_mask(aspect_flat, asp_bin) & valid
+        asp_mask = get_aspect_mask(aspect_flat, asp_bin)
         asp_indices = np.where(asp_mask)[0]
 
         if len(asp_indices) == 0:

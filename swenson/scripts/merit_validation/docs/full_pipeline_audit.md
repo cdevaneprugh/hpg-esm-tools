@@ -89,15 +89,15 @@ items below are affected by whether synthetic lake bottoms are implemented.
 
 | Priority | Item | Action |
 |----------|------|--------|
-| 1 | NaN pre-filtering (S8-14 C+F) | Implement synchronized filtering |
+| ~~1~~ | ~~NaN pre-filtering (S8-14 C+F)~~ | ~~Implement synchronized filtering~~ Done 2026-02-20 |
 | ~~2~~ | ~~resolve_flats fallback (S3-A)~~ | ~~Switch to original DEM fallback~~ Done 2026-02-20 |
 | ~~3~~ | ~~trap_width min clamp (S8-14 J)~~ | ~~Add `max(width, 1)`~~ Already implemented (mr:316, mr:984). Done 2026-02-20 |
 | ~~4~~ | ~~max(dtnd) guard (S8-14 H)~~ | ~~Add degenerate-catchment guard~~ Changed `<` to `<=` at mr:277. Done 2026-02-20 |
 | ~~5~~ | ~~MemoryError handling (S4-6 C)~~ | ~~Abort + log memory suggestion~~ Replaced with sys.exit(1) + RSS report. Done 2026-02-20 |
 | ~~6~~ | ~~DTND tail removal (#26)~~ | ~~Retest on current pipeline~~ Beneficial, enabled. Done 2026-02-20 |
 | ~~7~~ | ~~Flood filter (S8-14 D)~~ | ~~Keep our logic, Swenson's skip inapplicable~~ Confirmed 2026-02-20 |
-| 8 | Domain expansion (#10) | Remove for OSBS |
-| 9 | Basin masking (#48) | Defer, revisit after synthetic lake bottoms |
+| ~~8~~ | ~~Domain expansion (#10)~~ | ~~Remove for OSBS~~ N/A for OSBS; keep for MERIT. No code change needed. 2026-02-20 |
+| ~~9~~ | ~~Basin masking (#48)~~ | ~~Defer, revisit after synthetic lake bottoms~~ Implemented at mr:860-872. No-op at MERIT (0 basin pixels). 2026-02-20 |
 
 ---
 
@@ -461,6 +461,11 @@ edge-to-edge. There is no larger DEM to expand into. Edge effects are an
 inherent property of the survey boundary, not something expansion can fix.
 Keep for MERIT validation (where it serves its intended purpose). Remove for
 OSBS pipeline.
+
+**Resolved (2026-02-20):** Closing as N/A for OSBS. The MERIT regression
+keeps EXPANSION_FACTOR=1.5, which is conservative and correct. The OSBS
+pipeline processes the full mosaic without gridcell extraction, so domain
+expansion does not apply. No code change needed.
 
 ### Deep Audit Findings (2026-02-20)
 
@@ -1597,34 +1602,36 @@ wrap to [0,360].
 | 44 | Column compression | N/A | -- | -- |
 | 45 | Minimum 3-aspect validation | N/A | -- | -- |
 | 46 | Stream channel params | N/A | -- | -- |
-| 48 | **Basin masking at extraction (flagBasins)** | **OMISSION** | No | See analysis below |
+| 48 | Basin masking at extraction (flagBasins) | MATCH | Yes | No-op at MERIT (0 basins). Implemented 2026-02-20. |
 
 Items 44-46 are post-processing steps not relevant to the 6-parameter
 validation. They would be needed for a production pipeline generating
 CTSM-compatible NetCDF output.
 
-**#48 — Basin Masking at Extraction (OMISSION)**
+**#48 — Basin Masking at Extraction (Resolved)**
 
 **Swenson:** Optional (`flagBasins=True`): After extracting gridcell arrays,
 runs `identify_basins()` on the DEM and removes basin pixels from all arrays
 (rh:570-596). Requires >1% non-flat pixels.
 
-**Ours:** Not implemented.
+**Ours:** Implemented at mr:860-872. Uses `basin_pre_mask` (computed on raw
+DEM at mr:642) sliced to the gridcell region. Non-basin pixels are kept via
+the `valid` mask, alongside NaN filtering and DTND tail removal. If >99% of
+pixels are basin (non_flat_fraction <= 0.01), raises `ValueError`.
 
-**Tested?** Partially -- Test N showed `identify_basins()` finds 0 pixels at
-this gridcell. However, the `flagBasins` parameter is set per-run, and it's
-unclear whether Swenson's published data was generated with it enabled.
+**Tested?** Yes — regression passes. At MERIT, `identify_basins` finds 0
+basin pixels, so the entire block is a no-op (n_basin_gc == 0, inner branch
+never entered). All 6 correlations unchanged.
 
-**Impact:** None for this gridcell (no basins detected). Would matter for flat
-terrain like OSBS where wetland depressions would be flagged.
+**Impact:** None for MERIT. For OSBS, this will filter basin-floor pixels
+that produce anomalous HAND/DTND from flow paths routed across
+flooded/inflated DEM surfaces.
 
-**OSBS note (2026-02-20):** Deferred. The capability exists
-(`identify_basins` is already ported) but is not wired into the gridcell
-extraction stage. If synthetic lake bottoms (PI suggestion) are implemented
-as a pre-processing step, basin masking at extraction becomes less necessary
-— the lakes would no longer present as flat basins. Revisit after the
-synthetic bottom implementation to determine if a second-pass basin detection
-adds value.
+**OSBS note (2026-02-20):** If synthetic lake bottoms are implemented as a
+pre-processing step, basin masking at extraction becomes less necessary —
+the lakes would no longer present as flat basins. The two mechanisms are
+complementary: synthetic bottoms fix the DEM before conditioning, basin
+masking catches any residual flat regions after conditioning.
 
 ### Deep Audit of Sections 8-14 (2026-02-20)
 
@@ -1641,10 +1648,10 @@ equivalent approaches, or defensive improvements.
 |---|---------|---------|-------|
 | A | 8 | `np.tile` axis syntax differs | Equivalent |
 | B | 9 | Extraction: `arg_closest_point` vs affine slicing | Equivalent |
-| C | 10 | NaN pre-filtering vs inclusive arrays | Dormant |
+| C | 10 | NaN pre-filtering vs inclusive arrays | **Resolved 2026-02-20** |
 | D | 10 | Flood filter denominator: total vs basin-only | Dormant |
 | E | 11 | Quartile upper bound: `max(hand)` vs `1e6` | Negligible |
-| F | 11 | Aspect mask on NaN-filtered vs full array | Dormant |
+| F | 11 | Aspect mask on NaN-filtered vs full array | **Resolved 2026-02-20** |
 | G | 11 | Empty `above_bin1`: negative index vs size guard | Equivalent |
 | H | 12 | `max(dtnd) < min_dtnd`: ValueError vs fallback | Dormant |
 | I | 12 | Linear algebra: `inv + dot` vs `solve` | Equivalent (ours better) |
@@ -1683,8 +1690,14 @@ basin masking — they are finite everywhere. Without synchronized filtering,
 a bin could include slope values from basin-interior pixels that have NaN
 HAND. `nanmean(slope)` would silently include them; Swenson's approach
 excludes them. This is a real data integrity issue at 1m with real basins.
-Requires restructuring the flatten/filter logic to do one joint
-`isfinite(hand)` mask on all arrays before binning.
+
+**Resolved (2026-02-20):** Implemented synchronized pre-filtering at
+mr:878-886. All flat arrays (`hand_flat`, `dtnd_flat`, `slope_flat`,
+`aspect_flat`, `area_flat`, `drainage_id_gc`) are now physically filtered
+by the `valid` mask (which combines `isfinite(hand)` and DTND tail removal)
+before calling `compute_hand_bins` and entering the per-aspect loop.
+Matches Swenson rh:653-663. MERIT regression PASS — all 6 correlations
+within tolerance (largest delta: slope +0.0027).
 
 **D: Flood filter denominator (Section 10).** Swenson (rh:576):
 `non_flat_fraction = ind.size / fhand.size` — ratio of non-basin pixels
@@ -1712,8 +1725,13 @@ in quartile branch. Now matches Swenson. Negligible impact.
 applies the aspect mask to NaN-filtered arrays (finding C above means
 no NaN in `fhand`, `faspect`, etc.). Ours applies the aspect mask
 to the full gridcell arrays which may contain NaN. The NaN values
-are excluded later by the valid-pixel filters in binning. Dormant:
-same pixels end up in each bin.
+are excluded later by the valid-pixel filters in binning.
+
+**Resolved (2026-02-20):** Fixed by the same synchronized pre-filtering
+as finding C. The per-aspect loop `asp_mask` now operates on pre-filtered
+arrays (mr:896), so no NaN or tail pixels are present. The `& valid`
+conjunction was removed since it would be wrong on the filtered arrays
+(different size than the original `valid` mask).
 
 **G: Empty `above_bin1` handling (Section 11).** Swenson (tu:309-313):
 If `above_bin1` is empty, `Q25 = fhand[0]` — index 0 of an empty array
@@ -2187,9 +2205,8 @@ Ranked all 17 remaining differences (2 DIVERGENCE, 1 OMISSION, 8 dormant
 findings, 6 production guards) for OSBS 1m pipeline impact. Added OSBS
 assessment notes to each affected item. Key decisions:
 
-- **NaN pre-filtering (C+F):** Implement synchronized filtering for OSBS.
-  Basin masking creates NaN in HAND/DTND but not slope/aspect, risking
-  desynchronized arrays during binning.
+- ~~**NaN pre-filtering (C+F):**~~ Physically filter all arrays by `valid` mask
+  before `compute_hand_bins` and per-aspect loop. MERIT PASS. Done 2026-02-20.
 - ~~**resolve_flats fallback (S3-A):**~~ Switched to original DEM. Done 2026-02-20.
 - ~~**trap_width clamp (J):**~~ Already implemented (mr:316, mr:984). Done 2026-02-20.
 - ~~**max(dtnd) guard (H):**~~ Changed `<` to `<=` at mr:277. Done 2026-02-20.
@@ -2234,3 +2251,47 @@ Closed out 4 action items from the OSBS assessment:
 Updated action plan table, Finding H/J/C resolution notes, and summary
 correlations. All OSBS action items now resolved except items 1 (NaN
 pre-filtering), 8 (domain expansion), and 9 (basin masking at extraction).
+
+### 2026-02-20 — Close action item 1: synchronized NaN pre-filtering
+
+Implemented Swenson-style upfront array filtering (rh:653-663, 666-676).
+After `valid` mask is finalized (combining `isfinite(hand)` + DTND tail
+removal), all flat arrays are physically filtered before calling
+`compute_hand_bins` or entering the per-aspect loop. Changes at mr:871-896:
+
+1. Moved `drainage_id_gc` extraction before the filter block (needs
+   full-size array for 2D slicing).
+2. Added 6-line physical filter: `hand_flat`, `dtnd_flat`, `slope_flat`,
+   `aspect_flat`, `area_flat`, `drainage_id_gc` all indexed by `valid`.
+3. Removed `& valid` from `asp_mask` in per-aspect loop — arrays are
+   already clean, and `valid` is sized to the original arrays.
+
+MERIT regression PASS — all 6 correlations within tolerance:
+
+| Parameter | Expected | Actual | Delta |
+|-----------|----------|--------|-------|
+| Height | 0.9979 | 0.9981 | +0.0002 |
+| Distance | 0.9992 | 0.9991 | -0.0001 |
+| Slope | 0.9839 | 0.9866 | +0.0027 |
+| Aspect | 1.0000 | 1.0000 | -0.0000 |
+| Width | 0.9919 | 0.9916 | -0.0003 |
+| Area fraction | 0.9244 | 0.9224 | -0.0020 |
+
+Marked findings C and F as Resolved. Updated action plan table.
+Remaining open items: 8 (domain expansion) and 9 (basin masking).
+
+### 2026-02-20 — Close action items 8 and 9
+
+**Item 8 (domain expansion, #10):** Closed as N/A for OSBS. The MERIT
+regression keeps EXPANSION_FACTOR=1.5 (conservative, correct). The OSBS
+pipeline processes the full mosaic without gridcell extraction, so domain
+expansion doesn't apply.
+
+**Item 9 (basin masking, #48):** Implemented `FLAG_BASINS` at mr:860-872.
+After `valid = np.isfinite(hand_flat)` and before DTND tail removal, slices
+`basin_pre_mask` to the gridcell region and adds `basin_gc == 0` to the
+`valid` mask. Uses the existing `basin_pre_mask` computed on the raw DEM at
+mr:642 — same DEM state Swenson uses. At MERIT, 0 basin pixels detected, so
+the block is a no-op and all 6 correlations are unchanged.
+
+All 9 action items now closed.
