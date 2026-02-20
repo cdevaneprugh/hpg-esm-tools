@@ -554,7 +554,17 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
     )
 
     # --- Resolve flats (on modified flooded DEM) ---
-    grid.resolve_flats("flooded", out_name="inflated")
+    try:
+        grid.resolve_flats("flooded", out_name="inflated")
+    except ValueError:
+        print("  WARNING: resolve_flats failed, using flooded DEM as inflated")
+        grid.add_gridded_data(
+            np.array(grid.flooded),
+            data_name="inflated",
+            affine=grid.affine,
+            crs=grid.crs,
+            nodata=grid.nodata,
+        )
 
     # --- Flow direction ---
     print("  Computing flow direction + accumulation...")
@@ -592,7 +602,7 @@ def compute_hillslope_params(dem_path: str, accum_threshold: int) -> dict:
         print(f"    A_thresh reduced: {old_thresh} -> {accum_threshold}")
 
     # --- Stream network + HAND/DTND (using modified acc) ---
-    acc_mask = grid.acc > accum_threshold
+    acc_mask = (grid.acc > accum_threshold) & np.isfinite(np.array(grid.inflated))
     grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
 
     print("  Computing HAND/DTND...")
