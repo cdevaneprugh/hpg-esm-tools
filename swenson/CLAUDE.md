@@ -84,7 +84,6 @@ swenson/
 │
 ├── output/
 │   ├── google-earth/          # KML files for Google Earth
-│   ├── merit_validation/      # Regression test output (results.json, summary.txt)
 │   ├── osbs/                  # Pipeline runs (YYYY-MM-DD_<desc>/)
 │   └── plots/                 # Comparison plots
 │
@@ -92,7 +91,9 @@ swenson/
 │   ├── spatial_scale.py       # Shared FFT module
 │   ├── merit_validation/      # MERIT geographic regression test
 │   │   ├── merit_regression.py  # Single-file regression (Lc + 6 params vs published)
-│   │   └── merit_regression.sh  # SLURM wrapper
+│   │   ├── merit_regression.sh  # SLURM wrapper
+│   │   ├── README.md            # Script purpose and flowchart
+│   │   └── output/              # results.json, summary.txt, SLURM logs
 │   ├── osbs/                  # Pipeline scripts
 │   │   ├── run_pipeline.py    # Main hillslope pipeline
 │   │   ├── run_pipeline.sh    # SLURM job wrapper
@@ -132,7 +133,7 @@ cd $TOOLS/swenson
 sbatch scripts/merit_validation/merit_regression.sh
 ```
 
-Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `output/merit_validation/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL.
+Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `scripts/merit_validation/output/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL. Expected runtime: ~10-20 min.
 
 **Pass criteria:** All 6 parameter correlations within 0.01 of expected, Lc within 5% of 763m.
 

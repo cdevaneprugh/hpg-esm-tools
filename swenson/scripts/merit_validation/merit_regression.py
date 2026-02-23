@@ -7,7 +7,7 @@ Validates the pysheds fork's geographic CRS code path by:
 2. Computing 6 hillslope parameters for a known MERIT gridcell
 3. Comparing to Swenson's published data
 
-Expected runtime: ~50-90 min, 48GB RAM.
+Expected runtime: ~10-20 min, 48GB RAM.
 Exit code: 0 on PASS, 1 on FAIL.
 """
 
@@ -37,7 +37,7 @@ MERIT_DEM = os.path.join(SWENSON_DIR, "data/merit/n30w095_dem.tif")
 PUBLISHED_NC = os.path.join(
     SWENSON_DIR, "data/reference/hillslopes_0.9x1.25_c240416.nc"
 )
-OUTPUT_DIR = os.path.join(SWENSON_DIR, "output/merit_validation")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
 # Target gridcell (0.9 x 1.25 degree)
 TARGET_LON = (-93.125, -91.875)

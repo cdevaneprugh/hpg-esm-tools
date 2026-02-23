@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=merit-regression
-#SBATCH --output=logs/merit_regression_%j.log
+#SBATCH --output=scripts/merit_validation/output/merit_regression_%j.log
 #SBATCH --partition=hpg-default
 #SBATCH --mem=48gb
 #SBATCH --cpus-per-task=4
