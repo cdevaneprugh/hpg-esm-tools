@@ -1,6 +1,6 @@
 # Pysheds Fork: UTM CRS Support Walkthrough
 
-**Branch:** `feature/utm-crs-support` in `$PYSHEDS_FORK`
+**Branch:** `uf-development` in `$PYSHEDS_FORK`
 **Base commit:** `7b20e8e` (Swenson's functions ported to upstream pysheds 0.4)
 **Phase:** A of the Swenson hillslope implementation
 
@@ -60,7 +60,7 @@ No code was changed here. Phase A changed only the import path for `LooseVersion
 
 ---
 
-## 2. CRS Detection: `_crs_is_geographic()` (line 129-148)
+## 2. CRS Detection: `_crs_is_geographic()` (line 136-155)
 
 **This is the central addition.** Every CRS branch in the fork calls this method.
 
@@ -75,7 +75,7 @@ Returns `True` for geographic CRS (lat/lon in degrees), `False` for projected CR
 **After:**
 
 ```python
-# pgrid.py lines 129-148
+# pgrid.py lines 136-155
 #
 # [ADDED - Phase A] New method. All CRS branches call this.
 #
@@ -111,7 +111,7 @@ The Grid's CRS can be changed after construction (e.g. by `add_gridded_data()` o
 
 ---
 
-## 3. DTND in `compute_hand()` (lines 1958-1997)
+## 3. DTND in `compute_hand()` (lines 1963-2010)
 
 **Problem #1 from STATUS.md.** This was the most impactful fix — it was what made the pipeline use the wrong DTND algorithm entirely.
 
@@ -150,7 +150,7 @@ dtnd = np.where(hndx != -1, dtnd, 0)
 **After:**
 
 ```python
-# pgrid.py lines 1958-1997
+# pgrid.py lines 1963-2010
 #
 # --- Distance To Nearest Drainage (DTND) ---
 #
@@ -162,7 +162,7 @@ dtnd = np.where(hndx != -1, dtnd, 0)
 # channel pixel — it's the distance to the specific channel pixel
 # found by tracing D8 flow directions downstream.
 #
-# hndx (computed above at line ~1923) stores the flat array index
+# hndx (computed above at line ~1954) stores the flat array index
 # of each pixel's drainage outlet. It's CRS-independent — purely
 # topological, determined by the D8 flow direction graph.
 #
@@ -224,7 +224,7 @@ self._output_handler(data=dtnd, out_name='dtnd',
 
 | Element | Changed? | Notes |
 |---------|----------|-------|
-| `hndx` D8 routing (line 1929-1949) | No | Topology is CRS-independent |
+| `hndx` D8 routing (line 1935-1954) | No | Topology is CRS-independent |
 | `dx`/`dy` computation (was `dlon`/`dlat`) | **Renamed** | Same subtraction, different physical interpretation; renamed to be CRS-neutral |
 | `x2d`/`y2d` (was `lon2d`/`lat2d`) | **Renamed** | CRS-neutral names from `_2d_crs_coordinates()` |
 | Haversine formula | No | Moved into `if` branch, logic identical |
@@ -234,7 +234,7 @@ self._output_handler(data=dtnd, out_name='dtnd',
 
 ---
 
-## 4. AZND in `compute_hand()` (lines 1999-2029)
+## 4. AZND in `compute_hand()` (lines 2012-2040)
 
 Immediately follows the DTND computation and reuses the same `dx`/`dy` values.
 
@@ -259,7 +259,7 @@ aznd[aznd < 0] += 360
 **After:**
 
 ```python
-# pgrid.py lines 1999-2029
+# pgrid.py lines 2012-2040
 #
 # --- Azimuth to Nearest Drainage (AZND) ---
 #
@@ -330,7 +330,7 @@ self._output_handler(data=aznd, out_name='aznd',
 
 ---
 
-## 5. `_gradient_horn_1981()` (lines 4175-4236)
+## 5. `_gradient_horn_1981()` (lines 4172-4260)
 
 **Addresses problem #4 from STATUS.md** (slope/aspect). This is the internal method called by `slope_aspect()`.
 
@@ -394,11 +394,41 @@ def _gradient_horn_1981(self, dem, inside):
 **After:**
 
 ```python
-# pgrid.py lines 4175-4236
+# pgrid.py lines 4172-4260
 #
 def _gradient_horn_1981(self, dem, inside):
     """
-    Calculate gradient of a dem.
+    Compute elevation gradient using the Horn (1981) weighted finite-difference stencil.
+
+    Uses a 3x3 window with cardinal neighbors weighted 2x relative to diagonal
+    neighbors, then divides by 8 * cell_spacing to obtain the gradient in each axis.
+
+    Parameters
+    ----------
+    dem : numpy.ndarray
+        2-D elevation array.
+    inside : numpy.ndarray
+        Flat (raveled) indices of interior pixels to compute gradients for.
+
+    Returns
+    -------
+    [dzdx, dzdy] : list of numpy.ndarray
+        dzdx : d(elev)/d(east)  — positive when elevation increases eastward.
+        dzdy : d(elev)/d(north) — positive when elevation increases northward.
+
+    Notes
+    -----
+    Sign convention: neighbors are indexed by compass direction
+    (N, NE, E, SE, S, SW, W, NW), so the stencil sums are oriented
+    geographically regardless of array storage order. This differs from
+    np.gradient, whose sign depends on whether row 0 is the north or
+    south edge of the raster.
+
+    CRS handling:
+    - Geographic (lat/lon): pixel spacings converted from degrees to
+      meters via haversine approximation with cos(lat) correction for
+      longitude convergence.
+    - Projected (e.g. UTM): coordinate offsets used directly as meters.
     """
     # [ORIGINAL] Suppress runtime warnings from division in flat areas
     # where the gradient is zero/undefined.
@@ -413,90 +443,52 @@ def _gradient_horn_1981(self, dem, inside):
     # [ORIGINAL] Elevation of central gridpoint's neighbors.
     elev_neighbors = dem.flat[inner_neighbors]
 
-    # [ADDED - Phase A] Block comment explaining coordinate system.
-    #
     # --- Convert pixel-index differences to physical distances ---
     #
-    # _2d_crs_coordinates() returns CRS coordinates at pixel centers:
-    #   - Geographic CRS → lon/lat in degrees
-    #   - Projected CRS (e.g. UTM) → easting/northing in meters
-    #
-    # dx[k, i] and dy[k, i] are the coordinate offsets from pixel i
-    # to its k-th neighbor (k in [N, NE, E, SE, S, SW, W, NW]).
-
-    # [ORIGINAL] Get 2D coordinates and compute offsets to neighbors.
-    # In the original Swenson code these were lon2d/lat2d and dlon/dlat;
-    # renamed to x2d/y2d and dx/dy to be CRS-neutral.
-    # For geographic CRS, dx/dy are in degrees.
-    # For projected CRS, dx/dy are in meters.
+    # CRS coordinate grids and neighbor offsets for Horn 1981 stencil.
+    #   x2d/y2d: pixel-center coordinates from _2d_crs_coordinates()
+    #   dx[k,i]/dy[k,i]: offset from pixel i to its k-th neighbor
+    #     (k in [N, NE, E, SE, S, SW, W, NW])
+    #   Geographic CRS: degrees; Projected CRS: meters
     x2d, y2d = self._2d_crs_coordinates()
     dx = np.subtract(x2d.flat[inner_neighbors], x2d.flat[inside])
     dy = np.subtract(y2d.flat[inner_neighbors], y2d.flat[inside])
 
-    # [ADDED - Phase A] CRS branch for unit conversion.
-    #
-    # Convert coordinate differences to physical cell spacings in meters.
-    # abs() is taken because the Horn stencil cares about spacing magnitude,
-    # not direction — the directional information is encoded in which
-    # neighbors are summed vs subtracted (haxindices/hsxindices below).
-    #
-    # In the original Swenson code, the physical spacings were named dx/dy.
-    # They are now named cell_dx/cell_dy to distinguish them from the
-    # coordinate offsets dx/dy above.
+    # Convert coordinate offsets to physical cell spacings in meters.
+    # Horn 1981 needs spacing magnitude (abs), not direction — directional
+    # information is encoded in which neighbors are summed vs subtracted
+    # (haxindices/hsxindices below).
     if self._crs_is_geographic():
-        # [ORIGINAL] Geographic CRS: approximate meter distances from
-        # degree offsets.
-        # cell_dx uses a cos(lat) correction for longitude convergence
-        # toward poles: 1 degree of longitude is shorter at high
-        # latitudes.
-        # cell_dy is simply arc length along a meridian: always
-        # re * dtr * dlat regardless of latitude.
-        cell_dx = _EARTH_RADIUS_M * np.abs(np.multiply(_DEG_TO_RAD*dx,
-                                     np.cos(_DEG_TO_RAD*y2d.flat[inside])))
+        # Geographic: degree offsets → meters. cos(lat) corrects for
+        # longitude convergence toward poles.
+        cell_dx = _EARTH_RADIUS_M * np.abs(np.multiply(_DEG_TO_RAD*dx,np.cos(_DEG_TO_RAD*y2d.flat[inside])))
         cell_dy = _EARTH_RADIUS_M * np.abs(_DEG_TO_RAD*dy)
     else:
-        # [ADDED - Phase A] Projected CRS (e.g. UTM): the affine
-        # transform maps pixel indices directly to CRS coordinates in
-        # linear units (meters for UTM). Coordinate differences are
-        # already physical distances — no conversion needed. UTM
-        # distortion is < 0.04% within a zone.
-        #
-        # [WHY] This is the key fix for slope/aspect on UTM data.
-        # The original code's `re * dtr * cos(lat)` conversion is
-        # nonsensical when lat is already in meters (e.g. 3286000m).
-        # For UTM, abs(dx) and abs(dy) are already the physical
-        # spacing between pixel centers.
+        # Projected: coordinate offsets are already in meters.
+        # UTM distortion is < 0.04% within a zone.
         cell_dx = np.abs(dx)
         cell_dy = np.abs(dy)
 
-    # [ORIGINAL] Horn 1981 uses the average spacing of the two cardinal
-    # neighbors along each axis to normalize the weighted finite
-    # difference. This makes the stencil symmetric for non-square pixels.
+    # Horn 1981 uses the average spacing of the two cardinal neighbors
+    # along each axis to normalize the weighted finite difference:
     #   mean_cell_dx = average of east (index 2) and west (index 6) spacings
     #   mean_cell_dy = average of north (index 0) and south (index 4) spacings
-    #
-    # [ADDED - Phase A] Comments clarifying the index references.
-    # In the original code these were mean_dx/mean_dy; renamed to
-    # mean_cell_dx/mean_cell_dy for consistency with cell_dx/cell_dy.
     mean_cell_dx = 0.5 * np.sum(cell_dx[[2,6],:],axis=0)
     mean_cell_dy = 0.5 * np.sum(cell_dy[[0,4],:],axis=0)
 
-    # [ORIGINAL] Horn 1981 stencil weights.
-    # For x gradient: sum [NE, 2xE, SE] - sum [NW, 2xW, SW]
-    # For y gradient: sum [NE, 2xN, NW] - sum [SE, 2xS, SW]
-    # The doubled indices (E appears twice, N appears twice) implement
-    # the 2x weighting of cardinal neighbors.
-    haxindices = [1,2,2,3]  #add
-    hsxindices = [5,6,6,7]  #subtract
-    hayindices = [0,0,1,7]  #add
-    hsyindices = [3,4,4,5]  #subtract
+    # Horn 1981 stencil weights (cardinal neighbors weighted 2x):
+    #
+    #   dz/dx = (z_NE + 2*z_E + z_SE - z_NW - 2*z_W - z_SW) / (8 * dx)
+    #   dz/dy = (z_NW + 2*z_N + z_NE - z_SW - 2*z_S - z_SE) / (8 * dy)
+    #
+    # Neighbor index mapping: [N=0, NE=1, E=2, SE=3, S=4, SW=5, W=6, NW=7]
+    haxindices = [1,2,2,3]  # dzdx add:      NE, E, E, SE
+    hsxindices = [5,6,6,7]  # dzdx subtract:  SW, W, W, NW
+    hayindices = [0,0,1,7]  # dzdy add:       N, N, NE, NW
+    hsyindices = [3,4,4,5]  # dzdy subtract:  SE, S, S, SW
 
-    # [ORIGINAL] Final gradient computation. The 8 in the denominator
-    # is the sum of Horn stencil weights (1+2+1+1+2+1 = 8).
-    dzdx = (np.sum(elev_neighbors[haxindices,:],axis=0)
-            - np.sum(elev_neighbors[hsxindices,:],axis=0)) / (8.*mean_cell_dx)
-    dzdy = (np.sum(elev_neighbors[hayindices,:],axis=0)
-            - np.sum(elev_neighbors[hsyindices,:],axis=0)) / (8.*mean_cell_dy)
+    dzdx = (np.sum(elev_neighbors[haxindices,:],axis=0) - np.sum(elev_neighbors[hsxindices,:],axis=0)) / (8.*mean_cell_dx)
+    dzdy = (np.sum(elev_neighbors[hayindices,:],axis=0) - np.sum(elev_neighbors[hsyindices,:],axis=0)) / (8.*mean_cell_dy)
     return [dzdx,dzdy]
 ```
 
@@ -521,7 +513,7 @@ The Horn stencil encodes direction through which neighbors are *added* vs *subtr
 
 ---
 
-## 6. `slope_aspect()` (lines 2240-2312)
+## 6. `slope_aspect()` (lines 2239-2306)
 
 ### No code change — CRS awareness is encapsulated in `_gradient_horn_1981()`
 
@@ -552,7 +544,7 @@ def slope_aspect(self, dem, ...):
 ### Full current code
 
 ```python
-# pgrid.py lines 2240-2312
+# pgrid.py lines 2239-2306
 #
 def slope_aspect(self, dem, slope_out_name='slope', aspect_out_name='aspect',
                  nodata_in_dem=None, nodata_out=np.nan,
@@ -636,7 +628,7 @@ def slope_aspect(self, dem, slope_out_name='slope', aspect_out_name='aspect',
 
 ---
 
-## 7. `river_network_length_and_slope()` (lines 3176-3290)
+## 7. `river_network_length_and_slope()` (lines 3170-3315)
 
 Found during audit as a "missed haversine" — not called by the OSBS pipeline at the time of the audit, but would have produced wrong results if used with UTM data.
 
@@ -666,7 +658,7 @@ length = np.sum(re * 2 * np.arctan2(np.sqrt(dist),np.sqrt(1-dist)))
 **After:**
 
 ```python
-# pgrid.py lines 3176-3290 (relevant excerpt)
+# pgrid.py lines 3170-3315 (relevant excerpt)
 #
 # [ADDED - Phase A] CRS check once, outside the loop.
 # Avoids repeated method calls per profile.
@@ -728,11 +720,12 @@ for index, profile in enumerate(profiles):
 | Haversine segment lengths | No | Moved into `if` branch, logic identical |
 | Euclidean segment lengths | **Added** | New `else` clause |
 | `rx`/`ry` midpoint coords (was `rlon`/`rlat`) | **Renamed** | CRS-neutral names (used later in loop for reach midpoints) |
+| Return dict keys `'mlon'`/`'mlat'` | No | Keys retained for API compatibility; internal vars renamed to `rx`/`ry` |
 | Profile extraction, elevation, slope logic | No | |
 
 ---
 
-## 8. `_2d_crs_coordinates()` (lines 1762-1787)
+## 8. `_2d_crs_coordinates()` (lines 1769-1792)
 
 ### Variable rename — docstring updated, return values renamed
 
@@ -768,7 +761,7 @@ def _2d_crs_coordinates(self):
 ### Full current code
 
 ```python
-# pgrid.py lines 1762-1787
+# pgrid.py lines 1769-1792
 #
 def _2d_crs_coordinates(self):
     """Return 2D coordinate arrays in the grid's CRS.
@@ -831,23 +824,23 @@ from looseversion import LooseVersion
 
 `distutils` was removed in Python 3.12. The `looseversion` package is a standalone replacement. This was the only deprecation warning that was a hard error on Python 3.12+; the others were warnings.
 
-### 9.2-9.4. `np.in1d` → `np.isin` (lines 1292, 3129, 3142)
+### 9.2-9.4. `np.in1d` → `np.isin` (lines 1299, 3123, 3136)
 
 ```python
 # Before (3 locations):
-invalid_cells = ~np.in1d(fdir.ravel(), dirmap)     # line 1292
-is_fork = np.in1d(end, forks_end)                   # line 3129
-no_pred = ~np.isin(start, end)                      # line 3142  (was np.in1d)
+invalid_cells = ~np.in1d(fdir.ravel(), dirmap)     # line 1299
+is_fork = np.in1d(end, forks_end)                   # line 3123
+no_pred = ~np.isin(start, end)                      # line 3136  (was np.in1d)
 
 # After:
-invalid_cells = ~np.isin(fdir.ravel(), dirmap)      # line 1292
-is_fork = np.isin(end, forks_end)                    # line 3129
-no_pred = ~np.isin(start, end)                       # line 3142
+invalid_cells = ~np.isin(fdir.ravel(), dirmap)      # line 1299
+is_fork = np.isin(end, forks_end)                    # line 3123
+no_pred = ~np.isin(start, end)                       # line 3136
 ```
 
 `np.in1d` was deprecated in NumPy 1.24 in favor of `np.isin`. Identical behavior; `np.isin` is the recommended replacement.
 
-### 9.5. `Series._append` → `pd.concat` (line 3970)
+### 9.5. `Series._append` → `pd.concat` (line 3967)
 
 ```python
 # Before:
@@ -865,13 +858,13 @@ gradfactor = pd.concat([(0.9 * (minsteps / gradmax)).replace(np.inf, 0), pd.Seri
 
 | Section | Lines | Type | Geographic branch | Projected branch |
 |---------|-------|------|-------------------|-----------------|
-| `_crs_is_geographic()` | 129-148 | **New method** | Returns `True` | Returns `False` |
-| DTND in `compute_hand()` | 1958-1997 | **CRS branch** | Haversine (original) | Euclidean (added) |
-| AZND in `compute_hand()` | 1999-2029 | **CRS branch** | Spherical bearing (original) | Planar arctan2 (added) |
-| `_gradient_horn_1981()` | 4175-4236 | **CRS branch** | `re * dtr * cos(lat)` (original) | `abs(dx)` / `abs(dy)` (added) |
-| `slope_aspect()` | 2240-2312 | Docstring only | — | — |
-| `river_network_length_and_slope()` | 3176-3290 | **CRS branch** | Haversine (original) | Euclidean (added) |
-| `_2d_crs_coordinates()` | 1762-1787 | Variable rename + docstring | — | — |
+| `_crs_is_geographic()` | 136-155 | **New method** | Returns `True` | Returns `False` |
+| DTND in `compute_hand()` | 1963-2010 | **CRS branch** | Haversine (original) | Euclidean (added) |
+| AZND in `compute_hand()` | 2012-2040 | **CRS branch** | Spherical bearing (original) | Planar arctan2 (added) |
+| `_gradient_horn_1981()` | 4172-4260 | **CRS branch** | `re * dtr * cos(lat)` (original) | `abs(dx)` / `abs(dy)` (added) |
+| `slope_aspect()` | 2239-2306 | Docstring only | — | — |
+| `river_network_length_and_slope()` | 3170-3315 | **CRS branch** | Haversine (original) | Euclidean (added) |
+| `_2d_crs_coordinates()` | 1769-1792 | Variable rename + docstring | — | — |
 | Deprecation fixes | various | Non-UTM | — | — |
 
 All geographic branches preserve the original Swenson code exactly — MERIT validation (stages 1-9, >0.95 correlation on 5/6 parameters) remains bit-identical.
