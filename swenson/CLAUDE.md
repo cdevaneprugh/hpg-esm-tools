@@ -68,6 +68,9 @@ swenson/
 │   │   ├── progress-tracking.md            # Historical implementation log
 │   │   ├── claude_merit_validation_audit/  # Audit re-run results
 │   │   └── logs/                           # Historical SLURM logs
+│   ├── 250223-pysheds_and_merit_pipeline_audit/
+│   │   ├── merit_validation/              # MERIT regression audit docs and diagnostics
+│   │   └── pysheds/                       # pysheds fork refactoring and test audit
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── data/
