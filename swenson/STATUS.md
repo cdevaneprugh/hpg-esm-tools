@@ -82,24 +82,13 @@ Neither DTND is currently correct:
 
 **Downstream effect:** DTND feeds directly into the hillslope distance parameter and the trapezoidal width fit (via A_sum(d) curve). Wrong DTND means wrong widths and wrong distances for all columns.
 
-### 2. Flow routing resolution (4x subsampling)
+### 2. Flow routing resolution (4x subsampling) — RESOLVED
 
 **Impact:** Discards 93.75% of the 1m LIDAR data before the core hydrology computation.
 
 **File:** `scripts/osbs/run_pipeline.py` line 1354
 
-The entire justification for using 1m LIDAR is to capture fine-scale drainage in a low-relief wetlandscape. Subsampling to 4m undermines that purpose — small channels, wetland margins, and subtle elevation differences that drive TAI dynamics become invisible.
-
-The bottleneck is pysheds' `resolve_flats()`, which has poor scaling on large flat regions. One test at full resolution OOM'd at 64GB. Full resolution at 256GB was **never tested**. Neither was 2x subsampling.
-
-**Fix path:** Documented in `audit/flow-routing-resolution.md`. In order of simplicity:
-1. Test full resolution at 256GB (maybe it just works)
-2. Test 2x subsampling at 128GB (preserves 4x more data than current)
-3. Use WhiteboxTools for DEM conditioning, feed result to pysheds
-4. Tile-based processing with overlap
-5. Optimize resolve_flats in pysheds
-
-**Downstream effect:** Resolution affects the stream network, HAND, DTND, and through them all 6 hillslope parameters. Also affects Lc if the FFT is coupled to the same subsampled grid (it shouldn't be — see #3).
+**Status: RESOLVED.** Full 1m resolution works at 64GB (peak 29.2 GB, 5.9 min for 90M pixels). Resolution comparison across 1m/2m/4m on two domains confirms 1m is the correct choice: height and distance correlations >0.999 across resolutions (resolution-insensitive), slope systematically underestimated at coarser resolutions, and computational cost is not a barrier (17 min / 58 GB for the full domain). No subsampling will be used. See `phases/B-flow-resolution.md` for full results.
 
 ### 3. Characteristic length scale (Lc): ~300m — RESOLVED
 
@@ -301,17 +290,18 @@ Both the DTND problem (#1) and the slope/aspect problem (#4) stem from the same 
 
 **Deliverable:** pysheds fork that correctly handles both CRS types.
 
-### Phase B: Resolve flow routing resolution (blocks trustworthy output)
+### Phase B: Resolve flow routing resolution — Complete (1m, no subsampling)
 
-Run in parallel with Phase A (independent work).
+**Status:** Complete. Full 1m resolution at 64GB. See `phases/B-flow-resolution.md`.
 
-**Tasks:**
-1. Test full-res (256GB) on interior mosaic — characterize whether resolve_flats completes
-2. Test 2x subsampling (128GB) as middle ground
-3. If neither works: evaluate WhiteboxTools pre-conditioning
-4. Comparison: run full pipeline at 1m, 2m, 4m on the same region, compare hillslope parameters
+**Completed:**
+1. Scalability test: 90M pixels at 1m completes in 5.9 min, peak 29.2 GB (64GB allocation)
+2. Resolution comparison: 1m/2m/4m on 5x5 block (25M px) and full contiguous region (90M px)
+3. Height and distance >0.999 correlated across all resolutions (resolution-insensitive)
+4. Slope systematically underestimated at coarser resolutions (~50% lower at 4m in lowest HAND bin)
+5. No parameter improves with subsampling; computational cost is negligible (17 min / 58 GB at 1m)
 
-**Deliverable:** Determined processing resolution with scientific justification.
+**Deliverable:** Use 1m resolution, no subsampling. The 4x subsampling was a premature optimization.
 
 ### Phase C: Establish trustworthy Lc — Complete (Lc = 300m)
 
