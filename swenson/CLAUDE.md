@@ -73,11 +73,16 @@ swenson/
 │   │   └── pysheds/                       # pysheds fork refactoring and test audit
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
+├── docs/                     # Technical reference documents
+│   ├── ns-aspect-bug.md      # N/S aspect swap bug analysis
+│   ├── pysheds-utm-walkthrough.md  # UTM CRS support walkthrough
+│   └── synthetic_lake_bottoms.md   # Synthetic lake bottoms brainstorming
+│
 ├── data/
 │   ├── neon/
 │   │   ├── dtm/               # 233 NEON DTM tiles (1m, EPSG:32617)
 │   │   └── README.md          # NEON data product catalog
-│   ├── mosaics/               # Generated mosaics (OSBS_full.tif, OSBS_interior.tif)
+│   ├── mosaics/               # Generated mosaics (gitignored)
 │   ├── merit/                 # MERIT DEM for validation
 │   ├── reference/             # Swenson published data
 │   └── .gitignore             # Ignores *.tif, *.nc
@@ -99,12 +104,14 @@ swenson/
 │   │   ├── run_pipeline.sh    # SLURM job wrapper
 │   │   ├── stitch_mosaic.py   # Create mosaic from tiles
 │   │   └── extract_subset.py  # Extract subset regions
-│   ├── smoke_tests/           # Phase A smoke tests (future)
+│   ├── smoke_tests/           # UTM smoke tests (R6C10 single-tile)
+│   │   ├── run_r6c10_utm.py   # Single-tile UTM pipeline test
+│   │   └── run_r6c10_utm.sh   # SLURM wrapper
 │   └── visualization/         # KML generation scripts
 │       ├── export_kml.py      # Tile grid KML
 │       └── export_perimeter_kml.py  # Selection perimeter KML
 │
-└── logs/                      # Future SLURM output
+└── logs/                      # SLURM output (per-script output/ dirs preferred)
 ```
 
 ## Running the Pipeline
