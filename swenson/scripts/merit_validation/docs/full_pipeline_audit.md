@@ -28,9 +28,8 @@ function verification, and DEM conditioning notes under one roof.
 | Category | Count |
 |----------|-------|
 | Total items compared | 48 |
-| MATCH | 42 |
+| MATCH | 43 |
 | DIVERGENCE | 2 |
-| OMISSION | 1 |
 | N/A (post-processing) | 3 |
 
 ### Current Expected Correlations
@@ -58,7 +57,7 @@ differences (A_thresh, domain expansion) rather than algorithmic errors.
 
 ### OSBS Assessment (2026-02-20)
 
-All 17 remaining differences (2 DIVERGENCE, 1 OMISSION, 8 dormant deep-audit
+All 16 remaining differences (2 DIVERGENCE, 8 dormant deep-audit
 findings, 6 production guards) were ranked for OSBS 1m impact. Key decisions:
 
 **Domain expansion:** Swenson expanded gridcell domains because he was
@@ -2197,11 +2196,11 @@ bug was NOT dormant for correlations as predicted.
 | Area fraction | 0.9047 | 0.9221 | +0.0174 |
 
 Updated expected correlations in `merit_regression.py` to new baseline.
-Updated counts: 42 MATCH, 2 DIVERGENCE, 1 OMISSION, 3 N/A.
+Updated counts: 43 MATCH, 2 DIVERGENCE, 3 N/A.
 
 ### 2026-02-20 — OSBS assessment of remaining differences
 
-Ranked all 17 remaining differences (2 DIVERGENCE, 1 OMISSION, 8 dormant
+Ranked all 16 remaining differences (2 DIVERGENCE, 8 dormant
 findings, 6 production guards) for OSBS 1m pipeline impact. Added OSBS
 assessment notes to each affected item. Key decisions:
 
