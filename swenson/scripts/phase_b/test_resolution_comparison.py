@@ -32,7 +32,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 from rasterio.merge import merge
-from scipy.stats import expon
 
 # pysheds fork
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
@@ -41,11 +40,21 @@ sys.path.insert(0, pysheds_fork)
 from pyproj import Proj as PyprojProj  # noqa: E402
 from pysheds.pgrid import Grid  # noqa: E402
 
+# Add scripts/ directory for local imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hillslope_params import (  # noqa: E402
+    get_aspect_mask,
+    compute_hand_bins,
+    fit_trapezoidal_width,
+    quadratic,
+    circular_mean_aspect,
+    catchment_mean_aspect,
+    tail_index,
+)
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-DTR = np.pi / 180.0
 
 BASE_DIR = "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson"
 DTM_DIR = os.path.join(BASE_DIR, "data/neon/dtm")
@@ -85,222 +94,6 @@ ASPECT_NAMES = ["North", "East", "South", "West"]
 PARAM_NAMES = ["height", "distance", "area", "slope", "aspect", "width"]
 
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)
-
-
-# ---------------------------------------------------------------------------
-# Hillslope computation functions (inlined from merit_regression.py)
-# Phase D will extract these into a shared module.
-# ---------------------------------------------------------------------------
-
-
-def get_aspect_mask(aspect, aspect_bin):
-    """Create boolean mask for pixels within an aspect bin."""
-    lower, upper = aspect_bin
-    if lower > upper:
-        return (aspect >= lower) | (aspect < upper)
-    return (aspect >= lower) & (aspect < upper)
-
-
-def compute_hand_bins(
-    hand, aspect, aspect_bins, bin1_max=2.0, min_aspect_fraction=0.01
-):
-    """Compute HAND bin boundaries following Swenson's SpecifyHandBounds()."""
-    valid = (hand > 0) & np.isfinite(hand)
-    hand_valid = hand[valid]
-
-    if hand_valid.size == 0:
-        return np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
-
-    hand_sorted = np.sort(hand_valid)
-    n = hand_sorted.size
-    initial_q25 = hand_sorted[int(0.25 * n) - 1] if n > 0 else 0
-
-    if initial_q25 > bin1_max:
-        for _asp_idx, (asp_low, asp_high) in enumerate(aspect_bins):
-            if asp_low > asp_high:
-                asp_mask = (aspect >= asp_low) | (aspect < asp_high)
-            else:
-                asp_mask = (aspect >= asp_low) & (aspect < asp_high)
-
-            hand_asp_sorted = np.sort(hand[asp_mask])
-            if hand_asp_sorted.size > 0:
-                bmin = hand_asp_sorted[
-                    int(min_aspect_fraction * hand_asp_sorted.size - 1)
-                ]
-            else:
-                bmin = bin1_max
-
-            if bmin > bin1_max:
-                bin1_max = bmin
-
-        above_bin1 = hand_sorted[hand_sorted > bin1_max]
-        if above_bin1.size > 0:
-            n_above = above_bin1.size
-            b33 = above_bin1[int(0.33 * n_above - 1)]
-            b66 = above_bin1[int(0.66 * n_above - 1)]
-            if b33 == b66:
-                b66 = 2 * b33 - bin1_max
-            bounds = np.array([0, bin1_max, b33, b66, 1e6])
-        else:
-            bounds = np.array([0, bin1_max, bin1_max * 2, bin1_max * 4, 1e6])
-    else:
-        quartiles = [0.25, 0.5, 0.75, 1.0]
-        bounds = [0.0]
-        for q in quartiles:
-            idx = max(0, int(q * n) - 1)
-            bounds.append(hand_sorted[idx])
-        bounds = np.array(bounds)
-
-    return bounds
-
-
-def fit_trapezoidal_width(dtnd, area, n_hillslopes, min_dtnd=1.0, n_bins=10):
-    """Fit trapezoidal plan form following Swenson Eq. (4)."""
-    if np.max(dtnd) <= min_dtnd:
-        return {
-            "slope": 0,
-            "width": np.sum(area) / n_hillslopes / 100,
-            "area": np.sum(area) / n_hillslopes,
-        }
-
-    dtnd_bins = np.linspace(min_dtnd, np.max(dtnd) + 1, n_bins + 1)
-    d = np.zeros(n_bins)
-    A_cumsum = np.zeros(n_bins)
-
-    for k in range(n_bins):
-        mask = dtnd >= dtnd_bins[k]
-        d[k] = dtnd_bins[k]
-        A_cumsum[k] = np.sum(area[mask])
-
-    A_cumsum /= n_hillslopes
-
-    if min_dtnd > 0:
-        d = np.concatenate([[0], d])
-        A_cumsum = np.concatenate([[np.sum(area) / n_hillslopes], A_cumsum])
-
-    try:
-        weights = A_cumsum
-        G = np.column_stack([np.ones_like(d), d, d**2])
-        W = np.diag(weights)
-        GtWG = G.T @ W @ G
-        GtWy = G.T @ W @ A_cumsum
-        coeffs = np.linalg.solve(GtWG, GtWy)
-
-        trap_slope = -coeffs[2]
-        trap_width = -coeffs[1]
-        trap_area = coeffs[0]
-
-        if trap_slope < 0:
-            Atri = -(trap_width**2) / (4 * trap_slope)
-            if Atri < trap_area:
-                trap_width = np.sqrt(-4 * trap_slope * trap_area)
-
-        return {"slope": trap_slope, "width": max(trap_width, 1), "area": trap_area}
-    except Exception:
-        return {
-            "slope": 0,
-            "width": np.sum(area) / n_hillslopes / 100,
-            "area": np.sum(area) / n_hillslopes,
-        }
-
-
-def quadratic(coefs, root=0, eps=1e-6):
-    """Solve quadratic equation ax^2 + bx + c = 0."""
-    ak, bk, ck = coefs
-    discriminant = bk**2 - 4 * ak * ck
-
-    if discriminant < 0:
-        if abs(discriminant) < eps:
-            ck = bk**2 / (4 * ak) * (1 - eps)
-            discriminant = bk**2 - 4 * ak * ck
-        else:
-            raise RuntimeError(
-                f"Cannot solve quadratic: discriminant={discriminant:.2f}"
-            )
-
-    roots = [
-        (-bk + np.sqrt(discriminant)) / (2 * ak),
-        (-bk - np.sqrt(discriminant)) / (2 * ak),
-    ]
-    return roots[root]
-
-
-def circular_mean_aspect(aspects):
-    """Compute circular mean of aspect values (degrees)."""
-    sin_sum = np.mean(np.sin(DTR * aspects))
-    cos_sum = np.mean(np.cos(DTR * aspects))
-    mean_aspect = np.arctan2(sin_sum, cos_sum) / DTR
-    if mean_aspect < 0:
-        mean_aspect += 360
-    return mean_aspect
-
-
-def catchment_mean_aspect(drainage_id, aspect, hillslope, chunksize=500):
-    """Replace per-pixel aspect with catchment-side circular mean."""
-    valid_drain = np.isfinite(drainage_id) & (drainage_id > 0)
-    uid = np.unique(drainage_id[valid_drain])
-    hillslope_types = np.unique(hillslope[hillslope > 0]).astype(int)
-
-    out = np.zeros(aspect.shape)
-
-    if uid.size == 0:
-        return out
-    valid_aspect = np.isfinite(aspect.flat)
-
-    nchunks = int(max(1, int(uid.size // chunksize)))
-    cs = int(min(chunksize, uid.size - 1))
-
-    for n in range(nchunks):
-        n1, n2 = int(n * cs), int((n + 1) * cs)
-        if n == nchunks - 1:
-            n2 = uid.size - 1
-        if n1 == n2:
-            cind = np.where(valid_aspect & (drainage_id.flat == uid[n1]))[0]
-        else:
-            cind = np.where(
-                valid_aspect
-                & (drainage_id.flat >= uid[n1])
-                & (drainage_id.flat < uid[n2])
-            )[0]
-
-        for did in uid[n1 : n2 + 1]:
-            dind = cind[drainage_id.flat[cind] == did]
-            for ht in hillslope_types[: hillslope_types.size - 1]:
-                sel = (hillslope.flat[dind] == 4) | (hillslope.flat[dind] == ht)
-                ind = dind[sel]
-                if ind.size > 0:
-                    mean_asp = (
-                        np.arctan2(
-                            np.mean(np.sin(DTR * aspect.flat[ind])),
-                            np.mean(np.cos(DTR * aspect.flat[ind])),
-                        )
-                        / DTR
-                    )
-                    if mean_asp < 0:
-                        mean_asp += 360.0
-                    out.flat[ind] = mean_asp
-
-    return out
-
-
-def tail_index(dtnd, hand, npdf_bins=5000, hval=0.05):
-    """Return indices of pixels with DTND below the tail threshold."""
-    positive_hand = hand > 0
-    if np.sum(positive_hand) == 0:
-        return np.arange(dtnd.size)
-
-    dtnd_pos = dtnd[positive_hand]
-    std_dtnd = np.std(dtnd_pos)
-    if std_dtnd == 0:
-        return np.arange(dtnd.size)
-
-    fit_loc, fit_beta = expon.fit(dtnd_pos / std_dtnd)
-    rv = expon(loc=fit_loc, scale=fit_beta)
-
-    pbins = np.linspace(0, np.max(dtnd), npdf_bins)
-    rvpdf = rv.pdf(pbins / std_dtnd)
-    r1 = np.argmin(np.abs(rvpdf - hval * np.max(rvpdf)))
-    return np.where(dtnd < pbins[r1])[0]
 
 
 # ---------------------------------------------------------------------------
