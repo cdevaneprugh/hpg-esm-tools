@@ -21,37 +21,84 @@ RE = 6.371e6  # Earth radius in meters
 
 
 def calc_gradient(
-    z: np.ndarray, lon: np.ndarray, lat: np.ndarray, method: str = "Horn1981"
+    z: np.ndarray,
+    lon: np.ndarray | None = None,
+    lat: np.ndarray | None = None,
+    pixel_size: float | None = None,
+    method: str = "Horn1981",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculate gradient of elevation field in geographic coordinates.
+    Calculate gradient of elevation field.
+
+    Supports two CRS modes:
+    - **Geographic** (lon/lat provided): Haversine-based spacing that varies
+      with latitude. This is the original Swenson implementation.
+    - **UTM** (pixel_size provided): Uniform spacing in meters. Use for
+      projected coordinate systems where pixels have equal physical size.
 
     Parameters
     ----------
     z : 2D array
-        Elevation values
-    lon : 1D array
-        Longitude values (columns)
-    lat : 1D array
-        Latitude values (rows)
+        Elevation values (rows=y, cols=x)
+    lon : 1D array, optional
+        Longitude values (columns). Required for geographic mode.
+    lat : 1D array, optional
+        Latitude values (rows). Required for geographic mode.
+    pixel_size : float, optional
+        Pixel size in meters. Required for UTM mode.
     method : str
         "Horn1981" for smoothed gradient or "O1" for simple gradient
 
     Returns
     -------
     tuple of (dz/dx, dz/dy) in physical units (m/m)
+
+    Raises
+    ------
+    ValueError
+        If neither (lon, lat) nor pixel_size is provided, or if both are
+        provided. Note: providing only one of lon/lat (without the other)
+        counts as "no geographic coordinates" — UTM mode is used if
+        pixel_size is also provided, otherwise ValueError is raised.
+
+    Notes
+    -----
+    The Horn 1981 averaging block operates on raw np.gradient output (pixel
+    units) before physical spacing is applied. It averages the [-1,0,0,1]
+    stencil at each point to smooth the gradient. This averaging is purely
+    index-based and CRS-independent — the CRS only enters when converting
+    from pixel gradients to physical gradients (m/m) at the end.
+
+    For the Laplacian (d2z/dx2 + d2z/dy2), this function is called three
+    times: once on elevation, then once on each gradient component. The
+    Laplacian differentiates each axis twice, so sign conventions from
+    np.gradient cancel out. This is fundamentally different from aspect
+    computation (STATUS.md #4) where first-derivative sign matters.
     """
     if method not in ["Horn1981", "O1"]:
         raise ValueError("method must be either Horn1981 or O1")
 
+    # Validate CRS arguments: exactly one of (lon+lat) or pixel_size
+    has_geographic = lon is not None and lat is not None
+    has_utm = pixel_size is not None
+    if has_geographic == has_utm:
+        raise ValueError(
+            "Provide either (lon, lat) for geographic CRS "
+            "or pixel_size for UTM CRS, not both or neither."
+        )
+
+    # --- Gradient computation (CRS-independent) ---
+    # np.gradient returns finite differences in array index units.
+    # axis 0 = rows (y direction), axis 1 = columns (x direction).
     if method == "O1":
         dzdy2, dzdx2 = np.gradient(z)
     else:  # Horn1981
         dzdy, dzdx = np.gradient(z)
         dzdy2, dzdx2 = np.zeros(dzdy.shape), np.zeros(dzdx.shape)
 
-        # Average [-1,0,0,1] gradient values at each point
-        # At edges, use 3 points instead of 4
+        # Average [-1,0,0,1] gradient values at each point.
+        # At edges, use 3 points instead of 4.
+        # This smoothing operates on array indices only — no CRS involved.
         eind = np.asarray([0, 0, 1])
         dzdx2[0, :] = np.mean(dzdx[eind, :], axis=0)
         dzdy2[:, 0] = np.mean(dzdy[:, eind], axis=1)
@@ -66,14 +113,21 @@ def calc_gradient(
         for n in range(1, dzdy.shape[1] - 1):
             dzdy2[:, n] = np.mean(dzdy[:, n + ind], axis=1)
 
-    # Calculate spacing in meters
-    dx = RE * DTR * np.abs(lon[0] - lon[1])
-    dy = RE * DTR * np.abs(lat[0] - lat[1])
+    # --- Physical spacing conversion (CRS-dependent) ---
+    if has_utm:
+        # UTM: uniform spacing in both axes.
+        # pixel_size is in meters, so dzdx2/pixel_size gives m/m.
+        return (dzdx2 / pixel_size, dzdy2 / pixel_size)
+    else:
+        # Geographic: spacing varies with latitude due to converging meridians.
+        # dx shrinks toward poles by cos(lat), dy is constant.
+        dx = RE * DTR * np.abs(lon[0] - lon[1])
+        dy = RE * DTR * np.abs(lat[0] - lat[1])
 
-    dx2d = dx * np.tile(np.cos(DTR * lat), (lon.size, 1)).T
-    dy2d = dy * np.ones((lat.size, lon.size))
+        dx2d = dx * np.tile(np.cos(DTR * lat), (lon.size, 1)).T
+        dy2d = dy * np.ones((lat.size, lon.size))
 
-    return (dzdx2 / dx2d, dzdy2 / dy2d)
+        return (dzdx2 / dx2d, dzdy2 / dy2d)
 
 
 def smooth_2d_array(
@@ -93,21 +147,55 @@ def smooth_2d_array(
 
 
 def fit_planar_surface(
-    elev: np.ndarray, elon: np.ndarray, elat: np.ndarray
+    elev: np.ndarray,
+    x_coords: np.ndarray | None = None,
+    y_coords: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Fit a planar surface to elevation data for detrending."""
-    elon2d = np.tile(elon, (elat.size, 1))
-    elat2d = np.tile(elat, (elon.size, 1)).T
+    """
+    Fit a planar surface to elevation data for detrending.
+
+    Parameters
+    ----------
+    elev : 2D array
+        Elevation values (rows=y, cols=x)
+    x_coords : 1D array, optional
+        Column coordinates. If None, uses np.arange(ncols).
+    y_coords : 1D array, optional
+        Row coordinates. If None, uses np.arange(nrows).
+
+    Returns
+    -------
+    2D array of fitted planar surface, same shape as elev
+
+    Notes
+    -----
+    Planar detrending only needs monotonic coordinates — degrees, meters,
+    or pixel indices all produce identical residuals. When coordinates are
+    None, pixel indices are used, which is appropriate for UTM data where
+    uniform spacing makes explicit coordinates unnecessary.
+
+    Backward compatible: positional calls ``fit_planar_surface(elev, lon, lat)``
+    still work because the old positional args (elon, elat) map to
+    (x_coords, y_coords).
+    """
+    nrows, ncols = elev.shape
+    if x_coords is None:
+        x_coords = np.arange(ncols, dtype=np.float64)
+    if y_coords is None:
+        y_coords = np.arange(nrows, dtype=np.float64)
+
+    x2d = np.tile(x_coords, (y_coords.size, 1))
+    y2d = np.tile(y_coords, (x_coords.size, 1)).T
     ncoef = 3
-    g = np.zeros((elon2d.size, ncoef))
-    g[:, 0] = elat2d.flat
-    g[:, 1] = elon2d.flat
+    g = np.zeros((x2d.size, ncoef))
+    g[:, 0] = y2d.flat
+    g[:, 1] = x2d.flat
     g[:, 2] = 1
     gtd = np.dot(np.transpose(g), elev.flat)
     gtg = np.dot(np.transpose(g), g)
     covm = np.linalg.inv(gtg)
     coefs = np.dot(covm, gtd)
-    return elat2d * coefs[0] + elon2d * coefs[1] + coefs[2]
+    return y2d * coefs[0] + x2d * coefs[1] + coefs[2]
 
 
 def blend_edges(ifld: np.ndarray, n: int = 10) -> np.ndarray:
@@ -461,13 +549,18 @@ def _locate_peak(
         "spatialScale": spatialScale,
         "selection": selection,
         "coefs": ocoefs,
+        "psharp_ga": psharp_ga,
+        "psharp_ln": psharp_ln,
+        "gof_ga": gof_ga,
+        "gof_ln": gof_ln,
+        "tscore": tscore,
     }
 
 
 def identify_spatial_scale_laplacian_dem(
     elev: np.ndarray,
-    elon: np.ndarray,
-    elat: np.ndarray,
+    elon: np.ndarray | None = None,
+    elat: np.ndarray | None = None,
     max_hillslope_length: float = 10000,
     land_threshold: float = 0.75,
     min_land_elevation: float = 0,
@@ -476,6 +569,10 @@ def identify_spatial_scale_laplacian_dem(
     zero_edges: bool = True,
     nlambda: int = 30,
     verbose: bool = False,
+    pixel_size: float | None = None,
+    blend_edges_n: int | None = None,
+    zero_edges_n: int | None = None,
+    min_wavelength: float | None = None,
 ) -> dict:
     """
     Identify the spatial scale at which the input DEM exhibits the
@@ -484,20 +581,34 @@ def identify_spatial_scale_laplacian_dem(
     This is done by computing the Laplacian of the DEM, taking the 2D FFT,
     and finding the wavelength with maximum amplitude in the spectrum.
 
+    Supports two CRS modes:
+    - **Geographic** (elon/elat provided): Original Swenson path for MERIT
+      and other lat/lon DEMs. Resolution derived from lat spacing via
+      haversine. Default blend/zero windows are small (4/5 pixels) because
+      geographic DEMs are typically ~90m resolution.
+    - **UTM** (pixel_size provided): For projected DEMs like NEON LIDAR.
+      Resolution is pixel_size directly. Default blend/zero windows are
+      larger (50 pixels) because UTM DEMs are typically 1m resolution, so
+      50 pixels = 50m — comparable to the geographic defaults in physical
+      distance.
+
     Parameters
     ----------
     elev : 2D array
-        Elevation values (rows=lat, cols=lon)
-    elon : 1D array
-        Longitude values (degrees)
-    elat : 1D array
-        Latitude values (degrees)
+        Elevation values (rows=y, cols=x)
+    elon : 1D array, optional
+        Longitude values (degrees). Required for geographic mode.
+    elat : 1D array, optional
+        Latitude values (degrees). Required for geographic mode.
     max_hillslope_length : float
         Maximum hillslope length in meters (used to set max wavelength)
     land_threshold : float
-        Fraction of land required (0-1)
+        Fraction of land required (0-1). Only used in geographic mode
+        for coastal gridcells; UTM DEMs are assumed to be fully land.
     min_land_elevation : float
-        Minimum elevation considered as land
+        Minimum elevation considered as land. In geographic mode, 0 is
+        appropriate (ocean). In UTM mode with LIDAR data, set this below
+        the nodata sentinel (e.g., -9999) to correctly identify valid pixels.
     detrend_elevation : bool
         Whether to remove a planar trend
     blend_edges_flag : bool
@@ -508,6 +619,14 @@ def identify_spatial_scale_laplacian_dem(
         Number of wavelength bins for spectral analysis
     verbose : bool
         Print diagnostic information
+    pixel_size : float, optional
+        Pixel size in meters. Triggers UTM mode when provided.
+    blend_edges_n : int, optional
+        Edge blend window size in pixels. Defaults: 4 (geographic), 50 (UTM).
+    zero_edges_n : int, optional
+        Zero-edge window size in pixels. Defaults: 5 (geographic), 50 (UTM).
+    min_wavelength : float, optional
+        Minimum wavelength in pixels passed to _locate_peak. Default: 1.
 
     Returns
     -------
@@ -515,23 +634,46 @@ def identify_spatial_scale_laplacian_dem(
         - validDEM: bool
         - model: str (gaussian, lognormal, linear, flat)
         - spatialScale: float (characteristic wavelength in pixels)
+        - spatialScale_m: float (characteristic wavelength in meters)
         - res: float (resolution in meters)
         - lambda_1d: array (wavelength bins)
         - laplac_amp_1d: array (amplitude in each bin)
+        - selection: int (model selection code)
+        - psharp_ga, psharp_ln: float (peak sharpness for each model)
+        - gof_ga, gof_ln: float (goodness of fit for each model)
+        - tscore: float (t-score for linear fit)
     """
+    # --- CRS detection ---
+    has_geographic = elon is not None and elat is not None
+    has_utm = pixel_size is not None
+    if has_geographic == has_utm:
+        raise ValueError(
+            "Provide either (elon, elat) for geographic CRS "
+            "or pixel_size for UTM CRS, not both or neither."
+        )
+
     elev = np.copy(elev)
     ejm, eim = elev.shape
 
-    # Approximate resolution in meters
-    ares = np.abs(elat[0] - elat[1]) * (RE * np.pi / 180)
+    # --- Resolution and max wavelength ---
+    if has_utm:
+        # UTM: pixel_size is the resolution directly, in meters.
+        ares = pixel_size
+    else:
+        # Geographic: approximate resolution from latitude spacing.
+        # abs(dlat) * RE * DTR converts degree spacing to meters.
+        ares = np.abs(elat[0] - elat[1]) * (RE * np.pi / 180)
+
     max_wavelength = 2 * max_hillslope_length / ares
 
     if verbose:
+        crs_label = "UTM" if has_utm else "Geographic"
+        print(f"  CRS: {crs_label}")
         print(f"  DEM shape: {elev.shape}")
         print(f"  Resolution: {ares:.1f} m")
         print(f"  Max wavelength: {max_wavelength:.1f} pixels")
 
-    # Create land/ocean mask
+    # --- Land/ocean mask ---
     lmask = np.where(elev > min_land_elevation, 1, 0)
     land_frac = np.sum(lmask) / lmask.size
 
@@ -542,50 +684,92 @@ def identify_spatial_scale_laplacian_dem(
     if land_frac <= min_land_fraction:
         return {"validDEM": False}
 
-    # If land fraction is low, remove smoothed elevation
-    if land_frac < land_threshold:
-        if verbose:
-            print("  Removing smoothed elevation (coastal adjustment)")
-        smooth_elev = smooth_2d_array(elev, land_frac=land_frac)
-        elev -= smooth_elev
+    # --- Nodata handling ---
+    if has_utm:
+        # UTM path: fill nodata with mean elevation before FFT.
+        # UTM DEMs (e.g., NEON LIDAR) use nodata for gaps rather than
+        # ocean, so smoothed-elevation subtraction doesn't apply.
+        valid_mask = elev > min_land_elevation
+        if not np.all(valid_mask):
+            elev_mean = np.mean(elev[valid_mask])
+            elev[~valid_mask] = elev_mean
+            if verbose:
+                print(f"  Nodata filled with mean elevation ({elev_mean:.1f} m)")
+    else:
+        # Geographic path: if land fraction is low (coastal gridcell),
+        # remove smoothed elevation to reduce ocean-land boundary artifacts.
+        if land_frac < land_threshold:
+            if verbose:
+                print("  Removing smoothed elevation (coastal adjustment)")
+            smooth_elev = smooth_2d_array(elev, land_frac=land_frac)
+            elev -= smooth_elev
 
-    # Remove planar trend if requested
+    # --- Planar detrending ---
     if detrend_elevation:
-        elev_planar = fit_planar_surface(elev, elon, elat)
+        if has_utm:
+            # UTM: use pixel indices (uniform spacing makes explicit
+            # coordinates unnecessary for planar detrending).
+            elev_planar = fit_planar_surface(elev)
+        else:
+            # Geographic: use lon/lat coordinates.
+            elev_planar = fit_planar_surface(elev, elon, elat)
         elev -= elev_planar
         if verbose:
             print("  Planar surface removed")
 
-    # Blend edges to reduce spectral leakage
+    # --- Edge blending ---
+    # Default window sizes differ by CRS because pixel sizes differ:
+    # Geographic ~90m pixels → 4 pixels ≈ 360m physical window.
+    # UTM 1m pixels → 50 pixels = 50m physical window.
     if blend_edges_flag:
-        win = 4
+        if blend_edges_n is not None:
+            win = blend_edges_n
+        else:
+            win = 50 if has_utm else 4
         elev = blend_edges(elev, n=win)
         if verbose:
             print(f"  Edges blended (window={win})")
 
-    # Calculate Laplacian
-    grad = calc_gradient(elev, elon, elat)
-    x = calc_gradient(grad[0], elon, elat)
-    laplac = x[0]
-    x = calc_gradient(grad[1], elon, elat)
-    laplac += x[1]
+    # --- Laplacian ---
+    # The Laplacian is d2z/dx2 + d2z/dy2. Each axis is differentiated
+    # twice, so the sign convention of np.gradient cancels out on each
+    # axis. This is why there is no N/S sign issue here (unlike aspect,
+    # which uses first derivatives — see STATUS.md #4).
+    if has_utm:
+        grad = calc_gradient(elev, pixel_size=pixel_size)
+        x = calc_gradient(grad[0], pixel_size=pixel_size)
+        laplac = x[0]
+        x = calc_gradient(grad[1], pixel_size=pixel_size)
+        laplac += x[1]
+    else:
+        grad = calc_gradient(elev, elon, elat)
+        x = calc_gradient(grad[0], elon, elat)
+        laplac = x[0]
+        x = calc_gradient(grad[1], elon, elat)
+        laplac += x[1]
 
-    # Zero edges if requested
+    # --- Zero edges ---
     if zero_edges:
-        n = 5
+        if zero_edges_n is not None:
+            n = zero_edges_n
+        else:
+            n = 50 if has_utm else 5
         laplac[:n, :] = 0
         laplac[:, :n] = 0
         laplac[-n:, :] = 0
         laplac[:, -n:] = 0
+        if verbose:
+            print(f"  Edges zeroed (window={n})")
 
-    # Compute 2D FFT
+    # --- 2D FFT ---
     laplac_fft = np.fft.rfft2(laplac, norm="ortho")
     laplac_amp_fft = np.abs(laplac_fft)
 
     if verbose:
         print("  2D FFT computed")
 
-    # Compute wavelength grid
+    # --- Wavelength grid ---
+    # Wavelength is in pixel units. Multiply by ares to get meters.
     rowfreq = np.fft.fftfreq(ejm)
     colfreq = np.fft.rfftfreq(eim)
 
@@ -598,22 +782,27 @@ def identify_spatial_scale_laplacian_dem(
     wavelength[radialfreq > 0] = 1 / radialfreq[radialfreq > 0]
     wavelength[0, 0] = 2 * np.max(wavelength)
 
-    # Bin amplitude spectrum
+    # --- Bin amplitude spectrum ---
     x = _bin_amplitude_spectrum(laplac_amp_fft, wavelength, nlambda=nlambda)
     lambda_1d, laplac_amp_1d = x["lambda"], x["amp"]
 
-    # Locate peak
+    # --- Locate peak ---
+    peak_min_wl = min_wavelength if min_wavelength is not None else 1
     x = _locate_peak(
-        lambda_1d, laplac_amp_1d, max_wavelength=max_wavelength, verbose=verbose
+        lambda_1d,
+        laplac_amp_1d,
+        max_wavelength=max_wavelength,
+        min_wavelength=peak_min_wl,
+        verbose=verbose,
     )
 
     model = x["model"]
     spatialScale = x["spatialScale"]
     selection = x["selection"]
 
-    # Set minimum wavelength
-    min_wavelength = np.min(lambda_1d)
-    spatialScale = max(spatialScale, min_wavelength)
+    # Enforce minimum wavelength from the binned spectrum
+    lambda_min = np.min(lambda_1d)
+    spatialScale = max(spatialScale, lambda_min)
 
     if verbose:
         print(f"  Spatial scale: {spatialScale:.1f} pixels")
@@ -623,8 +812,14 @@ def identify_spatial_scale_laplacian_dem(
         "validDEM": True,
         "model": model,
         "spatialScale": spatialScale,
+        "spatialScale_m": spatialScale * ares,
         "selection": selection,
         "res": ares,
         "lambda_1d": lambda_1d,
         "laplac_amp_1d": laplac_amp_1d,
+        "psharp_ga": x["psharp_ga"],
+        "psharp_ln": x["psharp_ln"],
+        "gof_ga": x["gof_ga"],
+        "gof_ln": x["gof_ln"],
+        "tscore": x["tscore"],
     }
