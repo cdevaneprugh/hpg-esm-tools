@@ -317,6 +317,102 @@ routing work.
 
 ---
 
+## 2026-02-26: Detection Fails at 1m Resolution
+
+### Evidence
+
+Phase D tier testing (R6C10 single tile, 5x5 block, full 90-tile contiguous
+region) produced **zero detections** from both `identify_basins()` and
+`identify_open_water()` across all three runs. The R6C10 tile is documented
+as containing a lake and swamp — these are known water bodies, not an
+absence of water.
+
+```
+Tier 1 (R6C10, 1M px):     Pre-conditioning basin pixels: 0, Open water: 0 px
+Tier 2 (5x5, 25M px):      Pre-conditioning basin pixels: 0, Open water: 0 px
+Tier 3 (90 tiles, 90M px):  Pre-conditioning basin pixels: 0, Open water: 0 px
+```
+
+### Why the thresholds fail
+
+Both detection methods were designed for — or at least calibrated against —
+coarser DEMs. Neither accounts for what 1m LIDAR does to water surfaces.
+
+**`identify_basins()` (histogram, >25% threshold):** Requires a single
+float elevation value to cover >25% of all pixels. At 90m, water surfaces
+are smoother and fewer pixels cover a lake, so a dominant elevation can
+plausibly hit 25%. At 1m, LIDAR vertical noise (~5-15 cm) means
+water-surface returns are spread across many slightly different elevation
+values. A lake covering 5% of the domain split across centimeter-level
+variations will never spike above 25% in a histogram of exact float values.
+
+**`identify_open_water()` (slope < 1e-4):** A slope of 1e-4 means 0.1 mm
+elevation change per 1m pixel. LIDAR vertical accuracy is ~5-15 cm, so
+noise alone produces slopes of 0.05-0.15 m/m — three orders of magnitude
+above the threshold. Even a perfectly flat water surface will have apparent
+slopes of ~0.1 m/m from measurement noise at 1m spacing. The morphological
+cleanup (erode/dilate with niter=15) then removes any scattered pixels that
+happen to fall below the threshold.
+
+### Consequences for undetected lakes
+
+When neither detection fires, lake pixels pass through the full pipeline
+as ordinary terrain:
+
+1. **DEM conditioning.** `fill_depressions` raises the lake floor to the
+   pour-point elevation (often a near-no-op if the water surface is already
+   at spill level). `resolve_flats` then adds micro-gradients across the
+   entire flat surface to enable D8 routing. For large lakes at 1m, this
+   means resolving millions of flat pixels — the documented OOM/performance
+   risk.
+
+2. **Flow routing.** D8 directions across the resolved-flat surface are
+   arbitrary (driven by the micro-gradients from `resolve_flats`, not by
+   real bathymetry). Catchment boundaries that pass through lakes become
+   artifacts of the flat-resolution algorithm rather than reflections of
+   actual drainage structure.
+
+3. **HAND values.** If the lake has accumulation > A_thresh (likely for
+   any significant water body), lake pixels are classified as stream and
+   get HAND ≈ 0. These enter the lowest HAND bin and dilute near-stream
+   hillslope statistics with non-hillslope land. If accumulation <
+   A_thresh, lake pixels get HAND values derived from the conditioned
+   (not real) surface — meaningless but mixed into the hillslope arrays.
+
+4. **DTND values.** Same bifurcation. Stream-classified lake pixels get
+   DTND ≈ 0. Non-stream lake pixels get flow-path distances across the
+   resolved-flat surface, which can be artificially long as the path
+   meanders before exiting.
+
+5. **Hillslope parameters.** Without basin masking or flood filtering,
+   lake pixels enter the aspect binning, HAND binning, trapezoidal width
+   fit, and all six parameter calculations. The lowest HAND bin gets
+   inflated with pixels that have real slope/aspect (from the original
+   DEM's noisy water surface) but meaningless HAND/DTND. Area fractions
+   shift toward whichever aspect bin the noise assigns lake pixels to.
+
+### Implications
+
+The current detection is effectively dead code at 1m. The pipeline
+produces output without warnings, but any domain containing standing
+water has unfiltered lake pixels in the hillslope statistics.
+
+This reinforces that synthetic lake bottoms (or at minimum, a
+1m-appropriate detection method) are not optional for production runs.
+The question of _how_ to handle detected water (synthetic bottoms vs
+simple masking) is secondary to the question of _whether_ water is
+detected at all. Right now it isn't.
+
+**Possible 1m-appropriate detection approaches:**
+
+- Raise the slope threshold substantially (e.g., slope < 0.01 m/m
+  with area filtering to exclude small flat patches)
+- Use elevation variance in a moving window instead of slope
+- Use external water body polygons (NHD, NEON aquatic boundaries)
+- Classify from multispectral NEON data (not just DTM)
+
+---
+
 ## OSBS-Specific Considerations
 
 - **Sinkhole lakes** are karst depressions, not fluvial. Bowl geometry is
@@ -355,8 +451,10 @@ routing work.
 
 3. **Detection method?** `identify_basins()` (elevation histogram,
    threshold 25%) vs `identify_open_water()` (slope < 1e-4 with
-   morphological cleanup). At 1m, the slope method may be more robust
-   but could catch non-water flats.
+   morphological cleanup). **Update 2026-02-26: Both methods produce
+   zero detections at 1m across all tested domains, including tiles
+   with known water bodies. Neither threshold is viable at 1m. See
+   "Detection Fails at 1m Resolution" section above.**
 
 4. **Should HAND/DTND values from synthetic bottoms be used or masked?**
    Currently basin masking (item 9) removes lake pixels from hillslope
