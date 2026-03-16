@@ -40,7 +40,7 @@ Phase files are the **primary record** of what was done and why. After completin
 | Dataset | Description | Location |
 |---------|-------------|----------|
 | Single-tile smoke test | R6C10 — representative tile with lake, swamp, upland | `data/neon/dtm/NEON_D03_OSBS_DP3_404000_3286000_DTM.tif` |
-| Contiguous mosaic region | R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata) | Pixel coords `[3000:12000, 4000:14000]` in `data/mosaics/OSBS_interior.tif` |
+| Production domain | R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata) — largest contiguous rectangle | `data/mosaics/OSBS_tier3_contiguous.tif` |
 | Full tile coverage map | Nodata percentages, row/column assignments | `data/neon/tile_coverage.md` |
 
 ## Directory Structure
@@ -119,14 +119,12 @@ swenson/
 ```bash
 cd $TOOLS/swenson
 
-# Set output descriptor (optional, defaults to "full")
-export OUTPUT_DESCRIPTOR=interior
+# Production run (tier 3: R4C5-R12C14, 90 tiles)
+sbatch scripts/osbs/run_pipeline_tier3.sh
 
-# Submit job
-sbatch scripts/osbs/run_pipeline.sh
-
-# Or run interactively
-python scripts/osbs/run_pipeline.py
+# Or run individual tiers
+sbatch scripts/osbs/run_pipeline_tier1.sh   # R6C10 smoke test
+sbatch scripts/osbs/run_pipeline_tier2.sh   # 5x5 block
 ```
 
 Output goes to: `output/osbs/YYYY-MM-DD_<descriptor>/`

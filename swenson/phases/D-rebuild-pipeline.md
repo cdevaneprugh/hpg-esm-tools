@@ -1,6 +1,6 @@
 # Phase D: Rebuild Pipeline with Fixes
 
-Status: In progress
+Status: Complete
 Depends on: Phase A, Phase B, Phase C
 Blocks: Phase F
 
@@ -18,14 +18,16 @@ The current pipeline (STATUS.md #9) has ~400 lines of duplicated code between ME
 
 ## Tasks
 
-- [ ] Replace EDT-based DTND with pysheds hydrological DTND (from Phase A)
-- [ ] Replace np.gradient slope/aspect with pgrid Horn 1981 (from Phase A) — sign bug already fixed as interim measure; this replaces the method entirely
-- [ ] Set processing resolution (from Phase B)
-- [ ] Set Lc and accumulation threshold (from Phase C)
-- [ ] Extract shared hillslope analysis module (quadratic solver, trapezoidal fitting, HAND binning, width computation)
-- [ ] Move `dirmap` to pysheds fork as a constant
-- [ ] Rerun pipeline on interior mosaic
-- [ ] Verify output NetCDF structure still matches Swenson reference format
+- [x] Replace EDT-based DTND with pysheds hydrological DTND (from Phase A)
+- [x] Replace np.gradient slope/aspect with pgrid Horn 1981 (from Phase A) — sign bug already fixed as interim measure; this replaces the method entirely
+- [x] Set processing resolution (from Phase B)
+- [x] Set Lc and accumulation threshold (from Phase C)
+- [x] Extract shared hillslope analysis module (quadratic solver, trapezoidal fitting, HAND binning, width computation)
+- [x] Move `dirmap` to pysheds fork as a constant
+- [x] Create tiered SLURM wrappers (tier1: single tile, tier2: 5x5, tier3: full contiguous)
+- [x] Lint all modified/created files (ruff check/format, shellcheck)
+- [x] Rerun pipeline on tier 3 production domain (R4C5-R12C14)
+- [x] Verify output NetCDF structure still matches Swenson reference format
 
 ## Deliverable
 
@@ -51,3 +53,56 @@ Made `scripts/spatial_scale.py` dual-CRS (geographic + UTM) with backward-compat
 
 All changes backward-compatible. `ruff check` and `ruff format` clean. MERIT regression (job 25586475) PASSED — all 6 parameters within tolerance, Lc = 763m exactly. Geographic path confirmed unchanged.
 
+### 2026-02-26: Step 3 — SLURM wrappers, linting, cleanup
+
+Completed remaining infrastructure work for the rebuilt pipeline:
+
+1. **`run_pipeline.sh`**: Reduced `--mem=128gb` → `--mem=64gb` (Phase B: 58 GB peak observed at full 1m resolution).
+
+2. **Tiered SLURM wrappers** created for incremental testing:
+
+   | Wrapper | Domain | Mem | Time | Tiles |
+   |---------|--------|-----|------|-------|
+   | `run_pipeline_tier1.sh` | R6C10 (single tile) | 8gb | 30 min | 1 |
+   | `run_pipeline_tier2.sh` | R6C7-R10C11 (5x5 block) | 32gb | 1 hr | 25 |
+   | `run_pipeline_tier3.sh` | R4C5-R12C14 (full contiguous) | 64gb | 4 hr | 90 |
+
+   All wrappers use `set -euo pipefail`, export `PYTHONPATH` with pysheds fork, and set `TILE_RANGES` + `OUTPUT_DESCRIPTOR` env vars. Pattern follows `merit_regression.sh`.
+
+3. **Linting**: `ruff check` and `ruff format` applied to `dem_processing.py` and `run_pipeline.py`. `shellcheck` passed on all 4 `.sh` files.
+
+Pipeline rebuild is now code-complete. Next step: submit tier 1 (R6C10 smoke test) to validate the rebuilt pipeline runs end-to-end.
+
+### 2026-02-26: Tier test runs (all 3 tiers)
+
+Submitted all 3 tiers on the rebuilt pipeline. All completed successfully:
+
+| Tier | Job ID | Domain | Pixels | Runtime | Lc |
+|------|--------|--------|--------|---------|-----|
+| 1 | 25687081 | R6C10 | 1M | 9s | 540.7m |
+| 2 | 25687082 | R6C7-R10C11 | 25M | 2.8 min | 478.8m |
+| 3 | 25687083 | R4C5-R12C14 | 90M | 21.8 min | 356.0m |
+
+Output: `output/osbs/2026-02-26_tier{1,2,3}_*/`
+
+### 2026-03-10: Full pipeline audit — PASS
+
+Comprehensive audit of `run_pipeline.py` (1539 lines) against the paper, MERIT validation, and CTSM source. All 7 key equations verified correct. No mathematical errors found. 15 issues identified (2 significant domain selection issues, 6 moderate, 7 minor). See `docs/osbs-pipeline-audit-260310.md`.
+
+### 2026-03-16: Doc cleanup, resolve_flats fallback, and verification
+
+1. **Doc cleanup:** Fixed stream column misinfo in 2 docs (stream is a landunit-level boundary condition, not a column). Updated domain references across STATUS.md, CLAUDE.md files, run_pipeline.py, and run_pipeline.sh to use tier 3 (R4C5-R12C14) as production domain. Deprecated INTERIOR_TILE_RANGES. Added `set -euo pipefail` and PYTHONPATH export to run_pipeline.sh.
+
+2. **resolve_flats fallback:** Changed fallback from raw DEM to flooded DEM (post-fill_depressions). Reran all 3 tiers (jobs 27346499-27346501). Results identical to Feb 26 baselines — resolve_flats succeeded on all domains, fallback never fired.
+
+3. **NetCDF structure verification:** Compared tier 3 output against Swenson reference (`hillslopes_osbs_c240416.nc`). All 4 dimensions match. All 20 variables present with identical names, dtypes, and units. All 14 CTSM-required variables present. Index logic correct. File will be read by CTSM without error.
+
+### Phase D Summary
+
+All 10 tasks complete. The rebuilt pipeline:
+- Correctly implements all equations from Swenson & Lawrence (2025)
+- Produces CTSM-compatible NetCDF output matching the reference structure
+- Has been run on the full production domain (R4C5-R12C14) twice with identical results
+- Was verified by a comprehensive equation-by-equation audit
+
+Remaining items (stream parameters, bedrock depth, HAND binning) belong to Phase E.

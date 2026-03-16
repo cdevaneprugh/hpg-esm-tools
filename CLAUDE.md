@@ -49,7 +49,7 @@ Scripts for analyzing CTSM hillslope hydrology simulations with column-level (h1
 **Key concepts:**
 - 4 hillslopes per gridcell (N, E, S, W aspects)
 - 4 elevation positions per hillslope (Outlet, Lower, Upper, Ridge)
-- 16 hillslope columns + 1 stream column
+- 16 hillslope columns per gridcell (stream is a landunit-level boundary condition, not a column)
 
 | Script | Purpose |
 |--------|---------|

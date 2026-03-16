@@ -50,9 +50,7 @@ This gives confidence that the *approach* is correct — we understand Swenson's
 
 - 233 NEON DTM tiles downloaded (1m, EPSG:32617, 19x17 km)
 - Full mosaic stitched (`OSBS_full.tif`, 17000x19000 pixels)
-- Interior tile selection defined (150 tiles, excludes edge/urban areas)
-- Interior mosaic created (`OSBS_interior.tif`) — note: 37.5% nodata from tile gaps
-- Contiguous sub-region identified: R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata pixels out of 90M) — used as clean baseline for Phase C spectral analysis
+- **Production domain:** R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata pixels out of 90M). This is the largest contiguous rectangle of fully valid tiles. Validated in Phase C and used for all tier 3 runs.
 - Tile nodata coverage documented (`data/neon/tile_coverage.md`)
 - Tile reference system documented (R#C# format, KML for Google Earth)
 - osbs2 baseline case identified for future comparison (860+ year spinup)
