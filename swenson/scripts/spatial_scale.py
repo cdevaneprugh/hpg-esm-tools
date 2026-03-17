@@ -244,6 +244,8 @@ def _fit_polynomial(
         gtd = np.dot(np.transpose(g), y)
         gtg = np.dot(np.transpose(g), g)
     else:
+        if y.size != weights.size:
+            raise RuntimeError("weights length must match data")
         gtd = np.dot(np.transpose(g), np.dot(np.diag(weights), y))
         gtg = np.dot(np.transpose(g), np.dot(np.diag(weights), g))
 

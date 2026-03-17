@@ -271,6 +271,14 @@ def quadratic(coefs, root=0, eps=1e-6):
     eps : tolerance for near-zero negative discriminants (floating-point fix)
     """
     ak, bk, ck = coefs
+
+    # Linear case: ak=0 means trap_slope=0 (parallel-sided hillslope).
+    # Equation reduces to bx + c = 0.
+    if ak == 0:
+        if bk == 0:
+            raise RuntimeError("Cannot solve: both ak and bk are zero")
+        return -ck / bk
+
     discriminant = bk**2 - 4 * ak * ck
 
     if discriminant < 0:
