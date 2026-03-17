@@ -540,6 +540,15 @@ def write_hillslope_netcdf(
     column_index = np.zeros(n_columns, dtype=np.int32)
     downhill_column_index = np.zeros(n_columns, dtype=np.int32)
 
+    # NOTE: This loop assumes all bins are populated (no empty columns).
+    # Swenson's pipeline has a compression step (rh:971-1012) that removes
+    # empty bins, renumbers column_index/downhill_column_index, and sets
+    # nhillcolumns to the actual count. We omit this because at OSBS with
+    # 90M pixels and a single-aspect configuration, empty bins are not
+    # possible. If this pipeline is applied to smaller domains or sites
+    # with sparse topography, a compression step would be needed to avoid
+    # writing zero-area columns that CTSM would try to route flow through.
+    # See: docs/osbs-pipeline-divergence-audit-260316.md, issue #1.
     for i, elem in enumerate(elements):
         elevation[i] = elem["height"]
         distance[i] = elem["distance"]
@@ -567,7 +576,10 @@ def write_hillslope_netcdf(
         else:
             pct_hillslope[asp_idx] = 25.0
 
-    bedrock_depth = np.full(n_columns, 1e6)
+    # Placeholder — matches Swenson (all zeros). Under the current osbs2
+    # config (hillslope_soil_profile_method='Uniform'), CTSM never reads
+    # this field. Only matters if switched to 'FromFile'. See audit issue #2.
+    bedrock_depth = np.zeros(n_columns)
 
     print_progress(f"  Writing NetCDF: {output_path.name}")
 
@@ -1171,12 +1183,24 @@ def main():
     pixel_area = PIXEL_SIZE * PIXEL_SIZE
     area_flat = np.full(hand_flat.shape, pixel_area)
 
+    # DTND tail removal — applied BEFORE basin masking and DTND clip, matching
+    # Swenson's order (rh:666-676). Basin pixels with long flow paths should be
+    # included in the exponential fit so the tail threshold accounts for them.
+    # This matters once synthetic lake bottoms / basin detection is active.
+    finite_hand = np.isfinite(hand_flat)
+    tail_ind = tail_index(dtnd_flat[finite_hand], hand_flat[finite_hand])
+    finite_indices = np.where(finite_hand)[0]
+    keep_tail = np.zeros(hand_flat.shape, dtype=bool)
+    keep_tail[finite_indices[tail_ind]] = True
+    n_removed = int(np.sum(finite_hand) - np.sum(keep_tail))
+    print_progress(f"    DTND tail removal: {n_removed} px removed")
+
     # DTND minimum clip (Swenson rh:699-700)
     smallest_dtnd = 1.0  # meters — Swenson's fixed minimum
     dtnd_flat[dtnd_flat < smallest_dtnd] = smallest_dtnd
 
-    # Valid mask: isfinite(hand) + valid_mask for nodata exclusion
-    valid = np.isfinite(hand_flat) & valid_mask_flat
+    # Valid mask: tail-filtered + isfinite(hand) + valid_mask for nodata exclusion
+    valid = keep_tail & valid_mask_flat
 
     # Basin masking: remove pre-conditioning basin pixels
     basin_pre_flat = basin_pre_mask.flatten()
@@ -1190,15 +1214,6 @@ def main():
             print_progress(
                 f"  WARNING: Region too flat (non_flat={non_flat_fraction:.4f})"
             )
-
-    # DTND tail removal
-    tail_ind = tail_index(dtnd_flat[valid], hand_flat[valid])
-    valid_indices = np.where(valid)[0]
-    keep = np.zeros(valid.shape, dtype=bool)
-    keep[valid_indices[tail_ind]] = True
-    n_removed = int(np.sum(valid) - np.sum(keep))
-    print_progress(f"    DTND tail removal: {n_removed} px removed")
-    valid = keep
 
     # Extract drainage_id before applying valid filter
     drainage_id_flat = np.array(grid.drainage_id).flatten()
