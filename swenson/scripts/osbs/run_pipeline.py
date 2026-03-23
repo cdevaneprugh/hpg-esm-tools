@@ -17,19 +17,22 @@ Phase decisions baked in:
   - Phase B: Full 1m resolution, no subsampling (64GB sufficient)
   - Phase C: min_wavelength=20m filters k^2 micro-topographic artifact in FFT
 
+Configuration:
+    Set MOSAIC_PATH below to select the input DEM:
+      - Production (default): data/mosaics/OSBS_production.tif (90 tiles, R4C5-R12C14)
+      - Smoke test: data/neon/dtm/NEON_D03_OSBS_DP3_404000_3286000_DTM.tif (R6C10)
+    The mosaic must be contiguous (no nodata pixels).
+
 Usage:
     python scripts/osbs/run_pipeline.py
 
 Environment variables:
-    TILE_RANGES: Tile selection (e.g., "R6C10", "R6C7-R10C11", "R4C5-R12C14")
-    TILE_SELECTION_MODE: "all" or "interior" (default: "all"). Deprecated — use TILE_RANGES instead.
-    OUTPUT_DESCRIPTOR: Label for output directory (default: "full")
+    OUTPUT_DESCRIPTOR: Label for output directory (default: "production")
     PYSHEDS_FORK: Path to pysheds fork
 """
 
 import json
 import os
-import re
 import sys
 import time
 from datetime import datetime
@@ -42,8 +45,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 from pyproj import Proj as PyprojProj
-from scipy import ndimage
-from scipy.ndimage import label
 
 # Add pysheds fork to path
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
@@ -92,32 +93,16 @@ ASPECT_NAMES = ["All"]
 SCRIPT_DIR = Path(__file__).parent
 BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
+
+# Mosaic path — change for smoke test vs production
+# Smoke test (R6C10): DATA_DIR / "neon" / "dtm" / "NEON_D03_OSBS_DP3_404000_3286000_DTM.tif"
+# Production (R4C5-R12C14): DATA_DIR / "mosaics" / "OSBS_production.tif"
+MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_production.tif"
 
 # Output
-OUTPUT_DESCRIPTOR = os.environ.get("OUTPUT_DESCRIPTOR", "full")
+OUTPUT_DESCRIPTOR = os.environ.get("OUTPUT_DESCRIPTOR", "production")
 OUTPUT_TIMESTAMP = time.strftime("%Y-%m-%d")
 OUTPUT_DIR = BASE_DIR / "output" / "osbs" / f"{OUTPUT_TIMESTAMP}_{OUTPUT_DESCRIPTOR}"
-
-# Tile selection
-TILE_SELECTION_MODE = os.environ.get("TILE_SELECTION_MODE", "all")
-TILE_RANGES = os.environ.get("TILE_RANGES", None)
-
-# DEPRECATED: Historical interior tile selection (39 tiles, non-rectangular).
-# Production domain is R4C5-R12C14 (90 tiles, 0 nodata) via TILE_RANGES.
-INTERIOR_TILE_RANGES = [
-    "R4C10-R4C12",
-    "R5C9-R5C12",
-    "R6C9-R6C14",
-    "R7C7-R7C14",
-    "R8C6-R8C14",
-    "R9C6-R9C14",
-]
-
-# Tile grid parameters
-TILE_GRID_ORIGIN_EASTING = 394000
-TILE_GRID_ORIGIN_NORTHING = 3292000
-TILE_SIZE = 1000  # meters per tile
 
 # OSBS center coordinates (from reference file)
 OSBS_CENTER_LAT = 29.689282
@@ -143,148 +128,6 @@ def print_progress(msg: str) -> None:
     timestamp = time.strftime("%H:%M:%S")
     print(f"[{timestamp}] {msg}")
     sys.stdout.flush()
-
-
-# =============================================================================
-# Tile Selection and Mosaic Creation
-# =============================================================================
-
-
-def parse_tile_range(range_str: str) -> list[tuple[int, int]]:
-    """
-    Parse a tile range string into (row, col) tuples.
-
-    Supported formats:
-    - "R5C7" -> [(5, 7)]
-    - "R5C7-R5C9" -> [(5, 7), (5, 8), (5, 9)]
-    - "R4C5-R4C14" -> [(4, 5), (4, 6), ..., (4, 14)]
-    """
-    single_match = re.match(r"^R(\d+)C(\d+)$", range_str)
-    if single_match:
-        return [(int(single_match.group(1)), int(single_match.group(2)))]
-
-    range_match = re.match(r"^R(\d+)C(\d+)-R(\d+)C(\d+)$", range_str)
-    if range_match:
-        r1, c1, r2, c2 = map(int, range_match.groups())
-        tiles = []
-        for r in range(min(r1, r2), max(r1, r2) + 1):
-            for c in range(min(c1, c2), max(c1, c2) + 1):
-                tiles.append((r, c))
-        return tiles
-
-    raise ValueError(f"Invalid tile range format: {range_str}")
-
-
-def parse_all_tile_ranges(ranges: list[str]) -> list[tuple[int, int]]:
-    """Parse all tile ranges and return unique (row, col) tuples."""
-    tiles = []
-    for range_str in ranges:
-        tiles.extend(parse_tile_range(range_str))
-    seen = set()
-    unique_tiles = []
-    for tile in tiles:
-        if tile not in seen:
-            seen.add(tile)
-            unique_tiles.append(tile)
-    return unique_tiles
-
-
-def tile_to_filepath(row: int, col: int) -> Path:
-    """Convert (row, col) to tile filepath."""
-    easting = TILE_GRID_ORIGIN_EASTING + col * TILE_SIZE
-    northing = TILE_GRID_ORIGIN_NORTHING - row * TILE_SIZE
-    filename = f"NEON_D03_OSBS_DP3_{easting}_{northing}_DTM.tif"
-    return DATA_DIR / "neon" / "dtm" / filename
-
-
-def create_custom_mosaic(
-    tile_coords: list[tuple[int, int]], output_path: Path
-) -> tuple[Path, int]:
-    """
-    Create mosaic from selected tiles using rasterio.merge.
-
-    Returns (mosaic_path, tile_count).
-    """
-    from rasterio.merge import merge
-
-    existing_tiles = []
-    missing_tiles = []
-
-    for row, col in tile_coords:
-        filepath = tile_to_filepath(row, col)
-        if filepath.exists():
-            existing_tiles.append((row, col, filepath))
-        else:
-            missing_tiles.append((row, col))
-
-    if missing_tiles:
-        print_progress(f"  Warning: {len(missing_tiles)} tiles not found:")
-        for row, col in missing_tiles[:10]:
-            print_progress(f"    R{row}C{col}: {tile_to_filepath(row, col).name}")
-        if len(missing_tiles) > 10:
-            print_progress(f"    ... and {len(missing_tiles) - 10} more")
-
-    if not existing_tiles:
-        raise RuntimeError("No tiles found for mosaic creation")
-
-    print_progress(f"  Found {len(existing_tiles)} of {len(tile_coords)} tiles")
-
-    if output_path.exists():
-        print_progress(f"  Reusing existing mosaic: {output_path}")
-        return output_path, len(existing_tiles)
-
-    print_progress(f"  Opening {len(existing_tiles)} tiles...")
-    src_files = []
-    for row, col, filepath in existing_tiles:
-        src_files.append(rasterio.open(filepath))
-
-    print_progress("  Merging tiles...")
-    mosaic, mosaic_transform = merge(src_files)
-
-    profile = src_files[0].profile.copy()
-    profile.update(
-        driver="GTiff",
-        height=mosaic.shape[1],
-        width=mosaic.shape[2],
-        transform=mosaic_transform,
-        compress="lzw",
-    )
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    print_progress(f"  Writing mosaic to {output_path}...")
-    with rasterio.open(output_path, "w", **profile) as dst:
-        dst.write(mosaic)
-
-    for src in src_files:
-        src.close()
-
-    print_progress(f"  Mosaic created: {mosaic.shape[1]} x {mosaic.shape[2]} pixels")
-    return output_path, len(existing_tiles)
-
-
-def generate_mosaic_heatmap(mosaic_path: Path, output_path: Path) -> None:
-    """Generate elevation heatmap of mosaic for tile selection verification."""
-    print_progress(f"  Generating mosaic heatmap: {output_path.name}")
-
-    with rasterio.open(mosaic_path) as src:
-        dem = src.read(1)
-        bounds = src.bounds
-
-    dem_masked = np.ma.masked_less_equal(dem, NODATA_THRESHOLD)
-
-    fig, ax = plt.subplots(figsize=(12, 10))
-    im = ax.imshow(
-        dem_masked,
-        cmap="terrain",
-        aspect="equal",
-        extent=[bounds.left, bounds.right, bounds.bottom, bounds.top],
-    )
-    plt.colorbar(im, ax=ax, label="Elevation (m)")
-    ax.set_title(f"Mosaic Elevation\n{dem.shape[1]} x {dem.shape[0]} pixels")
-    ax.set_xlabel("Easting (m UTM 17N)")
-    ax.set_ylabel("Northing (m UTM 17N)")
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close()
 
 
 # =============================================================================
@@ -730,46 +573,17 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # =========================================================================
-    # Step 0: Mosaic Selection
-    # =========================================================================
-    print_section("Step 0: Mosaic Selection")
-
-    if TILE_RANGES:
-        print_progress(f"  Custom tile ranges: {TILE_RANGES}")
-        tile_ranges = [r.strip() for r in TILE_RANGES.split(",")]
-        tile_coords = parse_all_tile_ranges(tile_ranges)
-        print_progress(f"  Selected {len(tile_coords)} tiles")
-
-        mosaic_path = DATA_DIR / "mosaics" / f"OSBS_{OUTPUT_DESCRIPTOR}.tif"
-        mosaic_path, tile_count = create_custom_mosaic(tile_coords, mosaic_path)
-
-        heatmap_path = OUTPUT_DIR / "mosaic_heatmap.png"
-        if not heatmap_path.exists():
-            generate_mosaic_heatmap(mosaic_path, heatmap_path)
-    elif TILE_SELECTION_MODE == "interior":
-        print_progress("  Parsing interior tile selection...")
-        tile_coords = parse_all_tile_ranges(INTERIOR_TILE_RANGES)
-        print_progress(f"  Selected {len(tile_coords)} tiles")
-
-        mosaic_path = DATA_DIR / "mosaics" / f"OSBS_{OUTPUT_DESCRIPTOR}.tif"
-        mosaic_path, tile_count = create_custom_mosaic(tile_coords, mosaic_path)
-
-        heatmap_path = OUTPUT_DIR / "mosaic_heatmap.png"
-        if not heatmap_path.exists():
-            generate_mosaic_heatmap(mosaic_path, heatmap_path)
-    else:
-        mosaic_path = MOSAIC_PATH
-        if not mosaic_path.exists():
-            print(f"ERROR: Mosaic file not found: {mosaic_path}")
-            sys.exit(1)
-        print_progress(f"  Using full mosaic: {mosaic_path}")
-
-    # =========================================================================
     # Step 1: Load DEM
     # =========================================================================
     print_section("Step 1: Loading DEM")
 
-    with rasterio.open(mosaic_path) as src:
+    if not MOSAIC_PATH.exists():
+        print(f"ERROR: Mosaic not found: {MOSAIC_PATH}")
+        sys.exit(1)
+
+    print_progress(f"  Mosaic: {MOSAIC_PATH}")
+
+    with rasterio.open(MOSAIC_PATH) as src:
         dem = src.read(1)
         transform = src.transform
         crs = src.crs
@@ -827,83 +641,27 @@ def main():
     # =========================================================================
     # Step 3: Region Extraction + DEM Processing
     # =========================================================================
-    print_section("Step 3: Region Extraction + DEM Processing")
+    print_section("Step 3: DEM Processing")
 
     t0 = time.time()
 
-    # --- 3a: Extract largest connected region (no subsampling) ---
+    # --- 3a: Validate DEM (no nodata allowed) ---
     valid_data_mask = dem > NODATA_THRESHOLD
     valid_frac = np.sum(valid_data_mask) / valid_data_mask.size
     print_progress(f"  Valid data fraction: {valid_frac:.2%}")
 
     if valid_frac < 1.0:
-        print_progress("  Finding largest connected component...")
-        labeled_array, num_features = label(valid_data_mask)
-        print_progress(f"  Found {num_features} connected components")
-
-        component_sizes = ndimage.sum(
-            valid_data_mask, labeled_array, range(1, num_features + 1)
+        nodata_count = int(np.sum(~valid_data_mask))
+        print(
+            f"ERROR: Mosaic contains {nodata_count:,} nodata pixels "
+            f"({1 - valid_frac:.2%}). Pipeline requires a contiguous mosaic "
+            f"with no nodata."
         )
-        largest_label = np.argmax(component_sizes) + 1
-        largest_size = component_sizes[largest_label - 1]
-        print_progress(
-            f"  Largest: {largest_size:,.0f} px "
-            f"({100 * largest_size / valid_data_mask.size:.1f}%)"
-        )
+        sys.exit(1)
 
-        largest_mask = labeled_array == largest_label
-
-        # Bounding box with padding
-        rows = np.any(largest_mask, axis=1)
-        cols = np.any(largest_mask, axis=0)
-        rmin, rmax = np.where(rows)[0][[0, -1]]
-        cmin, cmax = np.where(cols)[0][[0, -1]]
-
-        pad = 10
-        rmin = max(0, rmin - pad)
-        rmax = min(dem.shape[0] - 1, rmax + pad) + 1
-        cmin = max(0, cmin - pad)
-        cmax = min(dem.shape[1] - 1, cmax + pad) + 1
-
-        dem_region = dem[rmin:rmax, cmin:cmax].copy()
-        valid_mask_region = largest_mask[rmin:rmax, cmin:cmax]
-
-        # Trim nodata-only edges (pysheds fails when all edges are nodata)
-        rows_valid = np.where(np.any(valid_mask_region, axis=1))[0]
-        cols_valid = np.where(np.any(valid_mask_region, axis=0))[0]
-        tr1, tr2 = rows_valid[0], rows_valid[-1] + 1
-        tc1, tc2 = cols_valid[0], cols_valid[-1] + 1
-
-        dem_for_routing = dem_region[tr1:tr2, tc1:tc2].copy()
-        valid_mask = valid_mask_region[tr1:tr2, tc1:tc2]
-
-        # Update transform for extracted region
-        adj_rmin = rmin + tr1
-        adj_cmin = cmin + tc1
-        region_transform = rasterio.Affine(
-            transform.a,
-            transform.b,
-            transform.c + adj_cmin * transform.a,
-            transform.d,
-            transform.e,
-            transform.f + adj_rmin * transform.e,
-        )
-        bounds_dict = {
-            "west": region_transform.c,
-            "east": region_transform.c + dem_for_routing.shape[1] * region_transform.a,
-            "south": region_transform.f + dem_for_routing.shape[0] * region_transform.e,
-            "north": region_transform.f,
-        }
-
-        nodata_in_region = int((~valid_mask).sum())
-        print_progress(
-            f"  Extracted: {dem_for_routing.shape}, "
-            f"nodata in region: {nodata_in_region:,}"
-        )
-    else:
-        dem_for_routing = dem.copy()
-        valid_mask = np.ones(dem.shape, dtype=bool)
-        region_transform = transform
+    dem_for_routing = dem.copy()
+    valid_mask = np.ones(dem.shape, dtype=bool)
+    region_transform = transform
 
     print_progress(
         f"  Processing region: {dem_for_routing.shape} "
@@ -1471,7 +1229,7 @@ def main():
     with open(summary_path, "w") as f:
         f.write(f"OSBS Hillslope Pipeline Summary ({OUTPUT_DESCRIPTOR})\n")
         f.write("=" * 60 + "\n\n")
-        f.write(f"Input: {mosaic_path}\n")
+        f.write(f"Input: {MOSAIC_PATH}\n")
         f.write(f"Region: {dem_for_routing.shape} pixels\n")
         f.write(f"Resolution: {PIXEL_SIZE} m (Phase B: no subsampling)\n\n")
 
