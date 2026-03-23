@@ -659,8 +659,7 @@ def main():
         )
         sys.exit(1)
 
-    dem_for_routing = dem.copy()
-    valid_mask = np.ones(dem.shape, dtype=bool)
+    dem_for_routing = dem
     region_transform = transform
 
     print_progress(
@@ -669,6 +668,9 @@ def main():
     )
 
     # --- 3b: Basin detection (pre-conditioning) ---
+    # Both identify_basins and identify_open_water produce zero detections at 1m
+    # (see docs/synthetic_lake_bottoms.md lines 320-404). Retained as placeholder
+    # — will be replaced with 1m-appropriate water detection during Phase E.
     print_progress("  Detecting basins in raw DEM...")
     basin_pre_mask = identify_basins(dem_for_routing, nodata=NODATA_VALUE)
     n_basin_pre = int(np.sum(basin_pre_mask > 0))
@@ -701,8 +703,7 @@ def main():
     print_progress("  Detecting open water from slope field...")
     basin_boundary, basin_mask = identify_open_water(slope)
     n_water = int(np.sum(basin_mask > 0))
-    n_boundary = int(np.sum(basin_boundary > 0))
-    print_progress(f"    Open water: {n_water} px, boundary: {n_boundary} px")
+    print_progress(f"    Open water: {n_water} px")
 
     # Lower basin pixels in flooded DEM to force flow through them
     flooded_arr = np.array(grid.flooded)
@@ -781,41 +782,23 @@ def main():
 
     # Stream network extraction
     print_progress("  Extracting river network...")
-    try:
-        branches = grid.extract_river_network(
-            "fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8"
-        )
-        print_progress(f"    Stream reaches: {len(branches['features'])}")
-    except MemoryError:
-        import resource
-
-        max_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
-        print_progress(
-            f"  WARNING: MemoryError in extract_river_network "
-            f"(RSS: {max_rss_gb:.1f} GB)"
-        )
-        branches = None
+    river_net = grid.extract_river_network(
+        "fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8"
+    )
+    print_progress(f"    Stream reaches: {len(river_net['features'])}")
 
     # Stream network length + slope
-    grid.inflated_dem = grid.inflated  # alias needed by pgrid
-    net_stats = None
+    # pgrid.river_network_length_and_slope() accesses self.inflated_dem (pgrid.py:3269),
+    # but resolve_flats stored output as grid.inflated (out_name="inflated").
+    grid.inflated_dem = grid.inflated
     print_progress("  Computing network length and slope...")
-    try:
-        net_stats = grid.river_network_length_and_slope(
-            "fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8"
-        )
-        print_progress(f"    Network length: {net_stats['length']:.0f} m")
-        print_progress(f"    Mean network slope: {net_stats['slope']:.6f} m/m")
-        print_progress(f"    Main channel length: {net_stats['mch_length']:.0f} m")
-        print_progress(f"    Main channel slope: {net_stats['mch_slope']:.6f} m/m")
-    except MemoryError:
-        import resource
-
-        max_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
-        print_progress(
-            f"  WARNING: MemoryError in river_network_length_and_slope "
-            f"(RSS: {max_rss_gb:.1f} GB)"
-        )
+    net_stats = grid.river_network_length_and_slope(
+        "fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8"
+    )
+    print_progress(f"    Network length: {net_stats['length']:.0f} m")
+    print_progress(f"    Mean network slope: {net_stats['slope']:.6f} m/m")
+    print_progress(f"    Main channel length: {net_stats['mch_length']:.0f} m")
+    print_progress(f"    Main channel slope: {net_stats['mch_slope']:.6f} m/m")
 
     print_progress(f"  DEM processing time: {time.time() - t0:.1f} seconds")
 
@@ -839,8 +822,8 @@ def main():
     hand = np.array(grid.hand)
     dtnd = np.array(grid.dtnd)
 
-    hand_positive = hand[(hand > 0) & np.isfinite(hand) & valid_mask]
-    dtnd_positive = dtnd[(dtnd > 0) & valid_mask]
+    hand_positive = hand[(hand > 0) & np.isfinite(hand)]
+    dtnd_positive = dtnd[dtnd > 0]
     print_progress(
         f"  HAND range: 0 - {np.max(hand_positive):.1f} m, "
         f"median: {np.median(hand_positive):.1f} m"
@@ -912,8 +895,6 @@ def main():
     dtnd_flat = dtnd.flatten()
     slope_flat = slope.flatten()
     aspect_flat = aspect.flatten()
-    valid_mask_flat = valid_mask.flatten()
-
     pixel_area = PIXEL_SIZE * PIXEL_SIZE
     area_flat = np.full(hand_flat.shape, pixel_area)
 
@@ -933,8 +914,8 @@ def main():
     smallest_dtnd = 1.0  # meters — Swenson's fixed minimum
     dtnd_flat[dtnd_flat < smallest_dtnd] = smallest_dtnd
 
-    # Valid mask: tail-filtered + isfinite(hand) + valid_mask for nodata exclusion
-    valid = keep_tail & valid_mask_flat
+    # Valid mask: tail-filtered pixels with finite HAND
+    valid = keep_tail.copy()
 
     # Basin masking: remove pre-conditioning basin pixels
     basin_pre_flat = basin_pre_mask.flatten()
@@ -1169,20 +1150,7 @@ def main():
     total_area_m2 = sum(elem["area"] for elem in params["elements"])
 
     # Stream slope from network (validated approach)
-    if net_stats is not None:
-        stream_slope_val = net_stats["slope"]
-    else:
-        # Fallback: mean of lowest-bin slopes * 0.5
-        lowest_bin_slopes = [
-            params["elements"][asp_idx * N_HAND_BINS]["slope"]
-            for asp_idx in range(N_ASPECT_BINS)
-        ]
-        stream_slope_val = (
-            np.mean(lowest_bin_slopes) * 0.5 if any(lowest_bin_slopes) else 0.002
-        )
-        print_progress(
-            f"  WARNING: Using fallback stream slope: {stream_slope_val:.6f}"
-        )
+    stream_slope_val = net_stats["slope"]
 
     # INTERIM power laws for depth/width (Swenson rh:1104-1114)
     # Phase E will research OSBS-specific empirical relationships
@@ -1243,9 +1211,8 @@ def main():
         f.write("Stream Network:\n")
         f.write("-" * 40 + "\n")
         f.write(f"  Stream cells: {stream_cells:,} ({stream_frac:.2%})\n")
-        if net_stats is not None:
-            f.write(f"  Network length: {net_stats['length']:.0f} m\n")
-            f.write(f"  Network slope: {net_stats['slope']:.6f} m/m\n")
+        f.write(f"  Network length: {net_stats['length']:.0f} m\n")
+        f.write(f"  Network slope: {net_stats['slope']:.6f} m/m\n")
         f.write(f"  Stream depth: {stream_depth:.3f} m (INTERIM power law)\n")
         f.write(f"  Stream width: {stream_width:.1f} m (INTERIM power law)\n")
         f.write(f"  Stream slope: {stream_slope_val:.6f} m/m\n\n")
