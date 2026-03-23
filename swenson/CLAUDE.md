@@ -9,7 +9,7 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 
 ## Pipeline Orientation
 
-The central technical problem is that pysheds assumes a geographic CRS while our NEON LIDAR data is in UTM (EPSG:32617). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The MERIT validation pipeline has been consolidated into a single regression script (`scripts/merit_validation/merit_regression.py`) that validates the geographic CRS code path after pysheds fork changes. The original 9 stage scripts are archived in `audit/merit_validation_stages/`.
+The pysheds fork now handles both geographic and UTM CRS (Phase A). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The MERIT validation pipeline has been consolidated into a single regression script (`scripts/merit_validation/merit_regression.py`) that validates the geographic CRS code path after pysheds fork changes. The original 9 stage scripts are archived in `audit/merit_validation_stages/`.
 
 ## Phase Workflow
 
@@ -71,6 +71,10 @@ swenson/
 │   ├── 250223-pysheds_and_merit_pipeline_audit/
 │   │   ├── merit_validation/              # MERIT regression audit docs and diagnostics
 │   │   └── pysheds/                       # pysheds fork refactoring and test audit
+│   ├── 260310-osbs_pipeline_and_docs/
+│   │   ├── osbs-pipeline-audit-260310.md          # Pipeline equation audit
+│   │   ├── osbs-pipeline-divergence-audit-260316.md  # Line-by-line divergence audit
+│   │   └── docs-update-plan-260317.md             # Documentation update plan
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
@@ -82,6 +86,8 @@ swenson/
 ├── data/
 │   ├── neon/
 │   │   ├── dtm/               # 233 NEON DTM tiles (1m, EPSG:32617)
+│   │   ├── slope/             # 231 NEON slope tiles (DP3.30025.001, degrees)
+│   │   ├── aspect/            # 231 NEON aspect tiles (DP3.30025.001, degrees CW from N)
 │   │   └── README.md          # NEON data product catalog
 │   ├── mosaics/               # Generated mosaics (gitignored)
 │   ├── merit/                 # MERIT DEM for validation
@@ -94,7 +100,9 @@ swenson/
 │   └── plots/                 # Comparison plots
 │
 ├── scripts/
-│   ├── spatial_scale.py       # Shared FFT module
+│   ├── spatial_scale.py       # Shared FFT module (dual-CRS: geographic + UTM)
+│   ├── hillslope_params.py    # Shared hillslope computation module
+│   ├── dem_processing.py      # Basin detection, open water identification
 │   ├── merit_validation/      # MERIT geographic regression test
 │   │   ├── merit_regression.py  # Single-file regression (Lc + 6 params vs published)
 │   │   ├── merit_regression.sh  # SLURM wrapper
@@ -102,8 +110,10 @@ swenson/
 │   │   └── output/              # results.json, summary.txt, SLURM logs
 │   ├── osbs/                  # Pipeline scripts
 │   │   ├── run_pipeline.py    # Main hillslope pipeline (1x8 log-spaced bins)
-│   │   ├── run_pipeline.sh    # SLURM job wrapper
+│   │   ├── run_pipeline_tier{1,2,3}.sh  # Tiered SLURM wrappers
 │   │   ├── compare_hillslope_configs.py  # Compare 4x4 vs 1x8 profiles
+│   │   ├── compare_slope_aspect.py       # pgrid vs NEON slope/aspect comparison
+│   │   ├── compare_slope_aspect.sh       # SLURM wrapper for slope/aspect comparison
 │   │   ├── stitch_mosaic.py   # Create mosaic from tiles
 │   │   └── extract_subset.py  # Extract subset regions
 │   ├── smoke_tests/           # UTM smoke tests (R6C10 single-tile)
@@ -140,7 +150,7 @@ cd $TOOLS/swenson
 sbatch scripts/merit_validation/merit_regression.sh
 ```
 
-Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `scripts/merit_validation/output/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL. Expected runtime: ~10-20 min.
+Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `scripts/merit_validation/output/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL. Expected runtime: ~3-4 min.
 
 **Pass criteria:** All 6 parameter correlations within 0.01 of expected, Lc within 5% of 763m.
 

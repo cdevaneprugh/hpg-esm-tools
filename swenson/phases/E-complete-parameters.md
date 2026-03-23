@@ -1,26 +1,19 @@
 # Phase E: Complete the Parameter Set
 
-Status: Not started
+Status: In progress
 Depends on: None (can start independently)
 Blocks: Phase F
 
 ## Problem
 
-Three parameters are placeholders rather than physically motivated values (STATUS.md #5, #6, #7):
+Remaining parameters need refinement or PI decisions (STATUS.md #5, #6):
 
-**Stream channel parameters (#6):**
+**Stream channel parameters (#6) — partially resolved:**
+Stream slope now computed from actual network. Depth and width use interim power-law scaling from drainage area (`depth = 0.001 * A^0.4`, `width = 0.001 * A^0.6`). Phase E will research OSBS-specific empirical relationships.
 
-| Parameter | Pipeline | Swenson reference |
-|-----------|----------|-------------------|
-| Stream depth | 0.3 m | 0.269 m |
-| Stream width | 5.0 m | 4.414 m |
-| Stream slope | heuristic | 0.00233 |
+**Bedrock depth (#7) — resolved:** Now uses zeros, matching Swenson reference (commit 11f465e).
 
-The guesses are in the right ballpark but have no methodology. Stream slope could be computed from DEM elevation drops along the stream network. Depth and width could come from regional empirical relationships or MERIT Hydro.
-
-**Bedrock depth (#7):** Pipeline uses `1e6` (effectively infinite). Swenson reference has all zeros. Neither is physically meaningful. Need to determine what CTSM does with this parameter.
-
-**DEM conditioning (#5):** At 1m resolution, filling pits/depressions erases real features (sinkholes, wetland depressions, karst dissolution). This is a science question for the PI.
+**DEM conditioning (#5) — open:** At 1m resolution, filling pits/depressions erases real features (sinkholes, wetland depressions, karst dissolution). This is a science question for the PI.
 
 ## Tasks
 
