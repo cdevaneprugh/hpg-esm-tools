@@ -13,9 +13,10 @@ truth), adapted for UTM CRS using shared modules:
   - dem_processing.py: Basin detection, open water identification
 
 Phase decisions baked in:
-  - Phase A: pgrid slope_aspect() and compute_hand() are UTM-aware
+  - Phase A: pgrid compute_hand() is UTM-aware
   - Phase B: Full 1m resolution, no subsampling (64GB sufficient)
   - Phase C: min_wavelength=20m filters k^2 micro-topographic artifact in FFT
+  - Phase E: NEON DP3.30025.001 slope/aspect replaces pgrid computation
 
 Configuration:
     Set MOSAIC_PATH below to select the input DEM:
@@ -94,10 +95,17 @@ SCRIPT_DIR = Path(__file__).parent
 BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
 
-# Mosaic path — change for smoke test vs production
-# Smoke test (R6C10): DATA_DIR / "neon" / "dtm" / "NEON_D03_OSBS_DP3_404000_3286000_DTM.tif"
-# Production (R4C5-R12C14): DATA_DIR / "mosaics" / "OSBS_production.tif"
-MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_production.tif"
+# Mosaic paths — change all three for smoke test vs production
+# Smoke test (R6C10):
+#   MOSAIC_DIR = DATA_DIR / "neon"
+#   MOSAIC_PATH = MOSAIC_DIR / "dtm" / "NEON_D03_OSBS_DP3_404000_3286000_DTM.tif"
+#   SLOPE_MOSAIC_PATH = MOSAIC_DIR / "slope" / "NEON_D03_OSBS_DP3_404000_3286000_Slope.tif"
+#   ASPECT_MOSAIC_PATH = MOSAIC_DIR / "aspect" / "NEON_D03_OSBS_DP3_404000_3286000_Aspect.tif"
+# Production (R4C5-R12C14):
+MOSAIC_DIR = DATA_DIR / "mosaics" / "production"
+MOSAIC_PATH = MOSAIC_DIR / "dtm.tif"
+SLOPE_MOSAIC_PATH = MOSAIC_DIR / "slope.tif"
+ASPECT_MOSAIC_PATH = MOSAIC_DIR / "aspect.tif"
 
 # Output
 OUTPUT_DESCRIPTOR = os.environ.get("OUTPUT_DESCRIPTOR", "production")
@@ -573,21 +581,46 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # =========================================================================
-    # Step 1: Load DEM
+    # Step 1: Load Mosaics (DEM + NEON slope/aspect)
     # =========================================================================
-    print_section("Step 1: Loading DEM")
+    print_section("Step 1: Loading Mosaics")
 
-    if not MOSAIC_PATH.exists():
-        print(f"ERROR: Mosaic not found: {MOSAIC_PATH}")
-        sys.exit(1)
+    for path, name in [
+        (MOSAIC_PATH, "DTM"),
+        (SLOPE_MOSAIC_PATH, "slope"),
+        (ASPECT_MOSAIC_PATH, "aspect"),
+    ]:
+        if not path.exists():
+            print(f"ERROR: {name} mosaic not found: {path}")
+            sys.exit(1)
 
-    print_progress(f"  Mosaic: {MOSAIC_PATH}")
+    print_progress(f"  DTM: {MOSAIC_PATH}")
+    print_progress(f"  Slope: {SLOPE_MOSAIC_PATH}")
+    print_progress(f"  Aspect: {ASPECT_MOSAIC_PATH}")
 
     with rasterio.open(MOSAIC_PATH) as src:
         dem = src.read(1)
         transform = src.transform
         crs = src.crs
         bounds = src.bounds
+
+    # Load NEON slope/aspect (DP3.30025.001)
+    with rasterio.open(SLOPE_MOSAIC_PATH) as src:
+        neon_slope_deg = src.read(1)
+    with rasterio.open(ASPECT_MOSAIC_PATH) as src:
+        neon_aspect = src.read(1)
+
+    # Convert NEON slope from degrees to m/m
+    slope = np.tan(np.deg2rad(neon_slope_deg))
+    aspect = neon_aspect.copy()
+
+    # Zero out nodata pixels in slope/aspect
+    slope[neon_slope_deg <= NODATA_THRESHOLD] = 0.0
+    aspect[neon_aspect <= NODATA_THRESHOLD] = 0.0
+
+    assert dem.shape == slope.shape == aspect.shape, (
+        f"Shape mismatch: DTM {dem.shape}, slope {slope.shape}, aspect {aspect.shape}"
+    )
 
     bounds_dict = {
         "west": bounds.left,
@@ -692,12 +725,7 @@ def main():
     grid.fill_pits("dem", out_name="pit_filled")
     grid.fill_depressions("pit_filled", out_name="flooded")
 
-    # Slope/aspect on original DEM (for water detection + final output)
-    # Uses pgrid's Horn 1981 method, now UTM-aware via Phase A
-    print_progress("  Computing slope/aspect (pgrid Horn 1981)...")
-    grid.slope_aspect("dem")
-    slope = np.array(grid.slope)
-    aspect = np.array(grid.aspect)
+    # slope and aspect loaded from NEON mosaics in Step 1 (DP3.30025.001)
 
     # Open water detection from slope field
     print_progress("  Detecting open water from slope field...")

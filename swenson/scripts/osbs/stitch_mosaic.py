@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-Mosaic NEON OSBS DTM tiles and generate elevation heatmap.
+Create production mosaics for OSBS from NEON tiles.
 
-Creates:
-- data/mosaics/OSBS_full.tif - merged DEM from all tiles
-- output/osbs/elevation_heatmap.png - elevation visualization
+Merges DTM, slope, and aspect tiles for the production domain (R4C5-R12C14,
+90 tiles, 9x10 km) into data/mosaics/production/. Skips products whose
+mosaics already exist.
+
+Products:
+  - DTM (DP3.30024.001): bare earth elevation (m)
+  - Slope (DP3.30025.001): terrain slope (degrees)
+  - Aspect (DP3.30025.001): terrain aspect (degrees CW from north)
+
+Usage:
+    python scripts/osbs/stitch_mosaic.py
 """
 
-import glob
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
 import rasterio
 from rasterio.merge import merge
 
@@ -19,125 +24,100 @@ from rasterio.merge import merge
 SCRIPT_DIR = Path(__file__).parent
 BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output" / "osbs"
+OUTPUT_DIR = DATA_DIR / "mosaics" / "production"
 
-DTM_DIR = DATA_DIR / "neon" / "dtm"
-MOSAIC_PATH = DATA_DIR / "mosaics" / "OSBS_full.tif"
-PLOT_PATH = OUTPUT_DIR / "osbs_dtm_elevation.png"
+# Tile grid parameters
+TILE_GRID_ORIGIN_EASTING = 394000
+TILE_GRID_ORIGIN_NORTHING = 3292000
+TILE_SIZE = 1000
+
+# Production domain: R4C5-R12C14 (90 tiles, 0 nodata)
+PROD_ROW_RANGE = range(4, 13)  # R4-R12
+PROD_COL_RANGE = range(5, 15)  # C5-C14
+
+# Products: (source_dir, filename_suffix, output_name)
+PRODUCTS = [
+    (DATA_DIR / "neon" / "dtm", "DTM", "dtm.tif"),
+    (DATA_DIR / "neon" / "slope", "Slope", "slope.tif"),
+    (DATA_DIR / "neon" / "aspect", "Aspect", "aspect.tif"),
+]
 
 
-def mosaic_tiles():
-    """Merge all DTM tiles into a single GeoTIFF."""
-    print("Finding DTM tiles...")
-    dtm_files = sorted(glob.glob(str(DTM_DIR / "*.tif")))
-    print(f"Found {len(dtm_files)} tiles")
+def production_tile_paths(tile_dir: Path, suffix: str) -> list[Path]:
+    """Return paths to production-domain tiles for a given product."""
+    paths = []
+    for row in PROD_ROW_RANGE:
+        for col in PROD_COL_RANGE:
+            easting = TILE_GRID_ORIGIN_EASTING + col * TILE_SIZE
+            northing = TILE_GRID_ORIGIN_NORTHING - row * TILE_SIZE
+            path = tile_dir / f"NEON_D03_OSBS_DP3_{easting}_{northing}_{suffix}.tif"
+            if path.exists():
+                paths.append(path)
+    return sorted(paths)
 
-    print("Opening datasets...")
-    datasets = [rasterio.open(f) for f in dtm_files]
 
-    print("Merging tiles...")
+def mosaic_tiles(tile_paths: list[Path], output_path: Path) -> None:
+    """Merge tiles into a single GeoTIFF with LZW compression."""
+    datasets = [rasterio.open(str(p)) for p in tile_paths]
     mosaic_arr, mosaic_transform = merge(datasets)
 
-    # Get metadata from first file
     meta = datasets[0].meta.copy()
     meta.update(
-        {
-            "driver": "GTiff",
-            "height": mosaic_arr.shape[1],
-            "width": mosaic_arr.shape[2],
-            "transform": mosaic_transform,
-            "compress": "lzw",
-        }
+        driver="GTiff",
+        height=mosaic_arr.shape[1],
+        width=mosaic_arr.shape[2],
+        transform=mosaic_transform,
+        compress="lzw",
     )
 
-    print(f"Writing mosaic to {MOSAIC_PATH}...")
-    with rasterio.open(MOSAIC_PATH, "w", **meta) as dst:
+    with rasterio.open(output_path, "w", **meta) as dst:
         dst.write(mosaic_arr)
 
-    # Close all datasets
     for ds in datasets:
         ds.close()
 
-    print(f"Mosaic shape: {mosaic_arr.shape[1]} x {mosaic_arr.shape[2]} pixels")
-    return mosaic_arr[0], mosaic_transform
-
-
-def generate_heatmap(dem: np.ndarray, transform):
-    """Generate elevation heatmap visualization."""
-    print("Generating elevation heatmap...")
-
-    # Mask nodata values (-9999)
-    dem_masked = np.ma.masked_less_equal(dem, -9000)
-
-    # Calculate statistics
-    elev_min = dem_masked.min()
-    elev_max = dem_masked.max()
-    elev_mean = dem_masked.mean()
     print(
-        f"Elevation range: {elev_min:.1f} - {elev_max:.1f} m (mean: {elev_mean:.1f} m)"
+        f"  Written: {output_path.name} "
+        f"({mosaic_arr.shape[2]}x{mosaic_arr.shape[1]} pixels)"
     )
-
-    # Calculate extent in km (UTM coordinates)
-    height, width = dem.shape
-    x_extent = width / 1000  # km
-    y_extent = height / 1000  # km
-    print(f"Spatial extent: {x_extent:.1f} x {y_extent:.1f} km")
-
-    # Create figure
-    fig, ax = plt.subplots(figsize=(12, 10))
-
-    # Plot with terrain colormap
-    im = ax.imshow(
-        dem_masked,
-        cmap="terrain",
-        vmin=elev_min,
-        vmax=elev_max,
-        aspect="equal",
-    )
-
-    # Colorbar
-    cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
-    cbar.set_label("Elevation (m)", fontsize=12)
-
-    # Labels
-    ax.set_title(
-        f"OSBS Digital Terrain Model (1m NEON LIDAR)\n"
-        f"Extent: {x_extent:.1f} x {y_extent:.1f} km | "
-        f"Elevation: {elev_min:.1f} - {elev_max:.1f} m",
-        fontsize=14,
-    )
-    ax.set_xlabel("Easting (pixels)", fontsize=11)
-    ax.set_ylabel("Northing (pixels)", fontsize=11)
-
-    # Save
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    plt.savefig(PLOT_PATH, dpi=150, bbox_inches="tight")
-    print(f"Saved heatmap to {PLOT_PATH}")
-    plt.close()
 
 
 def main():
-    """Main entry point."""
+    """Create all production mosaics."""
+    n_expected = len(PROD_ROW_RANGE) * len(PROD_COL_RANGE)
     print("=" * 60)
-    print("OSBS DTM Mosaic and Visualization")
+    print(f"OSBS Production Mosaic Creation ({n_expected} tiles)")
     print("=" * 60)
 
-    # Check if mosaic already exists
-    if MOSAIC_PATH.exists():
-        print(f"Mosaic already exists at {MOSAIC_PATH}")
-        print("Loading existing mosaic...")
-        with rasterio.open(MOSAIC_PATH) as src:
-            dem = src.read(1)
-            transform = src.transform
-    else:
-        dem, transform = mosaic_tiles()
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    generate_heatmap(dem, transform)
+    for tile_dir, suffix, output_name in PRODUCTS:
+        output_path = OUTPUT_DIR / output_name
+        print(f"\n{output_name}:")
 
-    print("=" * 60)
+        if output_path.exists():
+            print(f"  Already exists: {output_path}")
+            continue
+
+        paths = production_tile_paths(tile_dir, suffix)
+        print(f"  Found {len(paths)}/{n_expected} tiles")
+
+        if len(paths) < n_expected:
+            missing = n_expected - len(paths)
+            print(f"  WARNING: {missing} tiles missing from {tile_dir.name}/")
+
+        if not paths:
+            print(f"  ERROR: No tiles found in {tile_dir}")
+            continue
+
+        mosaic_tiles(paths, output_path)
+
+    print("\n" + "=" * 60)
     print("Done!")
-    print(f"  Mosaic: {MOSAIC_PATH}")
-    print(f"  Heatmap: {PLOT_PATH}")
+    for _, _, output_name in PRODUCTS:
+        path = OUTPUT_DIR / output_name
+        status = "OK" if path.exists() else "MISSING"
+        print(f"  [{status}] {path}")
 
 
 if __name__ == "__main__":
