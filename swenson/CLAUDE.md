@@ -40,7 +40,7 @@ Phase files are the **primary record** of what was done and why. After completin
 | Dataset | Description | Location |
 |---------|-------------|----------|
 | Single-tile smoke test | R6C10 — representative tile with lake, swamp, upland | `data/neon/dtm/NEON_D03_OSBS_DP3_404000_3286000_DTM.tif` |
-| Production domain | R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata) — largest contiguous rectangle | `data/mosaics/OSBS_tier3_contiguous.tif` |
+| Production domain | R4-R12, C5-C14 (90 tiles, 9x10 km, 0 nodata) — largest contiguous rectangle | `data/mosaics/production/dtm.tif` |
 | Full tile coverage map | Nodata percentages, row/column assignments | `data/neon/tile_coverage.md` |
 
 ## Directory Structure
@@ -110,7 +110,8 @@ swenson/
 │   │   └── output/              # results.json, summary.txt, SLURM logs
 │   ├── osbs/                  # Pipeline scripts
 │   │   ├── run_pipeline.py    # Main hillslope pipeline (1x8 log-spaced bins)
-│   │   ├── run_pipeline_tier{1,2,3}.sh  # Tiered SLURM wrappers
+│   │   ├── run_pipeline_production.sh    # Production SLURM wrapper
+│   │   ├── run_pipeline_smoke.sh         # Smoke test SLURM wrapper (R6C10)
 │   │   ├── compare_hillslope_configs.py  # Compare 4x4 vs 1x8 profiles
 │   │   ├── compare_slope_aspect.py       # pgrid vs NEON slope/aspect comparison
 │   │   ├── compare_slope_aspect.sh       # SLURM wrapper for slope/aspect comparison
@@ -131,12 +132,11 @@ swenson/
 ```bash
 cd $TOOLS/swenson
 
-# Production run (tier 3: R4C5-R12C14, 90 tiles)
-sbatch scripts/osbs/run_pipeline_tier3.sh
+# Production run (R4C5-R12C14, 90 tiles)
+sbatch scripts/osbs/run_pipeline_production.sh
 
-# Or run individual tiers
-sbatch scripts/osbs/run_pipeline_tier1.sh   # R6C10 smoke test
-sbatch scripts/osbs/run_pipeline_tier2.sh   # 5x5 block
+# Smoke test (R6C10, single tile — change MOSAIC_PATH constants first)
+sbatch scripts/osbs/run_pipeline_smoke.sh
 ```
 
 Output goes to: `output/osbs/YYYY-MM-DD_<descriptor>/`

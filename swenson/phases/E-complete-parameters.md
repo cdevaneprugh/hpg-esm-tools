@@ -21,13 +21,13 @@ Stream slope now computed from actual network. Depth and width use interim power
 - [x] Stream slope from actual network (implemented in run_pipeline.py line 1415)
 - [x] Bedrock depth: zeros matching Swenson reference (commit 11f465e)
 - [x] NEON slope/aspect decision: use NEON DP3.30025.001 products directly (PI approved 2026-03-23). Comparison: slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
-- [ ] Implement NEON slope/aspect ingestion in pipeline:
-  - [ ] Create one-time slope/aspect mosaics for production domain (R4C5-R12C14), saved to `data/mosaics/`
-  - [ ] Add mosaic loading to pipeline — load NEON slope/aspect after DTM, convert slope degrees to m/m via `tan(deg * pi/180)`
-  - [ ] Remove `grid.slope_aspect("dem")` call (line 938) — replace with loaded NEON arrays
-  - [ ] Verify `identify_open_water(slope)` works with NEON slope (threshold may need adjustment due to pre-smoothing)
-  - [ ] Tier 1 (R6C10) comparison: old pgrid vs new NEON slope/aspect — compare 6 hillslope parameters
-  - [ ] Production run with NEON slope/aspect
+- [x] Implement NEON slope/aspect ingestion in pipeline (commit 73c09fe):
+  - [x] Create one-time slope/aspect mosaics for production domain (`data/mosaics/production/`)
+  - [x] Add mosaic loading to pipeline (Step 1, lines 607-619), convert slope degrees to m/m
+  - [x] Remove `grid.slope_aspect("dem")` call — replaced with NEON mosaic loading
+  - [x] Verify `identify_open_water(slope)` works with NEON slope (still 0 detections at 1m — unchanged)
+  - [x] Smoke test (R6C10): slope ~0.008 m/m lower (NEON smoother), height/distance/width/area identical
+  - [x] Production run: 23.4 min, all parameters correct, slope differences consistent with pre-smoothing
 - [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law)
 - [ ] PI consultation on remaining open questions:
   - DEM conditioning approach (fill all vs. preserve real closed basins)
@@ -52,4 +52,19 @@ increasing. Total area matches 4x4 (0.373 vs 0.374 km^2). Comparison plot genera
 `output/plots/4x4_vs_1x8_r6c10.png`.
 
 Full justification: `docs/hillslope-binning-rationale.md`.
+
+### 2026-03-23: NEON slope/aspect adopted
+
+Replaced pgrid Horn 1981 slope/aspect computation with NEON DP3.30025.001 products.
+`stitch_mosaic.py` creates production mosaics in `data/mosaics/production/` (DTM, slope,
+aspect for R4C5-R12C14). Pipeline loads all three in Step 1, converts NEON slope from
+degrees to m/m via `tan(deg2rad())`.
+
+Verified on smoke test (R6C10) and production (90 tiles, 23.4 min). Slope values are
+~0.008 m/m lower (NEON's 3x3 pre-filter reduces noise). Height, distance, width, area
+are bit-for-bit identical to pgrid run — only slope/aspect changed. Scientific rationale
+documented in STATUS.md.
+
+Also refactored pipeline: removed mosaic creation bloat (-242 lines), dead code cleanup
+(-33 lines), renamed tier3 to production. Pipeline is now 1261 lines (down from 1536).
 

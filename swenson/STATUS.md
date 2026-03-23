@@ -148,7 +148,7 @@ Results: `output/osbs/smoke_tests/lc_physical_validation/`.
 
 ### 4. Slope/aspect: N/S aspect swap in OSBS pipeline — RESOLVED
 
-**Status: RESOLVED in Phase A/D.** Pipeline now uses `grid.slope_aspect("dem")` (line 938) — pgrid's Horn 1981 method with UTM-aware distance normalization. The `np.gradient` workaround and the interim sign fix have both been removed.
+**Status: RESOLVED in Phase A/D, superseded by Phase E.** Pipeline now loads NEON DP3.30025.001 slope/aspect products directly (lines 607-619), bypassing pgrid slope/aspect computation entirely. The `np.gradient` workaround, the interim sign fix, and the pgrid `slope_aspect()` call have all been removed.
 
 **Impact:** Corrupted aspect for all pixels, which corrupted aspect-based binning and area fractions for all hillslope columns.
 
@@ -423,7 +423,7 @@ These require scientific judgment, not engineering work:
 
 4. **Stream channel parameters:** Should we compute these from the DEM/stream network, or use values from MERIT Hydro or regional empirical relationships?
 
-5. **NEON slope/aspect products — RESOLVED (use NEON, 2026-03-23).** PI approved using NEON DP3.30025.001 products directly. Comparison across all 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84, slope bias +0.008 m/m (pgrid steeper — NEON's 3x3 pre-filter reduces TIN interpolation noise on flat terrain). Results in `output/osbs/slope_aspect_comparison/`. Implementation pending in Phase E.
+5. **NEON slope/aspect products — RESOLVED (use NEON, 2026-03-23).** PI approved using NEON DP3.30025.001 products directly. Comparison across all 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84, slope bias +0.008 m/m (pgrid steeper — NEON's 3x3 pre-filter reduces TIN interpolation noise on flat terrain). Results in `output/osbs/slope_aspect_comparison/`. Implemented in Phase E (commit 73c09fe).
 
 6. **Lc at 1m resolution — RESOLVED (Lc = 356m production, 2026-02-23).** The restricted-wavelength FFT finds a drainage-scale peak when micro-topographic wavelengths (< 20m) are excluded. Physical validation confirms: P95 DTND/Lc = 1.17 (PASS), mean catchment/Lc² = 0.876 (PASS). Lc is computed dynamically per run and varies with domain size: tier 1 (1 tile) = 541m, tier 2 (25 tiles) = 479m, tier 3 (90 tiles, production) = 356m, A_thresh = 63,362. See `phases/C-characteristic-length.md` for full analysis.
 
