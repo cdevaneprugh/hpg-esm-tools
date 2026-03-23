@@ -25,9 +25,9 @@ conda activate ctsm
 
 export PYTHONPATH="${PYSHEDS_FORK}:${PYTHONPATH:-}"
 export TILE_RANGES="R6C10"
-export OUTPUT_DESCRIPTOR="tier1_r6c10"
+export OUTPUT_DESCRIPTOR="tier1_r6c10_1x8"
 
-echo "=== OSBS Hillslope Pipeline — Tier 1 (R6C10) ==="
+echo "=== OSBS Hillslope Pipeline — Tier 1 (R6C10, 1x8 log-spaced) ==="
 echo "Date: $(date)"
 echo "Job ID: ${SLURM_JOB_ID:-interactive}"
 echo "Node: ${SLURMD_NODENAME:-$(hostname)}"

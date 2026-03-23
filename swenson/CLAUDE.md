@@ -74,6 +74,7 @@ swenson/
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
+│   ├── hillslope-binning-rationale.md  # Why 1x8 log-spaced bins
 │   ├── ns-aspect-bug.md      # N/S aspect swap bug analysis
 │   ├── pysheds-utm-walkthrough.md  # UTM CRS support walkthrough
 │   └── synthetic_lake_bottoms.md   # Synthetic lake bottoms brainstorming
@@ -100,8 +101,9 @@ swenson/
 │   │   ├── README.md            # Script purpose and flowchart
 │   │   └── output/              # results.json, summary.txt, SLURM logs
 │   ├── osbs/                  # Pipeline scripts
-│   │   ├── run_pipeline.py    # Main hillslope pipeline
+│   │   ├── run_pipeline.py    # Main hillslope pipeline (1x8 log-spaced bins)
 │   │   ├── run_pipeline.sh    # SLURM job wrapper
+│   │   ├── compare_hillslope_configs.py  # Compare 4x4 vs 1x8 profiles
 │   │   ├── stitch_mosaic.py   # Create mosaic from tiles
 │   │   └── extract_subset.py  # Extract subset regions
 │   ├── smoke_tests/           # UTM smoke tests (R6C10 single-tile)

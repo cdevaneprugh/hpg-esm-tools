@@ -33,6 +33,8 @@ def get_aspect_mask(aspect: np.ndarray, aspect_bin: tuple) -> np.ndarray:
     if lower > upper:
         # Wrapping bin (e.g. North: 315-360 and 0-45)
         return (aspect >= lower) | (aspect < upper)
+    # For (0, 360): captures all aspects in [0, 360). Aspect=360.0 exactly
+    # is excluded, but arctan2-based aspect computation produces [0, 360).
     return (aspect >= lower) & (aspect < upper)
 
 
@@ -138,6 +140,52 @@ def compute_hand_bins(
         bounds = np.array(bounds)
 
     return bounds
+
+
+def compute_hand_bins_log(
+    hand: np.ndarray,
+    n_bins: int = 8,
+) -> np.ndarray:
+    """Log-spaced HAND bins with percentile-based range.
+
+    Uses Q1/Q99 of positive HAND values as geomspace endpoints. Bins are
+    denser near the stream (low HAND) where TAI dynamics concentrate.
+
+    The 2m Swenson constraint (lowest bin upper bound <= 2m) is satisfied by
+    design at OSBS — the first several log-spaced bins are well below 2m.
+
+    See docs/hillslope-binning-rationale.md for full justification.
+
+    Parameters
+    ----------
+    hand : 1D array of HAND values (pre-filtered to valid pixels)
+    n_bins : number of elevation bins (default 8)
+
+    Returns
+    -------
+    1D array of n_bins+1 bin boundaries: [0, geomspace..., 1e6]
+    """
+    valid = (hand > 0) & np.isfinite(hand)
+    hand_valid = hand[valid]
+
+    if hand_valid.size == 0:
+        # Degenerate: no valid HAND values. Return uniform spacing.
+        return np.concatenate([[0], np.linspace(0.5, 10, n_bins - 1), [1e6]])
+
+    q01 = float(np.percentile(hand_valid, 1))
+    q99 = float(np.percentile(hand_valid, 99))
+
+    if q01 <= 0 or q01 >= q99:
+        # Degenerate distribution: fall back to linspace over the range.
+        q01 = float(np.min(hand_valid))
+        q99 = float(np.max(hand_valid))
+        if q01 <= 0 or q01 >= q99:
+            return np.concatenate([[0], np.linspace(0.5, 10, n_bins - 1), [1e6]])
+        internal = np.linspace(q01, q99, n_bins - 1)
+    else:
+        internal = np.geomspace(q01, q99, n_bins - 1)
+
+    return np.concatenate([[0], internal, [1e6]])
 
 
 def fit_trapezoidal_width(

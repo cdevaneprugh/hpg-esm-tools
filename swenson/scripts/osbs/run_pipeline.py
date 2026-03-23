@@ -4,7 +4,7 @@ OSBS Hillslope Pipeline
 
 Computes representative hillslope parameters from 1m NEON LIDAR data for OSBS
 using the Swenson & Lawrence (2025) methodology. Produces CTSM-compatible NetCDF
-output with 16 hillslope columns (4 aspects x 4 elevation bins).
+output with 8 hillslope columns (1 aspect x 8 log-spaced elevation bins).
 
 The processing algorithm follows merit_regression.py (the validated source of
 truth), adapted for UTM CRS using shared modules:
@@ -58,7 +58,7 @@ from dem_processing import identify_basins, identify_open_water  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
-    compute_hand_bins,
+    compute_hand_bins_log,
     fit_trapezoidal_width,
     get_aspect_mask,
     quadratic,
@@ -78,12 +78,15 @@ NODATA_VALUE = -9999  # standardized nodata sentinel
 NODATA_THRESHOLD = -9000  # threshold for valid data detection in GeoTIFFs
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)  # D8 flow direction mapping
 
-# Hillslope binning
-N_ASPECT_BINS = 4
-N_HAND_BINS = 4
-LOWEST_BIN_MAX = 2.0  # meters
-ASPECT_BINS = [(315, 45), (45, 135), (135, 225), (225, 315)]
-ASPECT_NAMES = ["North", "East", "South", "West"]
+# Hillslope binning (1 aspect x 8 log-spaced HAND bins)
+# See docs/hillslope-binning-rationale.md for justification.
+N_ASPECT_BINS = 1
+N_HAND_BINS = 8
+LOWEST_BIN_MAX = (
+    2.0  # meters (Swenson constraint, satisfied by design with log spacing)
+)
+ASPECT_BINS = [(0, 360)]
+ASPECT_NAMES = ["All"]
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
@@ -403,73 +406,41 @@ def create_hand_map_plot(hand: np.ndarray, bounds: dict, output_path: Path) -> N
 def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
     """Create hillslope parameters summary plot."""
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    colors = plt.cm.Set2(np.linspace(0, 1, 4))
 
     elements = params["elements"]
+    n_bins = params["metadata"]["n_hand_bins"]
+    n_aspects = params["metadata"]["n_aspect_bins"]
+    colors = plt.cm.Set2(np.linspace(0, 1, max(n_aspects, 2)))
 
-    ax = axes[0, 0]
-    for i, asp in enumerate(ASPECT_NAMES):
-        heights = [elements[j]["height"] for j in range(i * 4, (i + 1) * 4)]
-        bins = range(1, 5)
-        ax.bar(
-            [b + i * 0.2 for b in bins],
-            heights,
-            width=0.18,
-            label=asp,
-            color=colors[i],
-        )
-    ax.set_xlabel("Elevation Bin")
-    ax.set_ylabel("Mean HAND (m)")
-    ax.set_title("Height Above Nearest Drainage by Aspect")
-    ax.legend()
+    aspect_names = params["metadata"]["aspect_names"]
+    bin_labels = range(1, n_bins + 1)
+    bar_width = 0.7 / n_aspects
 
-    ax = axes[0, 1]
-    for i, asp in enumerate(ASPECT_NAMES):
-        distances = [elements[j]["distance"] for j in range(i * 4, (i + 1) * 4)]
-        bins = range(1, 5)
-        ax.bar(
-            [b + i * 0.2 for b in bins],
-            distances,
-            width=0.18,
-            label=asp,
-            color=colors[i],
-        )
-    ax.set_xlabel("Elevation Bin")
-    ax.set_ylabel("Mean DTND (m)")
-    ax.set_title("Distance to Nearest Drainage by Aspect")
-    ax.legend()
-
-    ax = axes[1, 0]
-    for i, asp in enumerate(ASPECT_NAMES):
-        areas = [elements[j]["area"] / 1e6 for j in range(i * 4, (i + 1) * 4)]
-        bins = range(1, 5)
-        ax.bar(
-            [b + i * 0.2 for b in bins],
-            areas,
-            width=0.18,
-            label=asp,
-            color=colors[i],
-        )
-    ax.set_xlabel("Elevation Bin")
-    ax.set_ylabel("Area (km^2)")
-    ax.set_title("Hillslope Element Area by Aspect")
-    ax.legend()
-
-    ax = axes[1, 1]
-    for i, asp in enumerate(ASPECT_NAMES):
-        widths = [elements[j]["width"] for j in range(i * 4, (i + 1) * 4)]
-        bins = range(1, 5)
-        ax.bar(
-            [b + i * 0.2 for b in bins],
-            widths,
-            width=0.18,
-            label=asp,
-            color=colors[i],
-        )
-    ax.set_xlabel("Elevation Bin")
-    ax.set_ylabel("Width (m)")
-    ax.set_title("Lower Edge Width by Aspect")
-    ax.legend()
+    for panel_idx, (ax, key, ylabel, title) in enumerate(
+        [
+            (axes[0, 0], "height", "Mean HAND (m)", "Height Above Nearest Drainage"),
+            (axes[0, 1], "distance", "Mean DTND (m)", "Distance to Nearest Drainage"),
+            (axes[1, 0], "area", "Area (km^2)", "Hillslope Element Area"),
+            (axes[1, 1], "width", "Width (m)", "Lower Edge Width"),
+        ]
+    ):
+        for i, asp in enumerate(aspect_names):
+            start = i * n_bins
+            values = [elements[j][key] for j in range(start, start + n_bins)]
+            if key == "area":
+                values = [v / 1e6 for v in values]
+            ax.bar(
+                [b + i * bar_width for b in bin_labels],
+                values,
+                width=bar_width * 0.9,
+                label=asp,
+                color=colors[i],
+            )
+        ax.set_xlabel("Elevation Bin")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        if n_aspects > 1:
+            ax.legend()
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -526,9 +497,9 @@ def write_hillslope_netcdf(
 
     elements = params["elements"]
 
-    n_columns = 16
-    n_aspects = 4
-    n_bins = 4
+    n_aspects = params["metadata"]["n_aspect_bins"]
+    n_bins = params["metadata"]["n_hand_bins"]
+    n_columns = n_aspects * n_bins
 
     elevation = np.zeros(n_columns)
     distance = np.zeros(n_columns)
@@ -565,7 +536,7 @@ def write_hillslope_netcdf(
         if bin_idx == 0:
             downhill_column_index[i] = -9999
         else:
-            downhill_column_index[i] = i  # 0-indexed previous column
+            downhill_column_index[i] = i  # 1-indexed column_index of previous column
 
     pct_hillslope = np.zeros(n_aspects)
     total_area_m2 = sum(elem["area"] for elem in elements)
@@ -574,7 +545,7 @@ def write_hillslope_netcdf(
         if total_area_m2 > 0:
             pct_hillslope[asp_idx] = 100.0 * asp_area / total_area_m2
         else:
-            pct_hillslope[asp_idx] = 25.0
+            pct_hillslope[asp_idx] = 100.0 / n_aspects
 
     # Placeholder — matches Swenson (all zeros). Under the current osbs2
     # config (hillslope_soil_profile_method='Uniform'), CTSM never reads
@@ -1127,7 +1098,10 @@ def main():
         "fdir", "channel_mask", "bank_mask", dirmap=DIRMAP, routing="d8"
     )
 
-    # Catchment-level aspect averaging (Swenson rh:1725-1751)
+    # Catchment-level aspect averaging (Swenson rh:1725-1751).
+    # Still applied with 1-aspect binning: replaces per-pixel aspect noise with
+    # catchment-side circular means, improving the per-element mean_aspect stored
+    # in the NetCDF (used by CTSM for insolation correction via shr_orb_cosinc).
     print_progress("  Averaging aspect within catchment sides...")
     aspect = catchment_mean_aspect(
         np.array(grid.drainage_id), aspect, np.array(grid.hillslope)
@@ -1150,7 +1124,9 @@ def main():
     # =========================================================================
     # Step 5: Hillslope Parameter Computation
     # =========================================================================
-    print_section("Step 5: Hillslope Parameters (16 elements)")
+    print_section(
+        f"Step 5: Hillslope Parameters ({N_ASPECT_BINS * N_HAND_BINS} elements)"
+    )
 
     t0 = time.time()
 
@@ -1232,10 +1208,8 @@ def main():
 
     # --- 5b: HAND bins ---
     print_progress("  Computing HAND bins...")
-    hand_bounds = compute_hand_bins(
-        hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
-    )
-    print_progress(f"    HAND bins: {hand_bounds[:4]}")
+    hand_bounds = compute_hand_bins_log(hand_flat, n_bins=N_HAND_BINS)
+    print_progress(f"    HAND bins ({len(hand_bounds) - 1}): {hand_bounds}")
 
     # --- 5c: Per-aspect parameter computation ---
     params = {
@@ -1264,6 +1238,7 @@ def main():
         "width": 0,
     }
 
+    # For 1x8 config: loops once with asp_bin=(0,360), capturing all pixels.
     for asp_idx, (asp_bin, asp_name) in enumerate(zip(ASPECT_BINS, ASPECT_NAMES)):
         print_progress(f"  Processing {asp_name} aspect...")
 
@@ -1337,7 +1312,7 @@ def main():
         area_fractions = (
             [a / total_raw for a in bin_raw_areas]
             if total_raw > 0
-            else [0.25] * N_HAND_BINS
+            else [1.0 / N_HAND_BINS] * N_HAND_BINS
         )
         fitted_areas = [trap_area * frac for frac in area_fractions]
 
@@ -1356,7 +1331,9 @@ def main():
                         "distance": 0,
                         "area": 0,
                         "slope": 0,
-                        "aspect": float((asp_bin[0] + asp_bin[1]) / 2 % 360),
+                        "aspect": float(
+                            (asp_bin[0] + asp_bin[1]) / 2 % 360
+                        ),  # 180 for (0,360)
                         "width": 0,
                     }
                 )
@@ -1376,6 +1353,7 @@ def main():
 
             mean_hand = float(np.mean(hand_flat[bin_indices]))
             mean_slope = float(np.nanmean(slope_flat[bin_indices]))
+            # With 1-aspect, averages all pixel aspects in this HAND bin.
             mean_aspect = circular_mean_aspect(aspect_flat[bin_indices])
             dtnd_sorted = np.sort(dtnd_flat[bin_indices])
             median_dtnd = float(dtnd_sorted[len(dtnd_sorted) // 2])
@@ -1520,7 +1498,7 @@ def main():
         f.write(f"  Median: {np.median(hand_positive):.1f} m\n")
         f.write(f"  HAND bins: {hand_bounds.tolist()}\n\n")
 
-        f.write("Hillslope Elements (16 total):\n")
+        f.write(f"Hillslope Elements ({N_ASPECT_BINS * N_HAND_BINS} total):\n")
         f.write("-" * 60 + "\n")
         f.write(
             f"{'Aspect':<10} {'Bin':<5} {'Height':<8} "

@@ -25,9 +25,9 @@ conda activate ctsm
 
 export PYTHONPATH="${PYSHEDS_FORK}:${PYTHONPATH:-}"
 export TILE_RANGES="R4C5-R12C14"
-export OUTPUT_DESCRIPTOR="tier3_contiguous"
+export OUTPUT_DESCRIPTOR="tier3_contiguous_1x8"
 
-echo "=== OSBS Hillslope Pipeline — Tier 3 (Full contiguous) ==="
+echo "=== OSBS Hillslope Pipeline — Tier 3 (Full contiguous, 1x8 log-spaced) ==="
 echo "Date: $(date)"
 echo "Job ID: ${SLURM_JOB_ID:-interactive}"
 echo "Node: ${SLURMD_NODENAME:-$(hostname)}"
