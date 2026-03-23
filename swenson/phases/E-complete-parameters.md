@@ -17,15 +17,16 @@ Stream slope now computed from actual network. Depth and width use interim power
 
 ## Tasks
 
-- [ ] Compute stream slope from actual stream network elevation profile
-- [ ] Research stream depth/width — regional empirical relationships or MERIT Hydro
-- [ ] Research bedrock depth — check CTSM behavior with different values, identify data source
 - [x] Hillslope structure decision: 1 aspect x 8 log-spaced HAND bins (see `docs/hillslope-binning-rationale.md`)
+- [x] Stream slope from actual network (implemented in run_pipeline.py line 1415)
+- [x] Bedrock depth: zeros matching Swenson reference (commit 11f465e)
+- [x] NEON slope/aspect decision: use NEON DP3.30025.001 products directly (PI approved 2026-03-23). Comparison: slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
+- [ ] Implement NEON slope/aspect ingestion in pipeline (replace pgrid slope_aspect call)
+- [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law)
 - [ ] PI consultation on remaining open questions:
   - DEM conditioning approach (fill all vs. preserve real closed basins)
   - Final study boundary (interior tiles default, any adjustments?)
   - Stream channel parameter methodology
-  - NEON slope/aspect products (DP3.30025.001) as validation baseline
 
 ## Deliverable
 
