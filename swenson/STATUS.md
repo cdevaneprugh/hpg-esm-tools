@@ -62,6 +62,18 @@ This gives confidence that the *approach* is correct — we understand Swenson's
 - **`spatial_scale.py`**: FFT-based Lc computation, dual-CRS (geographic + UTM)
 - **`dem_processing.py`**: Basin detection, open water identification
 
+### NEON slope/aspect products adopted (Phase E)
+
+PI approved using NEON DP3.30025.001 slope/aspect products directly, replacing pgrid Horn 1981 computation on the raw DTM. Scientific rationale:
+
+1. **Reduced TIN interpolation noise on flat terrain.** NEON applies a 3x3 pre-filter before Horn 1981. OSBS is low-relief — flat areas dominate, and raw 1m gradients are noisiest there. The +0.008 m/m slope bias (pgrid steeper) is consistent with pgrid amplifying noise that NEON smooths.
+2. **No border artifacts.** NEON computes with 20m tile-edge buffer — all pixels have valid slope/aspect. pgrid zeros the outermost pixel ring (Horn 1981 3x3 stencil).
+3. **Authoritative provenance.** Published, versioned data product with ATBD (NEON.DOC.003791vB). Citable source vs local computation.
+4. **Better aspect on flat terrain.** Pre-smoothing gives physically meaningful aspect values where raw gradients are noise-dominated. Matters for catchment-mean aspect used by CTSM insolation correction (shr_orb_cosinc).
+5. **Consistency with DTM product.** Both from same LIDAR collection and processing pipeline.
+
+Comparison across 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84. See `output/osbs/slope_aspect_comparison/`.
+
 ---
 
 ## Problems, In Order of Importance

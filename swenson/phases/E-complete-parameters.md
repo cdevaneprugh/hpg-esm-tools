@@ -17,11 +17,17 @@ Stream slope now computed from actual network. Depth and width use interim power
 
 ## Tasks
 
-- [x] Hillslope structure decision: 1 aspect x 8 log-spaced HAND bins (see `docs/hillslope-binning-rationale.md`)
+- [x] Hillslope structure decision: 1 aspect x 8 bins (see `docs/hillslope-binning-rationale.md`). Interim: equal-area bins until water masking is implemented. Log spacing deferred — lowest bins contaminated by unmasked lake pixels (Q1 HAND ~ 4e-6 m).
 - [x] Stream slope from actual network (implemented in run_pipeline.py line 1415)
 - [x] Bedrock depth: zeros matching Swenson reference (commit 11f465e)
 - [x] NEON slope/aspect decision: use NEON DP3.30025.001 products directly (PI approved 2026-03-23). Comparison: slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
-- [ ] Implement NEON slope/aspect ingestion in pipeline (replace pgrid slope_aspect call)
+- [ ] Implement NEON slope/aspect ingestion in pipeline:
+  - [ ] Create one-time slope/aspect mosaics for production domain (R4C5-R12C14), saved to `data/mosaics/`
+  - [ ] Add mosaic loading to pipeline — load NEON slope/aspect after DTM, convert slope degrees to m/m via `tan(deg * pi/180)`
+  - [ ] Remove `grid.slope_aspect("dem")` call (line 938) — replace with loaded NEON arrays
+  - [ ] Verify `identify_open_water(slope)` works with NEON slope (threshold may need adjustment due to pre-smoothing)
+  - [ ] Tier 1 (R6C10) comparison: old pgrid vs new NEON slope/aspect — compare 6 hillslope parameters
+  - [ ] Production run with NEON slope/aspect
 - [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law)
 - [ ] PI consultation on remaining open questions:
   - DEM conditioning approach (fill all vs. preserve real closed basins)
