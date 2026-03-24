@@ -8,7 +8,7 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Remaining work is in Phase E (parameter completion).** Hillslope structure has been switched to 1x8 log-spaced HAND bins. Stream channel parameters use interim power-law scaling. DEM conditioning approach, study boundary, and NEON slope/aspect adoption are open questions for the PI. Phase F (CTSM validation) follows.
+**Remaining work is in Phase E (parameter completion).** Hillslope structure is 1 aspect x 4 equal-area HAND bins (Swenson's method, interim while water masking is developed). NEON slope/aspect products adopted. Stream channel parameters use interim power-law scaling. DEM conditioning and study boundary are open questions for the PI. Phase F (CTSM validation) follows.
 
 ---
 
@@ -373,7 +373,7 @@ Both the spatial scale analysis functions and the hillslope computation function
 **Status: In progress.** Hillslope structure decision made. Stream and remaining parameters pending.
 
 **Completed:**
-- [x] Hillslope structure: switched to 1x8 log-spaced HAND bins (2026-03-19). See `docs/hillslope-binning-rationale.md`.
+- [x] Hillslope structure: 1 aspect x 4 equal-area HAND bins (interim, 2026-03-24). Log-spaced bins deferred until water masking addresses lake pixel contamination. See `docs/hillslope-binning-rationale.md`.
 - [x] NEON slope/aspect comparison (2026-03-23): slope r=0.91, aspect circ_r=0.84. Decision pending.
 
 **Remaining:**
@@ -445,7 +445,7 @@ From `progress-tracking.md`, mapped to current phase structure:
 | 2. Port Swenson functions | Complete | pgrid.py copied, tests passing |
 | 3. Validate against published | Complete | 5/6 params >0.95 correlation |
 | 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
-| 5. Generate final dataset (Phase E) | **In progress** | 1x8 binning adopted, stream params interim, NEON comparison done |
+| 5. Generate final dataset (Phase E) | **In progress** | 1x4 equal-area bins (interim), NEON slope/aspect adopted, stream params interim |
 | 6. CTSM validation (Phase F) | Pending | Depends on Phase E completion |
 
 The pipeline produces scientifically defensible output. Remaining work is parameter completion (Phase E) and CTSM validation (Phase F).

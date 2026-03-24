@@ -19,10 +19,10 @@ Phase decisions baked in:
   - Phase E: NEON DP3.30025.001 slope/aspect replaces pgrid computation
 
 Configuration:
-    Set MOSAIC_PATH below to select the input DEM:
-      - Production (default): data/mosaics/OSBS_production.tif (90 tiles, R4C5-R12C14)
-      - Smoke test: data/neon/dtm/NEON_D03_OSBS_DP3_404000_3286000_DTM.tif (R6C10)
-    The mosaic must be contiguous (no nodata pixels).
+    Set MOSAIC_DIR below to select the input mosaics (DTM, slope, aspect):
+      - Production (default): data/mosaics/production/ (90 tiles, R4C5-R12C14)
+      - Smoke test: point individual paths at single NEON tiles (R6C10)
+    The mosaics must be contiguous (no nodata pixels).
 
 Usage:
     python scripts/osbs/run_pipeline.py
@@ -60,7 +60,8 @@ from dem_processing import identify_basins, identify_open_water  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
-    compute_hand_bins_log,
+    compute_hand_bins,
+    compute_hand_bins_log,  # noqa: F401 — retained for future use
     fit_trapezoidal_width,
     get_aspect_mask,
     quadratic,
@@ -80,13 +81,12 @@ NODATA_VALUE = -9999  # standardized nodata sentinel
 NODATA_THRESHOLD = -9000  # threshold for valid data detection in GeoTIFFs
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)  # D8 flow direction mapping
 
-# Hillslope binning (1 aspect x 8 log-spaced HAND bins)
-# See docs/hillslope-binning-rationale.md for justification.
+# Hillslope binning (1 aspect x 4 equal-area HAND bins)
+# Interim: using Swenson's equal-area bins while water masking is developed.
+# Log-spaced bins deferred — lowest bins contaminated by unmasked lake pixels.
 N_ASPECT_BINS = 1
-N_HAND_BINS = 8
-LOWEST_BIN_MAX = (
-    2.0  # meters (Swenson constraint, satisfied by design with log spacing)
-)
+N_HAND_BINS = 4
+LOWEST_BIN_MAX = 2.0  # meters (Swenson constraint)
 ASPECT_BINS = [(0, 360)]
 ASPECT_NAMES = ["All"]
 
@@ -975,7 +975,9 @@ def main():
 
     # --- 5b: HAND bins ---
     print_progress("  Computing HAND bins...")
-    hand_bounds = compute_hand_bins_log(hand_flat, n_bins=N_HAND_BINS)
+    hand_bounds = compute_hand_bins(
+        hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
+    )
     print_progress(f"    HAND bins ({len(hand_bounds) - 1}): {hand_bounds}")
 
     # --- 5c: Per-aspect parameter computation ---

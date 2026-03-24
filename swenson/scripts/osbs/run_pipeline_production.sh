@@ -11,8 +11,8 @@
 #SBATCH --qos=gerber-b
 
 # Production run: R4C5-R12C14 (90 tiles, 9x10 km)
-# Requires: data/mosaics/OSBS_production.tif
-# MOSAIC_PATH in run_pipeline.py must point to the production mosaic (default).
+# Requires: data/mosaics/production/ (dtm.tif, slope.tif, aspect.tif)
+# MOSAIC_DIR in run_pipeline.py must point to the production directory (default).
 
 set -euo pipefail
 

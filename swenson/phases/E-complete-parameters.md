@@ -68,3 +68,15 @@ documented in STATUS.md.
 Also refactored pipeline: removed mosaic creation bloat (-242 lines), dead code cleanup
 (-33 lines), renamed tier3 to production. Pipeline is now 1261 lines (down from 1536).
 
+### 2026-03-24: Switch to 1x4 equal-area bins (interim)
+
+Switched from 1x8 log-spaced bins to 1x4 equal-area bins (Swenson's `compute_hand_bins()`).
+Log-spaced bins are deferred until water masking addresses lake pixel contamination in the
+lowest HAND bins (Q1 ~ 4e-6 m from resolve_flats micro-gradients on flat water surfaces).
+
+The 4 equal-area bins provide a direct comparison baseline against the existing 4x4 tier 3
+runs. HAND boundaries should be identical; height/distance/width/area should match the
+aspect-averaged 4x4 values. Slope/aspect will differ (NEON vs pgrid source).
+
+`compute_hand_bins_log()` retained in hillslope_params.py for future use.
+
