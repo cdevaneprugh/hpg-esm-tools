@@ -46,7 +46,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 from pyproj import Proj as PyprojProj
-from scipy.ndimage import binary_dilation
 
 # Add pysheds fork to path
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
@@ -752,14 +751,6 @@ def main():
     print_progress(
         f"  NWI water mask: {n_water:,} px ({100 * n_water / water_mask.size:.1f}%)"
     )
-    if n_water > 0:
-        dilated = binary_dilation(water_mask > 0, structure=np.ones((5, 5))).astype(
-            np.uint8
-        )
-        water_boundary = dilated - (water_mask > 0).astype(np.uint8)
-    else:
-        water_boundary = np.zeros_like(water_mask)
-    print_progress(f"    Boundary pixels: {int(np.sum(water_boundary > 0)):,}")
 
     # Lower water pixels in flooded DEM to force flow through them
     flooded_arr = np.array(grid.flooded)
@@ -793,33 +784,14 @@ def main():
     print_progress("  Computing flow direction...")
     grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP, routing="d8")
 
-    # Re-mask water after flowdir, before accumulation
-    inflated_arr = np.array(grid.inflated)
-    inflated_arr[water_mask > 0] = np.nan
-    grid.add_gridded_data(
-        inflated_arr,
-        data_name="inflated",
-        affine=grid.affine,
-        crs=grid.crs,
-        nodata=grid.nodata,
-    )
+    # Water pixels stay finite in inflated DEM (no NaN masking).
+    # They participate in HAND computation via the wide channel mask.
 
     print_progress("  Computing flow accumulation...")
     grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP, routing="d8")
 
-    # Force water boundaries into stream network
-    acc_arr = np.array(grid.acc)
-    acc_arr[water_boundary > 0] = accum_threshold + 1
-    grid.add_gridded_data(
-        acc_arr,
-        data_name="acc",
-        affine=grid.affine,
-        crs=grid.crs,
-        nodata=grid.nodata,
-    )
-
     # A_thresh safety valve
-    max_acc = np.nanmax(acc_arr)
+    max_acc = np.nanmax(np.array(grid.acc))
     if max_acc < accum_threshold:
         old_thresh = accum_threshold
         accum_threshold = int(max_acc / 100)
@@ -865,18 +837,45 @@ def main():
 
     t0 = time.time()
 
-    # HAND/DTND from inflated DEM (hydrological DTND, Phase A UTM-aware)
-    print_progress("  Computing HAND/DTND...")
+    # --- Wide channel mask for HAND (natural streams + lake pixels) ---
+    # Natural channel mask defines catchments; wide mask defines HAND reference.
+    # Lake pixels are "stream" for HAND so land near lakes gets HAND relative
+    # to lake surface. Lake pixels themselves get HAND=0.
+    wide_channel_mask = (np.array(grid.channel_mask) > 0) | (water_mask > 0)
+    wide_channel_id = np.array(grid.channel_id).copy()
+    water_not_stream = (water_mask > 0) & (np.array(grid.channel_mask) == 0)
+    wide_channel_id[water_not_stream] = 0  # dummy ID for lake pixels
+
+    n_natural = int(np.sum(np.array(grid.channel_mask) > 0))
+    n_wide = int(np.sum(wide_channel_mask > 0))
+    n_dummy = int(np.sum(water_not_stream))
+    print_progress(f"  Natural stream pixels: {n_natural:,}")
+    print_progress(f"  Wide mask pixels (natural + lake): {n_wide:,}")
+    print_progress(f"  Lake pixels with dummy channel_id: {n_dummy:,}")
+
+    # HAND/DTND using wide mask (hydrological DTND, Phase A UTM-aware)
+    print_progress("  Computing HAND/DTND (wide mask)...")
     grid.compute_hand(
         "fdir",
         "inflated",
-        grid.channel_mask,
-        grid.channel_id,
+        wide_channel_mask,
+        wide_channel_id,
         dirmap=DIRMAP,
         routing="d8",
     )
     hand = np.array(grid.hand)
     dtnd = np.array(grid.dtnd)
+
+    # HAND diagnostics split by pixel type
+    hand_flat_diag = hand.flatten()
+    water_flat_diag = water_mask.flatten()
+    n_land_pos = int(np.sum((hand_flat_diag > 0) & np.isfinite(hand_flat_diag)))
+    n_lake_zero = int(np.sum((water_flat_diag > 0) & (hand_flat_diag == 0)))
+    n_nan = int(np.sum(np.isnan(hand_flat_diag)))
+    print_progress(
+        f"  HAND breakdown: land(>0)={n_land_pos:,}, "
+        f"lake(=0)={n_lake_zero:,}, NaN={n_nan:,}"
+    )
 
     hand_positive = hand[(hand > 0) & np.isfinite(hand)]
     dtnd_positive = dtnd[dtnd > 0]
@@ -929,29 +928,10 @@ def main():
 
     # --- 5a: Filtering ---
 
-    # Flood filter: mark NWI water pixels with low HAND as invalid
-    # (Most water pixels already have NaN HAND from the NaN masking after flowdir.
-    # This catches edge pixels that weren't NaN'd — belt-and-suspenders safety valve.)
-    water_mask_flat = water_mask.flatten()
-    n_water_total = int(np.sum(water_mask_flat > 0))
-    if n_water_total > 0:
-        hand_flat_temp = hand.flatten().copy()
-        water_low_hand = (water_mask_flat == 1) & (hand_flat_temp < 2.0)
-        n_marked = int(np.sum(water_low_hand))
-        if n_marked > 0 and n_marked / n_water_total < 0.95:
-            hand_flat_temp[water_low_hand] = -1
-            print_progress(
-                f"    Flood filter: {n_marked:,} water pixels with "
-                f"HAND < 2.0 m marked invalid"
-            )
-            hand = hand_flat_temp.reshape(hand.shape)
-        elif n_marked > 0:
-            print_progress(
-                f"    Flood filter: skipped ({n_marked:,}/{n_water_total:,} = "
-                f"{100 * n_marked / n_water_total:.0f}% exceeds 95% safety threshold)"
-            )
-        else:
-            print_progress("    Flood filter: no water pixels with finite HAND < 2.0")
+    # Water diagnostic: with dual-mask approach, water pixels have HAND=0
+    # (they are "stream" in the wide mask). Excluded from stats at valid filter.
+    n_water_hand0 = int(np.sum((water_mask.flatten() > 0) & (hand.flatten() == 0)))
+    print_progress(f"    Water pixels with HAND=0: {n_water_hand0:,}")
 
     # Flatten all fields
     hand_flat = hand.flatten()
@@ -961,16 +941,15 @@ def main():
     pixel_area = PIXEL_SIZE * PIXEL_SIZE
     area_flat = np.full(hand_flat.shape, pixel_area)
 
-    # DTND tail removal — applied BEFORE basin masking and DTND clip, matching
-    # Swenson's order (rh:666-676). Basin pixels with long flow paths should be
-    # included in the exponential fit so the tail threshold accounts for them.
-    # This matters once synthetic lake bottoms / basin detection is active.
-    finite_hand = np.isfinite(hand_flat)
-    tail_ind = tail_index(dtnd_flat[finite_hand], hand_flat[finite_hand])
-    finite_indices = np.where(finite_hand)[0]
+    # DTND tail removal — exclude water pixels (HAND=0, DTND=0) before fitting
+    # the exponential tail. 10.7M zero-DTND pixels would skew the fit.
+    water_mask_flat = water_mask.flatten()
+    land_finite = np.isfinite(hand_flat) & (water_mask_flat == 0)
+    tail_ind = tail_index(dtnd_flat[land_finite], hand_flat[land_finite])
+    land_indices = np.where(land_finite)[0]
     keep_tail = np.zeros(hand_flat.shape, dtype=bool)
-    keep_tail[finite_indices[tail_ind]] = True
-    n_removed = int(np.sum(finite_hand) - np.sum(keep_tail))
+    keep_tail[land_indices[tail_ind]] = True
+    n_removed = int(np.sum(land_finite) - np.sum(keep_tail))
     print_progress(f"    DTND tail removal: {n_removed} px removed")
 
     # DTND minimum clip (Swenson rh:699-700)
@@ -979,6 +958,12 @@ def main():
 
     # Valid mask: tail-filtered pixels with finite HAND
     valid = keep_tail.copy()
+
+    # Water masking: exclude NWI water pixels from hillslope statistics
+    n_water_in_tail = int(np.sum((water_mask_flat > 0) & keep_tail))
+    valid = valid & (water_mask_flat == 0)
+    if n_water_in_tail > 0:
+        print_progress(f"    Water masking: {n_water_in_tail:,} px excluded")
 
     # Basin masking: remove pre-conditioning basin pixels
     basin_pre_flat = basin_pre_mask.flatten()
