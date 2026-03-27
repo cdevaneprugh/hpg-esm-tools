@@ -29,6 +29,7 @@ dependencies:
   - rasterio>=1.3.0       # Raster I/O
   - geojson>=3.0.0        # GeoJSON handling
   - pyproj>=3.6.0         # Coordinate transformations
+  - geopandas>=0.14.0     # Vector data (NWI shapefiles, water masking)
   - scikit-image>=0.22.0  # Image processing for basin detection
   - numba>=0.59.0         # JIT compilation (required by pysheds)
   - looseversion          # Version comparison (required by pysheds)

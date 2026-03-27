@@ -28,6 +28,9 @@ Stream slope now computed from actual network. Depth and width use interim power
   - [x] Verify `identify_open_water(slope)` works with NEON slope (still 0 detections at 1m — unchanged)
   - [x] Smoke test (R6C10): slope ~0.008 m/m lower (NEON smoother), height/distance/width/area identical
   - [x] Production run: 23.4 min, all parameters correct, slope differences consistent with pre-smoothing
+- [x] NWI water mask: download, filter, rasterize, visualize (2026-03-24)
+- [ ] Integrate water mask into pipeline (exclude masked pixels from HAND binning)
+- [ ] Re-evaluate log-spaced HAND bins with water masking in place
 - [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law)
 - [ ] PI consultation on remaining open questions:
   - DEM conditioning approach (fill all vs. preserve real closed basins)
@@ -80,3 +83,23 @@ aspect-averaged 4x4 values. Slope/aspect will differ (NEON vs pgrid source).
 
 `compute_hand_bins_log()` retained in hillslope_params.py for future use.
 
+### 2026-03-24: NWI water mask created
+
+Downloaded NWI data for Lower St. Johns Watershed (HU8_03080103, 57,213 features).
+Filtered to open water: Lacustrine (`L*`) and Palustrine Unconsolidated Bottom (`PUB*`)
+— 103 features in production domain. Excludes forested/emergent/shrub wetlands per PI
+preference ("just the actual open water").
+
+Rasterized onto the production DTM grid (`data/mosaics/production/water_mask.tif`):
+10.7M water pixels (11.9% of domain), 1068 ha. Verified alignment with DEM hillshade
+and Google Earth (KML export). Fixed two coordinate issues found during development:
+1. Perimeter KML grid origin off by one row (TILE_GRID_ORIGIN_NORTHING 3292000 -> 3293000)
+2. NWI KML clip must happen in UTM, not WGS84 (UTM rectangle != WGS84 rectangle, up to 86m
+   boundary mismatch at NW corner)
+
+New scripts:
+- `scripts/osbs/generate_water_mask.py` — one-time rasterization
+- `scripts/osbs/overlay_nwi_water.py` — hillshade + mask overlay visualization
+- `scripts/visualization/export_nwi_water_kml.py` — KML export for Google Earth
+
+Next: integrate mask into pipeline, then re-evaluate log-spaced bins.

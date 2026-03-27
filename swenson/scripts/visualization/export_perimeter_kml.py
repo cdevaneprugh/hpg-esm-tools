@@ -24,22 +24,17 @@ SCRIPT_DIR = Path(__file__).parent
 BASE_DIR = SCRIPT_DIR.parent.parent  # swenson/
 
 # Default output
-DEFAULT_OUTPUT = BASE_DIR / "output" / "google-earth" / "osbs_trimmed_perimeter.kml"
+DEFAULT_OUTPUT = BASE_DIR / "output" / "google-earth" / "osbs_production_perimeter.kml"
 
 # Tile grid parameters (from tile_grid.md)
 TILE_GRID_ORIGIN_EASTING = 394000  # UTM easting for column 0
-TILE_GRID_ORIGIN_NORTHING = 3292000  # UTM northing for row 0
+TILE_GRID_ORIGIN_NORTHING = (
+    3293000  # UTM northing of grid top edge (row 0 SW = this - 1000)
+)
 TILE_SIZE = 1000  # meters per tile
 
-# Tile selection (same format as run_pipeline.py INTERIOR_TILE_RANGES)
-TILE_RANGES = [
-    "R4C10-R4C12",  # 3 tiles
-    "R5C9-R5C12",  # 4 tiles
-    "R6C9-R6C14",  # 6 tiles
-    "R7C7-R7C14",  # 8 tiles
-    "R8C6-R8C14",  # 9 tiles
-    "R9C6-R9C14",  # 9 tiles
-]
+# Production domain (R4-R12, C5-C14): 90 tiles, 9x10 km
+TILE_RANGES = ["R4C5-R12C14"]
 
 
 def parse_tile_range(range_str: str) -> list[tuple[int, int]]:
@@ -193,16 +188,10 @@ def generate_kml(polygon_utm: list[tuple[int, int]], output_path: Path) -> None:
     kml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>OSBS Trimmed Selection Perimeter</name>
-    <description>Outer perimeter of selected tiles for hillslope analysis</description>
+    <name>OSBS Production Domain Perimeter</name>
+    <description>Outer perimeter of production domain (R4-R12, C5-C14, 90 tiles)</description>
 
-    <!-- Style for perimeter (red outline, no fill) -->
     <Style id="perimeterStyle">
-      <PolyStyle>
-        <color>00000000</color>
-        <fill>0</fill>
-        <outline>1</outline>
-      </PolyStyle>
       <LineStyle>
         <color>ff0000ff</color>
         <width>4</width>
@@ -211,16 +200,12 @@ def generate_kml(polygon_utm: list[tuple[int, int]], output_path: Path) -> None:
 
     <Placemark>
       <name>Selection Perimeter</name>
-      <description>Outer boundary of the trimmed tile selection (39 tiles)</description>
+      <description>Outer boundary of the production domain (90 tiles)</description>
       <styleUrl>#perimeterStyle</styleUrl>
-      <Polygon>
+      <LineString>
         <tessellate>1</tessellate>
-        <outerBoundaryIs>
-          <LinearRing>
-            <coordinates>{coords_str}</coordinates>
-          </LinearRing>
-        </outerBoundaryIs>
-      </Polygon>
+        <coordinates>{coords_str}</coordinates>
+      </LineString>
     </Placemark>
 
   </Document>

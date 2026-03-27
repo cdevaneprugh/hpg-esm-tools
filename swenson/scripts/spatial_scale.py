@@ -575,6 +575,7 @@ def identify_spatial_scale_laplacian_dem(
     blend_edges_n: int | None = None,
     zero_edges_n: int | None = None,
     min_wavelength: float | None = None,
+    laplacian_mask: np.ndarray | None = None,
 ) -> dict:
     """
     Identify the spatial scale at which the input DEM exhibits the
@@ -629,6 +630,10 @@ def identify_spatial_scale_laplacian_dem(
         Zero-edge window size in pixels. Defaults: 5 (geographic), 50 (UTM).
     min_wavelength : float, optional
         Minimum wavelength in pixels passed to _locate_peak. Default: 1.
+    laplacian_mask : np.ndarray, optional
+        Boolean or uint8 mask (same shape as elev). Where mask is True (or 1),
+        the Laplacian is zeroed before the FFT. Useful for suppressing lake
+        pixel signals. Default: None (no masking).
 
     Returns
     -------
@@ -762,6 +767,13 @@ def identify_spatial_scale_laplacian_dem(
         laplac[:, -n:] = 0
         if verbose:
             print(f"  Edges zeroed (window={n})")
+
+    # --- Laplacian masking (optional) ---
+    if laplacian_mask is not None:
+        laplac[laplacian_mask.astype(bool)] = 0
+        if verbose:
+            n_masked = int(np.sum(laplacian_mask.astype(bool)))
+            print(f"  Laplacian masked: {n_masked:,} pixels zeroed")
 
     # --- 2D FFT ---
     laplac_fft = np.fft.rfft2(laplac, norm="ortho")
