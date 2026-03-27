@@ -46,6 +46,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 from pyproj import Proj as PyprojProj
+from scipy.ndimage import binary_dilation
 
 # Add pysheds fork to path
 pysheds_fork = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
@@ -56,7 +57,7 @@ from pysheds.pgrid import Grid  # noqa: E402
 # Add parent directory for shared module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dem_processing import identify_basins, identify_open_water  # noqa: E402
+from dem_processing import identify_basins  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
@@ -106,6 +107,7 @@ MOSAIC_DIR = DATA_DIR / "mosaics" / "production"
 MOSAIC_PATH = MOSAIC_DIR / "dtm.tif"
 SLOPE_MOSAIC_PATH = MOSAIC_DIR / "slope.tif"
 ASPECT_MOSAIC_PATH = MOSAIC_DIR / "aspect.tif"
+WATER_MASK_PATH = MOSAIC_DIR / "water_mask.tif"
 
 # Output
 OUTPUT_DESCRIPTOR = os.environ.get("OUTPUT_DESCRIPTOR", "production")
@@ -622,6 +624,24 @@ def main():
         f"Shape mismatch: DTM {dem.shape}, slope {slope.shape}, aspect {aspect.shape}"
     )
 
+    # Load NWI water mask (optional — falls back to no masking if absent)
+    if WATER_MASK_PATH.exists():
+        with rasterio.open(WATER_MASK_PATH) as src:
+            water_mask = src.read(1)
+        assert dem.shape == water_mask.shape, (
+            f"Shape mismatch: DTM {dem.shape}, water mask {water_mask.shape}"
+        )
+        n_water_px = int(np.sum(water_mask == 1))
+        print_progress(f"  Water mask: {WATER_MASK_PATH.name}")
+        print_progress(
+            f"    Water pixels: {n_water_px:,} "
+            f"({100 * n_water_px / water_mask.size:.1f}%)"
+        )
+    else:
+        print_progress(f"  WARNING: Water mask not found: {WATER_MASK_PATH}")
+        print_progress("    Proceeding without water masking")
+        water_mask = np.zeros(dem.shape, dtype=np.uint8)
+
     bounds_dict = {
         "west": bounds.left,
         "east": bounds.right,
@@ -727,15 +747,23 @@ def main():
 
     # slope and aspect loaded from NEON mosaics in Step 1 (DP3.30025.001)
 
-    # Open water detection from slope field
-    print_progress("  Detecting open water from slope field...")
-    basin_boundary, basin_mask = identify_open_water(slope)
-    n_water = int(np.sum(basin_mask > 0))
-    print_progress(f"    Open water: {n_water} px")
+    # NWI water mask (loaded in Step 1, replaces slope-based detection)
+    n_water = int(np.sum(water_mask > 0))
+    print_progress(
+        f"  NWI water mask: {n_water:,} px ({100 * n_water / water_mask.size:.1f}%)"
+    )
+    if n_water > 0:
+        dilated = binary_dilation(water_mask > 0, structure=np.ones((5, 5))).astype(
+            np.uint8
+        )
+        water_boundary = dilated - (water_mask > 0).astype(np.uint8)
+    else:
+        water_boundary = np.zeros_like(water_mask)
+    print_progress(f"    Boundary pixels: {int(np.sum(water_boundary > 0)):,}")
 
-    # Lower basin pixels in flooded DEM to force flow through them
+    # Lower water pixels in flooded DEM to force flow through them
     flooded_arr = np.array(grid.flooded)
-    flooded_arr[basin_mask > 0] -= 0.1
+    flooded_arr[water_mask > 0] -= 0.1
     grid.add_gridded_data(
         flooded_arr,
         data_name="flooded",
@@ -765,9 +793,9 @@ def main():
     print_progress("  Computing flow direction...")
     grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP, routing="d8")
 
-    # Re-mask basins after flowdir, before accumulation
+    # Re-mask water after flowdir, before accumulation
     inflated_arr = np.array(grid.inflated)
-    inflated_arr[basin_mask > 0] = np.nan
+    inflated_arr[water_mask > 0] = np.nan
     grid.add_gridded_data(
         inflated_arr,
         data_name="inflated",
@@ -779,9 +807,9 @@ def main():
     print_progress("  Computing flow accumulation...")
     grid.accumulation("fdir", out_name="acc", dirmap=DIRMAP, routing="d8")
 
-    # Force basin boundaries into stream network
+    # Force water boundaries into stream network
     acc_arr = np.array(grid.acc)
-    acc_arr[basin_boundary > 0] = accum_threshold + 1
+    acc_arr[water_boundary > 0] = accum_threshold + 1
     grid.add_gridded_data(
         acc_arr,
         data_name="acc",
@@ -901,22 +929,29 @@ def main():
 
     # --- 5a: Filtering ---
 
-    # Flood filter: mark basin pixels with low HAND as invalid
-    basin_mask_flat = basin_mask.flatten()
-    n_flooded = int(np.sum(basin_mask_flat > 0))
-    if n_flooded > 0:
+    # Flood filter: mark NWI water pixels with low HAND as invalid
+    # (Most water pixels already have NaN HAND from the NaN masking after flowdir.
+    # This catches edge pixels that weren't NaN'd — belt-and-suspenders safety valve.)
+    water_mask_flat = water_mask.flatten()
+    n_water_total = int(np.sum(water_mask_flat > 0))
+    if n_water_total > 0:
         hand_flat_temp = hand.flatten().copy()
-        for ft in np.linspace(0, 20, 50):
-            flooded_low_hand = (basin_mask_flat > ft) & (hand_flat_temp < 2.0)
-            if np.sum(flooded_low_hand) / n_flooded < 0.95:
-                hand_flat_temp[flooded_low_hand] = -1
-                n_marked = int(np.sum(flooded_low_hand))
-                print_progress(
-                    f"    Flood filter: threshold={ft:.2f}, "
-                    f"marked {n_marked} px invalid"
-                )
-                hand = hand_flat_temp.reshape(hand.shape)
-                break
+        water_low_hand = (water_mask_flat == 1) & (hand_flat_temp < 2.0)
+        n_marked = int(np.sum(water_low_hand))
+        if n_marked > 0 and n_marked / n_water_total < 0.95:
+            hand_flat_temp[water_low_hand] = -1
+            print_progress(
+                f"    Flood filter: {n_marked:,} water pixels with "
+                f"HAND < 2.0 m marked invalid"
+            )
+            hand = hand_flat_temp.reshape(hand.shape)
+        elif n_marked > 0:
+            print_progress(
+                f"    Flood filter: skipped ({n_marked:,}/{n_water_total:,} = "
+                f"{100 * n_marked / n_water_total:.0f}% exceeds 95% safety threshold)"
+            )
+        else:
+            print_progress("    Flood filter: no water pixels with finite HAND < 2.0")
 
     # Flatten all fields
     hand_flat = hand.flatten()
