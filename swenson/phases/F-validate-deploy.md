@@ -10,11 +10,9 @@ The final hillslope file needs validation at two levels before use in production
 
 ## Key Context
 
-**osbs2 runs with `use_hillslope_routing = .false.`** — stream channel parameters in the hillslope NetCDF are never read by CTSM. Phase F validation matches this configuration (routing off). Stream params are irrelevant for this comparison.
+**osbs2 runs with `use_hillslope_routing = .false.` and `PCT_LAKE = 0`** (no lake land unit, no stream routing). Phase F validation matches this configuration exactly — the only variable changed is the hillslope file itself. Stream params are irrelevant (never read with routing off).
 
-`PCT_LAKE` should be set from the NWI mask (~12% of the production domain) in the surface dataset so that lake area is represented as a separate land unit with its own hydrology. This is the standard, well-tested approach — lake and hillslope don't interact (no TAI coupling). TAI dynamics require Phase G (CTSM source mods).
-
-Phase F establishes the baseline that Phase G compares against.
+`PCT_LAKE = 0` means there is no separate lake land unit in osbs2. The hillslope occupies 100% of the vegetated landunit. This is already the configuration Phase G needs (lake-within-hillslope via modified stream bucket). Phase F establishes the baseline that Phase G compares against.
 
 ## Tasks
 
@@ -24,9 +22,8 @@ Phase F establishes the baseline that Phase G compares against.
   - Aspect distribution consistent with terrain
   - Stream network aligns with known hydrology
   - HAND values reasonable for low-relief wetlandscape (meters, not hundreds)
-- [ ] Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`
-- [ ] Set `PCT_LAKE` from NWI mask (~12%) in surface dataset
-- [ ] Run short simulation (1-5 years) with custom hillslope file
+- [ ] Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`, `PCT_LAKE = 0`
+- [ ] Run short simulation (1-5 years) with custom hillslope file as the only change
 - [ ] Compare outputs to baseline:
   - Water table depth (ZWT)
   - Soil moisture profiles

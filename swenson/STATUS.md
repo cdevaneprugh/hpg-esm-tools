@@ -416,15 +416,14 @@ Both the spatial scale analysis functions and the hillslope computation function
 
 **Status: Not started.** Blocked by Phase E (log-spaced bin re-evaluation).
 
-**Key context:** osbs2 runs with `use_hillslope_routing = .false.`. Phase F validation will match this configuration — routing off, stream params irrelevant. This establishes a baseline comparison before Phase G enables routing with lake-modified parameters.
+**Key context:** osbs2 runs with `use_hillslope_routing = .false.` and `PCT_LAKE = 0` (no lake land unit). Phase F validation matches this configuration — routing off, stream params irrelevant, no lake land unit. The only variable changed is the hillslope file. This establishes a clean baseline comparison before Phase G enables routing with lake-modified parameters.
 
 **Tasks:**
 1. Compare custom hillslope file to Swenson reference (`hillslopes_osbs_c240416.nc`)
 2. Physical plausibility checks (elevation, aspect distribution, stream network vs known hydrology)
-3. Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`
-4. Set `PCT_LAKE` from NWI mask (~12%) in surface dataset
-5. Run short simulation (1-5 years) with custom hillslope file
-6. Compare outputs to baseline (water table, soil moisture, carbon fluxes)
+3. Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`, `PCT_LAKE = 0`
+4. Run short simulation (1-5 years) with custom hillslope file as the only change
+5. Compare outputs to baseline (water table, soil moisture, carbon fluxes)
 
 **Deliverable:** Validated hillslope file ready for production runs.
 
@@ -499,7 +498,7 @@ From `progress-tracking.md`, mapped to current phase structure:
 | 3. Validate against published | Complete | 5/6 params >0.95 correlation |
 | 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
 | 5. Generate final dataset (Phase E) | **In progress** | PI questions resolved, NEON slope/aspect adopted, NWI water masking complete, log-spaced bin re-evaluation is the only remaining task |
-| 6. CTSM validation (Phase F) | Pending | Validate with `use_hillslope_routing = .false.` (matching osbs2), `PCT_LAKE` from NWI |
+| 6. CTSM validation (Phase F) | Pending | Validate with `use_hillslope_routing = .false.`, `PCT_LAKE = 0` (matching osbs2) |
 | 7. CTSM source mods (Phase G) | Pending | Weir overflow (~70 lines Fortran), lake-in-hillslope, TAI dynamics |
 
 The pipeline produces scientifically defensible output. Phase E is nearly complete (log-spaced bins remaining). Phase F (validation) and Phase G (CTSM lake mods) follow.
