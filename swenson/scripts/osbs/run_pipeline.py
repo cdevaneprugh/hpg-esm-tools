@@ -4,13 +4,13 @@ OSBS Hillslope Pipeline
 
 Computes representative hillslope parameters from 1m NEON LIDAR data for OSBS
 using the Swenson & Lawrence (2025) methodology. Produces CTSM-compatible NetCDF
-output with 8 hillslope columns (1 aspect x 8 log-spaced elevation bins).
+output with 4 hillslope columns (1 aspect x 4 equal-area HAND bins, NWI water-masked).
 
 The processing algorithm follows merit_regression.py (the validated source of
 truth), adapted for UTM CRS using shared modules:
   - spatial_scale.py: FFT-based characteristic length scale
   - hillslope_params.py: Binning, trapezoidal fit, width computation
-  - dem_processing.py: Basin detection, open water identification
+  - dem_processing.py: Basin detection
 
 Phase decisions baked in:
   - Phase A: pgrid compute_hand() is UTM-aware

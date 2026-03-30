@@ -1,6 +1,6 @@
 # State of the Union: Swenson Hillslope Implementation for OSBS
 
-Date: 2026-03-23
+Date: 2026-03-30
 
 ## Executive Summary
 
@@ -8,7 +8,7 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Remaining work is in Phase E (parameter completion).** Hillslope structure is 1 aspect x 4 equal-area HAND bins (Swenson's method, interim while water masking is developed). NEON slope/aspect products adopted. Stream channel parameters use interim power-law scaling. DEM conditioning and study boundary are open questions for the PI. Phase F (CTSM validation) follows.
+**Remaining work is in Phase E (parameter completion).** Hillslope structure is 1 aspect x 4 equal-area HAND bins (Swenson's method). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). Log-spaced HAND bins can now be re-evaluated with clean HAND values. NEON slope/aspect products adopted. Stream channel parameters use interim power-law scaling. DEM conditioning and study boundary are open questions for the PI. Phase F (CTSM validation) follows.
 
 ---
 
@@ -73,6 +73,32 @@ PI approved using NEON DP3.30025.001 slope/aspect products directly, replacing p
 5. **Consistency with DTM product.** Both from same LIDAR collection and processing pipeline.
 
 Comparison across 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84. See `output/osbs/slope_aspect_comparison/`.
+
+### NWI water masking implemented (Phase E)
+
+NWI data (HU8_03080103, Lower St. Johns Watershed): 103 open water features in production domain, 10.7M pixels (11.9% of domain). Dual-mask approach solves the lake pixel contamination that blocked log-spaced HAND bins:
+
+1. **Natural stream mask** for catchment delineation — preserves natural catchment structure (~508 hillslopes)
+2. **Wide mask** (natural streams + NWI lake pixels) for HAND computation — land near lakes gets HAND relative to lake surface; lake pixels get HAND=0
+3. **Water pixel exclusion** from HAND binning and DTND tail fitting
+
+**Why boundary forcing fails at 1m:** Swenson's method injects lake boundaries into the stream network. At 1m, lake boundaries are thousands of pixels long, creating thousands of spurious "reaches" that fragment catchments (800 to 222K). The dual-mask approach avoids this by keeping the natural stream network for catchment delineation while treating lake pixels as stream-level reference surfaces for HAND.
+
+**Lc is insensitive to water masking:** Raw DEM gives Lc=356m (lognormal, psharp=3.95). Both masking approaches (mean-fill, zero-Laplacian) destroy the spectral peak (psharp drops to 0). Lake surfaces contribute near-zero Laplacian and do not contaminate the drainage-scale peak. See `output/osbs/water_masking_comparison/`.
+
+**Production results with masking (2026-03-27, commit 8c727ca):**
+
+| Metric | Before masking (03-24) | After masking (03-27) |
+|--------|------------------------|-----------------------|
+| Hillslopes | 759 | 508 |
+| Stream reaches | 778 | 552 |
+| Lowest HAND boundary | 0.00027 m | 0.27 m |
+| HAND median | 1.6 m | 2.3 m |
+| Widths (m) | 381 / 334 / 279 / 211 | 569 / 504 / 429 / 339 |
+| Element areas (m²) | ~28,100 | ~37,700 |
+| Runtime | 20.1 min | 16.4 min |
+
+The lowest HAND boundary improved from 0.00027m (resolve_flats micro-gradient artifact on flat water surfaces) to 0.27m. Widths increased 49-61% because lake pixels no longer dilute the trapezoidal fits.
 
 ---
 
@@ -370,15 +396,17 @@ Both the spatial scale analysis functions and the hillslope computation function
 
 ### Phase E: Complete the parameter set — In Progress
 
-**Status: In progress.** Hillslope structure decision made. Stream and remaining parameters pending.
+**Status: In progress.** Hillslope structure, NEON slope/aspect, and water masking complete. Stream parameters and PI consultation remaining.
 
 **Completed:**
 - [x] Hillslope structure: 1 aspect x 4 equal-area HAND bins (interim, 2026-03-24). Log-spaced bins deferred until water masking addresses lake pixel contamination. See `docs/hillslope-binning-rationale.md`.
-- [x] NEON slope/aspect comparison (2026-03-23): slope r=0.91, aspect circ_r=0.84. Decision pending.
+- [x] NEON slope/aspect: use NEON DP3.30025.001 products directly (PI approved 2026-03-23, implemented commit 73c09fe). Slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
+- [x] NWI water mask integration (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchments, wide mask for HAND. Water pixels excluded from HAND binning and DTND tail fitting. See `phases/E-complete-parameters.md` log.
 
 **Remaining:**
+- [ ] Re-evaluate log-spaced HAND bins — water masking now in place, HAND values clean (lowest boundary 0.27m)
 - [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law scaling)
-- [ ] PI consultation: DEM conditioning approach, final study boundary, NEON slope/aspect adoption
+- [ ] PI consultation: DEM conditioning approach, final study boundary, stream channel methodology
 
 **Deliverable:** Complete set of physically motivated parameters.
 
@@ -417,7 +445,7 @@ These require scientific judgment, not engineering work:
 
 1. **DEM conditioning:** Should we fill all depressions, or is there an approach that preserves real closed basins (sinkholes, wetland depressions)? Standard D8 requires depression-free DEM, but filling at 1m erases features that matter for OSBS hydrology.
 
-2. **Hillslope structure — RESOLVED (1x8 log-spaced, 2026-03-19).** Switched from 4 aspects x 4 equal-area bins (16 columns) to 1 aspect x 8 log-spaced HAND bins (8 columns). Log spacing concentrates bins near the stream where TAI dynamics dominate. See `docs/hillslope-binning-rationale.md` for full justification. CTSM reads `nhillslope` and `nmaxhillcol` dynamically — no Fortran changes needed. MERIT regression test intentionally retains 4x4 structure for validation against Swenson's published data.
+2. **Hillslope structure — IN PROGRESS.** Pipeline currently uses 1 aspect x 4 equal-area HAND bins (Swenson's `compute_hand_bins()`, switched 2026-03-24). The 1x8 log-spaced configuration (2026-03-19) was deferred because unmasked lake pixels contaminated the lowest HAND bins (Q1 ~ 4e-6 m from resolve_flats micro-gradients on flat water surfaces). Now that NWI water masking is in place (2026-03-27, commit 8c727ca) and HAND values are clean (lowest boundary 0.27m), log-spaced bins can be re-evaluated. See `docs/hillslope-binning-rationale.md` for original justification. CTSM reads `nhillslope` and `nmaxhillcol` dynamically — no Fortran changes needed.
 
 3. **Study boundary:** Interior tiles (150 tiles, ~150 km^2) are the current default. Any areas to specifically include or exclude?
 
@@ -445,7 +473,7 @@ From `progress-tracking.md`, mapped to current phase structure:
 | 2. Port Swenson functions | Complete | pgrid.py copied, tests passing |
 | 3. Validate against published | Complete | 5/6 params >0.95 correlation |
 | 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
-| 5. Generate final dataset (Phase E) | **In progress** | 1x4 equal-area bins (interim), NEON slope/aspect adopted, stream params interim |
+| 5. Generate final dataset (Phase E) | **In progress** | 1x4 equal-area bins (interim), NEON slope/aspect adopted, NWI water masking complete, log-spaced bin re-evaluation next, stream params interim |
 | 6. CTSM validation (Phase F) | Pending | Depends on Phase E completion |
 
 The pipeline produces scientifically defensible output. Remaining work is parameter completion (Phase E) and CTSM validation (Phase F).
@@ -465,3 +493,5 @@ The pipeline produces scientifically defensible output. Remaining work is parame
 | Phase C job log | `logs/phase_c_lc_24705742.log` | Full output from Lc analysis run |
 | Phase C plots | `output/osbs/phase_c/` | Baseline spectrum and sensitivity sweep plots |
 | Lc physical validation | `output/osbs/smoke_tests/lc_physical_validation/` | Check 1 & 2 results, plots, JSON |
+| Water masking comparison | `output/osbs/water_masking_comparison/` | Lc comparison: raw vs mean-fill vs zero-Laplacian (3 methods, spectral plots, JSON) |
+| Lc comparison script | `scripts/osbs/compare_lc_water_masking.py` | FFT Lc comparison with and without lake masking |

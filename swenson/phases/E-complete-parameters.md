@@ -29,7 +29,7 @@ Stream slope now computed from actual network. Depth and width use interim power
   - [x] Smoke test (R6C10): slope ~0.008 m/m lower (NEON smoother), height/distance/width/area identical
   - [x] Production run: 23.4 min, all parameters correct, slope differences consistent with pre-smoothing
 - [x] NWI water mask: download, filter, rasterize, visualize (2026-03-24)
-- [ ] Integrate water mask into pipeline (exclude masked pixels from HAND binning)
+- [x] Integrate water mask into pipeline (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchment delineation, wide mask (streams + NWI lakes) for HAND. Water pixels excluded from HAND binning and DTND tail fitting.
 - [ ] Re-evaluate log-spaced HAND bins with water masking in place
 - [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law)
 - [ ] PI consultation on remaining open questions:
@@ -103,3 +103,52 @@ New scripts:
 - `scripts/visualization/export_nwi_water_kml.py` — KML export for Google Earth
 
 Next: integrate mask into pipeline, then re-evaluate log-spaced bins.
+
+### 2026-03-25: Water mask integration — boundary forcing (BROKEN)
+
+First integration attempt. Replaced `identify_open_water()` (slope-based, 0 detections at 1m)
+with NWI raster mask. Used Swenson's boundary-forcing approach: inject lake boundaries into the
+stream network so lakes drain to their edges. This BROKE catchment delineation — fragmented from
+~800 to 222K catchments at 1m resolution. Widths collapsed to ~1m, area to ~86 m²/element.
+Runtime bloated from 20 to 44 min.
+
+**Why it failed:** At 1m, lake boundaries are thousands of pixels long. Injecting them into the
+stream network creates thousands of "reaches" that fragment every surrounding catchment into
+single-pixel-wide strips.
+
+Run stats: 220,575 hillslopes, 222,046 reaches, max_acc 3.0M, HAND bins [0, 0.26, 2.31, 5.94,
+25.1], widths ~1m, areas ~86 m²/element, stream depth=0.010/width=0.0/slope=0.01343, 44.0 min.
+See `logs/production_27948388.log`.
+
+### 2026-03-26: Lc water masking comparison
+
+Tested whether lake pixels contaminate the FFT-derived Lc (`compare_lc_water_masking.py`).
+Three methods compared:
+
+| Method | Lc (m) | Model | psharp |
+|--------|--------|-------|--------|
+| Raw DEM (current) | 356 | lognormal | 3.95 |
+| Mean-fill lakes | 20 | linear | 0 |
+| Zero Laplacian at lakes | 20,000 | linear | 0 |
+
+**Conclusion:** Raw DEM is the correct FFT input. Lake surfaces contribute near-zero Laplacian
+(flat water = zero second derivative) and do not contaminate the drainage-scale spectral peak.
+Both masking approaches destroy the peak (psharp drops to 0) by introducing artificial spectral
+energy at lake boundaries. Results in `output/osbs/water_masking_comparison/`.
+
+### 2026-03-27: Dual-mask fix (commit 8c727ca)
+
+Replaced boundary forcing with dual-mask strategy:
+
+1. **Natural stream mask** for catchment delineation — preserves natural catchment structure
+   (~508 hillslopes vs 222K with boundary forcing)
+2. **Wide mask** (natural streams + lake pixels) for HAND computation — land near lakes gets
+   HAND relative to lake surface; lake pixels get HAND=0
+3. **Water pixel exclusion** from HAND binning and DTND tail fitting
+
+Production run verified: HAND bins clean (lowest boundary 0.27m vs 0.00027m without masking),
+widths 339-569m, areas ~37,700 m²/element, 16.4 min. See `logs/production_28119563.log`.
+
+Run stats: 508 hillslopes, 552 reaches, max_acc 3.0M, HAND bins [0, 0.27, 2.30, 5.94, 25.2],
+widths 569/504/429/339m, areas ~37,700 m²/element, stream depth=0.118/width=1.3/slope=0.00691,
+16.4 min.

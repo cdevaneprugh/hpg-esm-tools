@@ -102,19 +102,23 @@ swenson/
 ├── scripts/
 │   ├── spatial_scale.py       # Shared FFT module (dual-CRS: geographic + UTM)
 │   ├── hillslope_params.py    # Shared hillslope computation module
-│   ├── dem_processing.py      # Basin detection, open water identification
+│   ├── dem_processing.py      # Basin detection (identify_open_water unused — replaced by NWI mask)
 │   ├── merit_validation/      # MERIT geographic regression test
 │   │   ├── merit_regression.py  # Single-file regression (Lc + 6 params vs published)
 │   │   ├── merit_regression.sh  # SLURM wrapper
 │   │   ├── README.md            # Script purpose and flowchart
 │   │   └── output/              # results.json, summary.txt, SLURM logs
 │   ├── osbs/                  # Pipeline scripts
-│   │   ├── run_pipeline.py    # Main hillslope pipeline (1x8 log-spaced bins)
+│   │   ├── run_pipeline.py    # Main hillslope pipeline (1x4 equal-area HAND bins, water-masked)
 │   │   ├── run_pipeline_production.sh    # Production SLURM wrapper
 │   │   ├── run_pipeline_smoke.sh         # Smoke test SLURM wrapper (R6C10)
 │   │   ├── compare_hillslope_configs.py  # Compare 4x4 vs 1x8 profiles
+│   │   ├── compare_lc_water_masking.py   # Lc comparison: raw vs lake-masked (3 methods)
+│   │   ├── compare_lc_water_masking.sh   # SLURM wrapper for Lc water masking comparison
 │   │   ├── compare_slope_aspect.py       # pgrid vs NEON slope/aspect comparison
 │   │   ├── compare_slope_aspect.sh       # SLURM wrapper for slope/aspect comparison
+│   │   ├── generate_water_mask.py        # One-time NWI water mask rasterization
+│   │   ├── overlay_nwi_water.py          # Hillshade + water mask overlay visualization
 │   │   ├── stitch_mosaic.py   # Create mosaic from tiles
 │   │   └── extract_subset.py  # Extract subset regions
 │   ├── smoke_tests/           # UTM smoke tests (R6C10 single-tile)
@@ -122,6 +126,7 @@ swenson/
 │   │   └── run_r6c10_utm.sh   # SLURM wrapper
 │   └── visualization/         # KML generation scripts
 │       ├── export_kml.py      # Tile grid KML
+│       ├── export_nwi_water_kml.py  # NWI water features KML for Google Earth
 │       └── export_perimeter_kml.py  # Selection perimeter KML
 │
 └── logs/                      # SLURM output (per-script output/ dirs preferred)
