@@ -1,12 +1,20 @@
 # Phase F: Validate and Deploy
 
 Status: Not started
-Depends on: Phase D, Phase E
-Blocks: None
+Depends on: Phase E
+Blocks: Phase G
 
 ## Problem
 
 The final hillslope file needs validation at two levels before use in production runs: (1) physical plausibility of the parameters themselves, and (2) correct behavior when ingested by CTSM. The osbs2 baseline case (860+ year spinup with Swenson's global hillslope data) provides the comparison target.
+
+## Key Context
+
+**osbs2 runs with `use_hillslope_routing = .false.`** — stream channel parameters in the hillslope NetCDF are never read by CTSM. Phase F validation matches this configuration (routing off). Stream params are irrelevant for this comparison.
+
+`PCT_LAKE` should be set from the NWI mask (~12% of the production domain) in the surface dataset so that lake area is represented as a separate land unit with its own hydrology. This is the standard, well-tested approach — lake and hillslope don't interact (no TAI coupling). TAI dynamics require Phase G (CTSM source mods).
+
+Phase F establishes the baseline that Phase G compares against.
 
 ## Tasks
 
@@ -16,7 +24,8 @@ The final hillslope file needs validation at two levels before use in production
   - Aspect distribution consistent with terrain
   - Stream network aligns with known hydrology
   - HAND values reasonable for low-relief wetlandscape (meters, not hundreds)
-- [ ] Create CTSM test branch from osbs2 at year 861
+- [ ] Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`
+- [ ] Set `PCT_LAKE` from NWI mask (~12%) in surface dataset
 - [ ] Run short simulation (1-5 years) with custom hillslope file
 - [ ] Compare outputs to baseline:
   - Water table depth (ZWT)

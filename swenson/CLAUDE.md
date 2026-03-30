@@ -57,7 +57,8 @@ swenson/
 │   ├── C-archive/             # Completed Phase C scripts (4 .py + 4 .sh)
 │   ├── D-rebuild-pipeline.md  # Rebuild pipeline with fixes
 │   ├── E-complete-parameters.md    # Complete the parameter set
-│   └── F-validate-deploy.md   # Validate and deploy
+│   ├── F-validate-deploy.md   # Validate and deploy
+│   └── G-ctsm-lake-representation.md  # CTSM source mods for lake-in-hillslope
 │
 ├── audit/
 │   ├── 240210-validation_and_initial_implementation/

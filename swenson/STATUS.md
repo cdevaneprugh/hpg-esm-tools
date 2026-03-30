@@ -8,7 +8,7 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Remaining work is in Phase E (parameter completion).** Hillslope structure is 1 aspect x 4 equal-area HAND bins (Swenson's method). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). Log-spaced HAND bins can now be re-evaluated with clean HAND values. NEON slope/aspect products adopted. Stream channel parameters use interim power-law scaling. DEM conditioning and study boundary are open questions for the PI. Phase F (CTSM validation) follows.
+**Remaining work is in Phase E (parameter completion).** Hillslope structure is 1 aspect x 4 equal-area HAND bins (interim — switching to 1x8 log-spaced). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Only remaining Phase E work is the log-spaced bin re-evaluation, then Phase F (CTSM validation) and Phase G (CTSM source mods for lake-in-hillslope) follow.
 
 ---
 
@@ -248,27 +248,29 @@ Stage 8 of MERIT validation discovered the N/S swap and fixed it by switching to
 
 **NEON validation data:** NEON provides precalculated slope/aspect rasters (DP3.30025.001) which could serve as an additional validation baseline — see PI question #5.
 
-### 5. DEM conditioning may erase real geomorphic features
+### 5. DEM conditioning may erase real geomorphic features — RESOLVED
 
 **Impact:** At 1m resolution, pits and depressions include real features: sinkholes, wetland depressions, karst dissolution. Filling them forces a continuous drainage network but destroys information about closed basins that are central to OSBS hydrology.
 
 **File:** `scripts/osbs/run_pipeline.py` lines 932-933, 963
 
-**Status:** This is a science question for the PI, not a bug. Standard D8 flow routing requires a depression-free DEM. Alternative approaches (like RICHDEM's priority-flood with depression retention) exist but add complexity.
+**Status: RESOLVED (2026-03-30).** Proceed with standard depression filling for D8 routing. The Swenson pipeline was never designed to handle microtopography — it characterizes macro-scale watershed structure. Attempting to preserve real closed basins would require fundamentally different flow routing (e.g., RICHDEM priority-flood with depression retention), which is outside the scope of this pipeline. The limitations of standard D8 filling at 1m are understood and accepted.
 
-### 6. Stream channel parameters use interim scaling — PARTIALLY RESOLVED
+### 6. Stream channel parameters use interim scaling — RESOLVED
 
-**Impact:** Directly affects CTSM lateral subsurface flow and stream-groundwater exchange.
+**Impact:** Would affect CTSM lateral subsurface flow and stream-groundwater exchange — but only when `use_hillslope_routing = .true.`.
 
-**File:** `scripts/osbs/run_pipeline.py` lines 1413-1432
+**File:** `scripts/osbs/run_pipeline.py` lines 1200-1208
 
-**Status: Improved but still interim.** No longer hardcoded guesses. Stream slope is now computed from the actual stream network elevation profile (line 1415). Depth and width use power-law scaling from total drainage area (lines 1431-1432: `depth = 0.001 * A^0.4`, `width = 0.001 * A^0.6`), following Swenson's approach (`rh:1104-1114`). Phase E will research OSBS-specific empirical relationships.
+**Status: RESOLVED (2026-03-30).** The osbs2 baseline runs with `use_hillslope_routing = .false.`, meaning stream parameters in the hillslope NetCDF are never read by CTSM. The `active_stream` guard in `HillslopeHydrologyMod.F90` (lines 991-996) skips all stream calculations when `stream_channel_width = 0`. Phase F validation will match this configuration (routing off), so stream params are irrelevant.
 
-| Parameter | Old (hardcoded) | Current (interim) | Swenson reference |
-|-----------|-----------------|-------------------|-------------------|
-| Stream depth | 0.3 m | power-law from drainage area | 0.269 m |
-| Stream width | 5.0 m | power-law from drainage area | 4.414 m |
-| Stream slope | heuristic | computed from stream network | 0.00233 |
+Current interim values (power-law from per-hillslope area) are left as-is. Phase G will repurpose the stream channel fields as lake geometry parameters for the weir overflow implementation — `stream_channel_width` and `stream_channel_depth` become lake dimensions, `stream_channel_slope` becomes unused (Manning replaced by weir equation). No research into OSBS-specific stream empirical relationships is needed.
+
+| Parameter | Current (interim) | Phase G (lake geometry) |
+|-----------|-------------------|------------------------|
+| Stream depth | 0.118 m (power-law) | Characteristic lake depth (from NWI + DEM) |
+| Stream width | 1.3 m (power-law) | Effective lake width (from NWI area / CTSM-computed length) |
+| Stream slope | 0.00691 (network) | Unused (weir replaces Manning) |
 
 ### 7. Bedrock depth is a placeholder — RESOLVED
 
@@ -396,30 +398,53 @@ Both the spatial scale analysis functions and the hillslope computation function
 
 ### Phase E: Complete the parameter set — In Progress
 
-**Status: In progress.** Hillslope structure, NEON slope/aspect, and water masking complete. Stream parameters and PI consultation remaining.
+**Status: In progress.** All PI questions resolved (2026-03-30). Only remaining work is log-spaced bin re-evaluation.
 
 **Completed:**
 - [x] Hillslope structure: 1 aspect x 4 equal-area HAND bins (interim, 2026-03-24). Log-spaced bins deferred until water masking addresses lake pixel contamination. See `docs/hillslope-binning-rationale.md`.
 - [x] NEON slope/aspect: use NEON DP3.30025.001 products directly (PI approved 2026-03-23, implemented commit 73c09fe). Slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
 - [x] NWI water mask integration (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchments, wide mask for HAND. Water pixels excluded from HAND binning and DTND tail fitting. See `phases/E-complete-parameters.md` log.
+- [x] Stream channel parameters: leave interim power-law values as-is (2026-03-30). osbs2 runs with `use_hillslope_routing = .false.` — params never read. Phase G will repurpose as lake geometry.
+- [x] PI consultation — all questions resolved (2026-03-30): DEM conditioning (standard fill, accepted limitations), study boundary (90-tile production domain final), stream params (leave as-is), hillslope structure (1x8 log-spaced confirmed as target).
 
 **Remaining:**
-- [ ] Re-evaluate log-spaced HAND bins — water masking now in place, HAND values clean (lowest boundary 0.27m)
-- [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law scaling)
-- [ ] PI consultation: DEM conditioning approach, final study boundary, stream channel methodology
+- [ ] Re-evaluate 1x8 log-spaced HAND bins — water masking now in place, HAND values clean (lowest boundary 0.27m)
 
 **Deliverable:** Complete set of physically motivated parameters.
 
 ### Phase F: Validate and deploy
 
+**Status: Not started.** Blocked by Phase E (log-spaced bin re-evaluation).
+
+**Key context:** osbs2 runs with `use_hillslope_routing = .false.`. Phase F validation will match this configuration — routing off, stream params irrelevant. This establishes a baseline comparison before Phase G enables routing with lake-modified parameters.
+
 **Tasks:**
 1. Compare custom hillslope file to Swenson reference (`hillslopes_osbs_c240416.nc`)
 2. Physical plausibility checks (elevation, aspect distribution, stream network vs known hydrology)
-3. Create CTSM test branch from osbs2 at year 861
-4. Run short simulation (1-5 years) with custom hillslope file
-5. Compare outputs to baseline (water table, soil moisture, carbon fluxes)
+3. Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`
+4. Set `PCT_LAKE` from NWI mask (~12%) in surface dataset
+5. Run short simulation (1-5 years) with custom hillslope file
+6. Compare outputs to baseline (water table, soil moisture, carbon fluxes)
 
 **Deliverable:** Validated hillslope file ready for production runs.
+
+### Phase G: CTSM lake-in-hillslope representation
+
+**Status: Not started.** Blocked by Phase F (need validated baseline for comparison).
+
+Implement TAI dynamics by repurposing CTSM's stream infrastructure as lake storage with threshold overflow. The weir overflow approach (Option B from `docs/water-masking-and-lake-representation.md`) replaces Manning's continuous discharge with zero-below-spill-height behavior — ~70 lines of Fortran, localized to one subroutine plus initialization.
+
+**Tasks:**
+1. PI decision on approach (weir overflow is the recommendation)
+2. Implement weir overflow in CTSM fork (`HillslopeStreamOutflow` in `HillslopeHydrologyMod.F90`)
+3. Add `stream_spill_height` and `stream_spill_width` to `LandunitType.F90` + `InitHillslope`
+4. Update pipeline to compute lake parameters from DEM + NWI (pour point analysis)
+5. Optionally add `h2osfc_thresh` override on lowest column (~5 lines, Option E)
+6. Set `PCT_LAKE = 0`, `use_hillslope_routing = .true.`, run comparison vs Phase F baseline
+
+**Deliverable:** CTSM fork with TAI-capable hillslope hydrology. Comparison showing impact of lake-in-hillslope representation on water table, carbon fluxes, and CH4.
+
+**Reference:** `docs/water-masking-and-lake-representation.md` — full CTSM source investigation, option analysis, and implementation details.
 
 ### Dependency Diagram
 
@@ -431,11 +456,11 @@ Phase B (resolve resolution) ── COMPLETE ───┤
 Phase C (establish Lc) ──────── COMPLETE ───┘
 
 Phase E (complete params) ── IN PROGRESS ──┐
-                                            ├──> Phase F (validate & deploy)
+                                            ├──> Phase F (validate & deploy) ──> Phase G (CTSM lake mods)
 Phase D (pipeline ready) ── COMPLETE ──────┘
 ```
 
-Phases A-D complete. Phase E in progress. Phase F blocked by E.
+Phases A-D complete. Phase E nearly complete (log-spaced bins remaining). Phase F blocked by E. Phase G blocked by F.
 
 ---
 
@@ -443,13 +468,13 @@ Phases A-D complete. Phase E in progress. Phase F blocked by E.
 
 These require scientific judgment, not engineering work:
 
-1. **DEM conditioning:** Should we fill all depressions, or is there an approach that preserves real closed basins (sinkholes, wetland depressions)? Standard D8 requires depression-free DEM, but filling at 1m erases features that matter for OSBS hydrology.
+1. **DEM conditioning — RESOLVED (2026-03-30).** Proceed with standard depression filling for D8 routing. The Swenson pipeline characterizes macro-scale watershed structure — it was never designed to handle microtopography, and we should not force it to. The limitations of standard D8 filling at 1m (erasure of sinkholes, wetland depressions) are understood and accepted.
 
-2. **Hillslope structure — IN PROGRESS.** Pipeline currently uses 1 aspect x 4 equal-area HAND bins (Swenson's `compute_hand_bins()`, switched 2026-03-24). The 1x8 log-spaced configuration (2026-03-19) was deferred because unmasked lake pixels contaminated the lowest HAND bins (Q1 ~ 4e-6 m from resolve_flats micro-gradients on flat water surfaces). Now that NWI water masking is in place (2026-03-27, commit 8c727ca) and HAND values are clean (lowest boundary 0.27m), log-spaced bins can be re-evaluated. See `docs/hillslope-binning-rationale.md` for original justification. CTSM reads `nhillslope` and `nmaxhillcol` dynamically — no Fortran changes needed.
+2. **Hillslope structure — CONFIRMED (1x8 log-spaced, 2026-03-30).** 1 aspect x 8 log-spaced HAND bins is the confirmed target. The 1x4 equal-area configuration is interim — used while water masking was being developed. Now that NWI water masking is in place (2026-03-27, commit 8c727ca) and HAND values are clean (lowest boundary 0.27m), log-spaced bins are ready to re-evaluate. If results still show issues (e.g., lowest bins still problematic), options include increased outlier handling, adjusting bin count, or modified log spacing. See `docs/hillslope-binning-rationale.md` for original justification. CTSM reads `nhillslope` and `nmaxhillcol` dynamically — no Fortran changes needed.
 
-3. **Study boundary:** Interior tiles (150 tiles, ~150 km^2) are the current default. Any areas to specifically include or exclude?
+3. **Study boundary — RESOLVED (2026-03-30).** Production domain (R4-R12, C5-C14, 90 tiles, 9x10 km, 0 nodata) is final. Nodata pixels break pysheds flow routing — pysheds fills nodata with `max_elevation + 1`, and if all edges are nodata, there is nowhere for flow to exit (`max_accumulation = 1`). The pipeline requires contiguous valid data at domain edges. Expanding would require re-adding nodata handling (edge trimming, valid masking) — not worth the complexity given the 90-tile domain is already sufficient.
 
-4. **Stream channel parameters:** Should we compute these from the DEM/stream network, or use values from MERIT Hydro or regional empirical relationships?
+4. **Stream channel parameters — RESOLVED (2026-03-30).** Leave current interim power-law values as-is. The osbs2 baseline runs with `use_hillslope_routing = .false.` — stream params in the hillslope NetCDF are never read by CTSM. With routing off, the `active_stream` guard (`HillslopeHydrologyMod.F90` lines 991-996) skips all stream calculations. Phase F validation matches this (routing off). Phase G will repurpose stream fields as lake geometry for the weir overflow implementation — no research into OSBS-specific stream empirical relationships is needed.
 
 5. **NEON slope/aspect products — RESOLVED (use NEON, 2026-03-23).** PI approved using NEON DP3.30025.001 products directly. Comparison across all 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84, slope bias +0.008 m/m (pgrid steeper — NEON's 3x3 pre-filter reduces TIN interpolation noise on flat terrain). Results in `output/osbs/slope_aspect_comparison/`. Implemented in Phase E (commit 73c09fe).
 
@@ -473,10 +498,11 @@ From `progress-tracking.md`, mapped to current phase structure:
 | 2. Port Swenson functions | Complete | pgrid.py copied, tests passing |
 | 3. Validate against published | Complete | 5/6 params >0.95 correlation |
 | 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
-| 5. Generate final dataset (Phase E) | **In progress** | 1x4 equal-area bins (interim), NEON slope/aspect adopted, NWI water masking complete, log-spaced bin re-evaluation next, stream params interim |
-| 6. CTSM validation (Phase F) | Pending | Depends on Phase E completion |
+| 5. Generate final dataset (Phase E) | **In progress** | PI questions resolved, NEON slope/aspect adopted, NWI water masking complete, log-spaced bin re-evaluation is the only remaining task |
+| 6. CTSM validation (Phase F) | Pending | Validate with `use_hillslope_routing = .false.` (matching osbs2), `PCT_LAKE` from NWI |
+| 7. CTSM source mods (Phase G) | Pending | Weir overflow (~70 lines Fortran), lake-in-hillslope, TAI dynamics |
 
-The pipeline produces scientifically defensible output. Remaining work is parameter completion (Phase E) and CTSM validation (Phase F).
+The pipeline produces scientifically defensible output. Phase E is nearly complete (log-spaced bins remaining). Phase F (validation) and Phase G (CTSM lake mods) follow.
 
 ---
 
@@ -495,3 +521,4 @@ The pipeline produces scientifically defensible output. Remaining work is parame
 | Lc physical validation | `output/osbs/smoke_tests/lc_physical_validation/` | Check 1 & 2 results, plots, JSON |
 | Water masking comparison | `output/osbs/water_masking_comparison/` | Lc comparison: raw vs mean-fill vs zero-Laplacian (3 methods, spectral plots, JSON) |
 | Lc comparison script | `scripts/osbs/compare_lc_water_masking.py` | FFT Lc comparison with and without lake masking |
+| Water masking & lake representation | `docs/water-masking-and-lake-representation.md` | CTSM source investigation, lake representation options, weir overflow design (Phase G reference) |

@@ -8,12 +8,12 @@ Blocks: Phase F
 
 Remaining parameters need refinement or PI decisions (STATUS.md #5, #6):
 
-**Stream channel parameters (#6) — partially resolved:**
-Stream slope now computed from actual network. Depth and width use interim power-law scaling from drainage area (`depth = 0.001 * A^0.4`, `width = 0.001 * A^0.6`). Phase E will research OSBS-specific empirical relationships.
+**Stream channel parameters (#6) — resolved (2026-03-30):**
+Leave interim power-law values as-is. osbs2 runs with `use_hillslope_routing = .false.` — stream params are never read by CTSM. Phase G will repurpose stream fields as lake geometry for weir overflow.
 
 **Bedrock depth (#7) — resolved:** Now uses zeros, matching Swenson reference (commit 11f465e).
 
-**DEM conditioning (#5) — open:** At 1m resolution, filling pits/depressions erases real features (sinkholes, wetland depressions, karst dissolution). This is a science question for the PI.
+**DEM conditioning (#5) — resolved (2026-03-30):** Proceed with standard depression filling for D8. Pipeline characterizes macro-scale watershed structure, not microtopography. Limitations understood and accepted.
 
 ## Tasks
 
@@ -30,12 +30,13 @@ Stream slope now computed from actual network. Depth and width use interim power
   - [x] Production run: 23.4 min, all parameters correct, slope differences consistent with pre-smoothing
 - [x] NWI water mask: download, filter, rasterize, visualize (2026-03-24)
 - [x] Integrate water mask into pipeline (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchment delineation, wide mask (streams + NWI lakes) for HAND. Water pixels excluded from HAND binning and DTND tail fitting.
-- [ ] Re-evaluate log-spaced HAND bins with water masking in place
-- [ ] Research stream depth/width — OSBS-specific empirical relationships (current: interim power-law)
-- [ ] PI consultation on remaining open questions:
-  - DEM conditioning approach (fill all vs. preserve real closed basins)
-  - Final study boundary (interior tiles default, any adjustments?)
-  - Stream channel parameter methodology
+- [ ] Re-evaluate 1x8 log-spaced HAND bins with water masking in place (confirmed target, 2026-03-30)
+- [x] Stream depth/width: leave interim power-law as-is (2026-03-30). osbs2 uses `use_hillslope_routing = .false.` — params never read. Phase G repurposes as lake geometry.
+- [x] PI consultation — all questions resolved (2026-03-30):
+  - DEM conditioning: standard fill for D8, pipeline characterizes macro-scale watershed
+  - Study boundary: production domain (90 tiles, 0 nodata) is final
+  - Stream params: leave as-is, Phase G repurposes
+  - Hillslope structure: 1x8 log-spaced confirmed as target
 
 ## Deliverable
 
@@ -152,3 +153,20 @@ widths 339-569m, areas ~37,700 m²/element, 16.4 min. See `logs/production_28119
 Run stats: 508 hillslopes, 552 reaches, max_acc 3.0M, HAND bins [0, 0.27, 2.30, 5.94, 25.2],
 widths 569/504/429/339m, areas ~37,700 m²/element, stream depth=0.118/width=1.3/slope=0.00691,
 16.4 min.
+
+### 2026-03-30: PI decisions — all open questions resolved
+
+Four remaining PI questions resolved in one session:
+
+1. **DEM conditioning:** Standard fill for D8. Pipeline characterizes macro-scale watershed — not
+   designed for microtopography. Limitations accepted.
+2. **Study boundary:** 90-tile production domain (R4-R12, C5-C14) is final. Nodata pixels break
+   pysheds flow routing (edges need valid data for flow exit). Expanding not worth the complexity.
+3. **Stream channel parameters:** Leave interim power-law as-is. Key finding: osbs2 runs with
+   `use_hillslope_routing = .false.` — stream params are never read by CTSM. Phase F validation
+   matches this (routing off). Phase G will repurpose stream fields as lake geometry for weir
+   overflow. No OSBS-specific stream research needed.
+4. **Hillslope structure:** 1x8 log-spaced HAND bins confirmed as target. Ready to re-evaluate
+   now that water masking provides clean HAND values.
+
+Only remaining Phase E work: log-spaced bin re-evaluation.
