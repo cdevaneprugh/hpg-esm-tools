@@ -125,7 +125,36 @@ boundaries:
 [0, 0.00002, 0.00019, 0.0019, 0.018, 0.179, 1.75, 17.0, 1e6]
 ```
 
-4 of 8 bins have mean height = 0.0m:
+4 of 8 bins have mean height = 0.0m. This is not just wasteful — it defeats the purpose of
+the 8-bin configuration.
+
+### Why this matters in CTSM
+
+Each bin becomes a hillslope column in CTSM with `hill_elev` set from the bin's mean HAND.
+Lateral subsurface flow between columns is driven by the hydraulic head gradient
+(`SoilHydrologyMod.F90` line 2261):
+
+```fortran
+head_gradient = (col%hill_elev(c) - zwt(c)) / col%hill_distance(c)
+```
+
+If 4 columns all have `hill_elev = 0.0`, there is no elevation gradient between them. They all
+have the same hydraulic relationship with the stream, the same water table depth, the same soil
+moisture profile, the same decomposition rate (`w_scalar`, `o_scalar`), and the same CH4
+production. They are redundant columns producing copies of the same answer.
+
+The scientific purpose of 8 bins is to resolve the 0-2m TAI zone with columns at *different*
+elevations — capturing the gradient from saturated (near-stream) to unsaturated (mid-hillslope).
+When bins collapse to the same height, you spend 4 of 8 columns on one effective elevation and
+have only 3-4 distinct elevations across the full hillslope profile. The 8-bin configuration
+offers no advantage over 4-bin equal-area in this state.
+
+Unequal pixel counts per bin are fine — log-spaced bins *should* have fewer pixels near the
+stream. The problem is that the bins must produce distinct `hill_elev` values for CTSM to
+differentiate. The minimum separation between adjacent bins must exceed the DEM conditioning
+noise floor.
+
+### Per-bin results:
 
 | Bin | HAND range (m) | Height (m) | Distance (m) | Width (m) |
 |-----|---------------|-----------|--------------|-----------|
