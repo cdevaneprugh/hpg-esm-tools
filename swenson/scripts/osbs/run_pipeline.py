@@ -4,7 +4,7 @@ OSBS Hillslope Pipeline
 
 Computes representative hillslope parameters from 1m NEON LIDAR data for OSBS
 using the Swenson & Lawrence (2025) methodology. Produces CTSM-compatible NetCDF
-output with 8 hillslope columns (1 aspect x 8 log-spaced HAND bins, NWI water-masked).
+output with 8 hillslope columns (1 aspect x 8 HAND bins, log-spaced with noise floor, NWI water-masked).
 
 The processing algorithm follows merit_regression.py (the validated source of
 truth), adapted for UTM CRS using shared modules:
@@ -60,8 +60,6 @@ from dem_processing import identify_basins  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
-    compute_hand_bins,  # noqa: F401 — retained for equal-area fallback
-    compute_hand_bins_log,
     fit_trapezoidal_width,
     get_aspect_mask,
     quadratic,
@@ -81,11 +79,17 @@ NODATA_VALUE = -9999  # standardized nodata sentinel
 NODATA_THRESHOLD = -9000  # threshold for valid data detection in GeoTIFFs
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)  # D8 flow direction mapping
 
-# Hillslope binning (1 aspect x 8 log-spaced HAND bins)
-# Log spacing concentrates resolution near the stream where TAI dynamics dominate.
-# See docs/hillslope-binning-rationale.md for justification.
+# Hillslope binning (1 aspect x 8 HAND bins, log-spaced with noise floor)
+#
+# Bin 1 [0, 0.1m] absorbs DEM conditioning noise from resolve_flats
+# (micro-gradients of 1e-5 to 1e-2 m on flat land pixels). Bins 2-8
+# are log-spaced from 0.1m to Q95 of positive HAND, concentrating
+# resolution near the stream where TAI dynamics dominate.
+#
+# See docs/hillslope-binning-rationale.md for full analysis.
 N_ASPECT_BINS = 1
 N_HAND_BINS = 8
+HAND_NOISE_FLOOR = 0.1  # meters — resolve_flats noise below this
 ASPECT_BINS = [(0, 360)]
 ASPECT_NAMES = ["All"]
 
@@ -1048,9 +1052,24 @@ def main():
     area_flat = area_flat[valid]
     drainage_id_flat = drainage_id_flat[valid]
 
-    # --- 5b: HAND bins ---
+    # --- 5b: HAND bins (Strategy A2: log-spaced with noise floor) ---
+    #
+    # Floor absorbs resolve_flats micro-gradient noise on flat land pixels.
+    # At OSBS, ~22% of land pixels have HAND 0-0.1m from DEM conditioning
+    # artifacts — these are not real topographic signal. Bin 1 [0, floor]
+    # represents the "at stream level" column in CTSM (hill_elev ≈ 0).
+    #
+    # Q95 upper endpoint balances the ridge bin (~5% of pixels) instead of
+    # Q99 which leaves a thin 1% tail. geomspace produces log-spaced
+    # boundaries from floor to Q95, concentrating bins near the stream
+    # where hydraulic head gradients drive lateral flow and TAI dynamics.
+    # Each adjacent bin pair has >= 0.2m height separation — enough for
+    # CTSM to compute distinct head gradients and water table positions.
     print_progress("  Computing HAND bins...")
-    hand_bounds = compute_hand_bins_log(hand_flat, n_bins=N_HAND_BINS)
+    hand_pos = hand_flat[hand_flat > 0]
+    q95 = float(np.percentile(hand_pos, 95))
+    internal = np.geomspace(HAND_NOISE_FLOOR, q95, N_HAND_BINS - 1)
+    hand_bounds = np.concatenate([[0], internal, [1e6]])
     print_progress(f"    HAND bins ({len(hand_bounds) - 1}): {hand_bounds}")
 
     # --- 5c: Per-aspect parameter computation ---

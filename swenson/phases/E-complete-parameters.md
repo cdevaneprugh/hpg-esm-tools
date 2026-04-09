@@ -1,6 +1,6 @@
 # Phase E: Complete the Parameter Set
 
-Status: In progress
+Status: Complete
 Depends on: None (can start independently)
 Blocks: Phase F
 
@@ -30,7 +30,7 @@ Leave interim power-law values as-is. osbs2 runs with `use_hillslope_routing = .
   - [x] Production run: 23.4 min, all parameters correct, slope differences consistent with pre-smoothing
 - [x] NWI water mask: download, filter, rasterize, visualize (2026-03-24)
 - [x] Integrate water mask into pipeline (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchment delineation, wide mask (streams + NWI lakes) for HAND. Water pixels excluded from HAND binning and DTND tail fitting.
-- [ ] Re-evaluate 1x8 log-spaced HAND bins with water masking in place (confirmed target, 2026-03-30)
+- [x] Re-evaluate 1x8 HAND bins (2026-04-09). Strategy A2 chosen: 0.1m noise floor + Q95 log-spaced. Tested 6 strategies; A2 gives 4 TAI bins, all adjacent heights separated by >= 0.2m, balanced ridge bin (5%). See `docs/hillslope-binning-rationale.md`.
 - [x] Stream depth/width: leave interim power-law as-is (2026-03-30). osbs2 uses `use_hillslope_routing = .false.` — params never read. Phase G repurposes as lake geometry.
 - [x] PI consultation — all questions resolved (2026-03-30):
   - DEM conditioning: standard fill for D8, pipeline characterizes macro-scale watershed
@@ -185,3 +185,19 @@ flat terrain. Q1 of positive HAND is ~0.00002m regardless of water masking.
 The percentile-based endpoint strategy needs replacement. Four candidate approaches documented
 in `docs/hillslope-binning-rationale.md`: (A) log-spaced with a minimum floor, (B) equal-count
 on restricted range, (C) fixed boundaries, (D) hybrid TAI/ridge split. Systematic testing next.
+
+### 2026-04-09: Binning resolved — Strategy A2 adopted, Phase E complete
+
+Tested 6 binning strategies on cached filtered arrays (`compare_hand_binning.py`). Evaluated
+by adjacent-bin height difference — the key metric for whether CTSM computes distinct head
+gradients between columns. Strategy A2 (0.1m noise floor + Q95 log-spaced) chosen:
+
+- Bin 1 [0, 0.1m] absorbs resolve_flats noise (22% of pixels, h=0.0m — stream-level column)
+- Bins 2-8 log-spaced from 0.1m to Q95 (12.28m), all adjacent pairs separated by >= 0.2m
+- 4 bins in TAI zone (0-2.5m), 4 above
+- Ridge bin balanced at 5% of pixels (vs 1% with Q99)
+
+Implemented inline in `run_pipeline.py` (removed `compute_hand_bins_log` import). Full analysis
+and comparison tables in `docs/hillslope-binning-rationale.md`.
+
+Phase E is complete. All parameters finalized. Phase F (CTSM validation) is next.

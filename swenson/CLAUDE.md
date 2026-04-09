@@ -110,7 +110,7 @@ swenson/
 │   │   ├── README.md            # Script purpose and flowchart
 │   │   └── output/              # results.json, summary.txt, SLURM logs
 │   ├── osbs/                  # Pipeline scripts
-│   │   ├── run_pipeline.py    # Main hillslope pipeline (1x4 equal-area HAND bins, water-masked)
+│   │   ├── run_pipeline.py    # Main hillslope pipeline (1x8 HAND bins, log-spaced with noise floor, water-masked)
 │   │   ├── run_pipeline_production.sh    # Production SLURM wrapper
 │   │   ├── run_pipeline_smoke.sh         # Smoke test SLURM wrapper (R6C10)
 │   │   ├── compare_hillslope_configs.py  # Compare 4x4 vs 1x8 profiles

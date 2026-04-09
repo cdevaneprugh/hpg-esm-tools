@@ -8,7 +8,7 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Remaining work is in Phase E (parameter completion).** Hillslope structure is 1 aspect x 4 equal-area HAND bins (interim — switching to 1x8 log-spaced). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Only remaining Phase E work is the log-spaced bin re-evaluation, then Phase F (CTSM validation) and Phase G (CTSM source mods for lake-in-hillslope) follow.
+**Phase E (parameter completion) is complete.** Hillslope structure is 1 aspect x 8 HAND bins (log-spaced with 0.1m noise floor, Q95 upper endpoint). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Phase F (CTSM validation) and Phase G (CTSM source mods for lake-in-hillslope) follow.
 
 ---
 
@@ -396,19 +396,16 @@ Both the spatial scale analysis functions and the hillslope computation function
 
 **Deliverable:** Pipeline that produces scientifically defensible hillslope parameters. See `phases/D-rebuild-pipeline.md`.
 
-### Phase E: Complete the parameter set — In Progress
+### Phase E: Complete the parameter set — Complete
 
-**Status: In progress.** All PI questions resolved (2026-03-30). Only remaining work is log-spaced bin re-evaluation.
+**Status: Complete (2026-04-09).** All parameters finalized. 1x8 HAND bins with 0.1m noise floor + Q95 log spacing (Strategy A2). See `docs/hillslope-binning-rationale.md` for full analysis.
 
 **Completed:**
-- [x] Hillslope structure: 1 aspect x 4 equal-area HAND bins (interim, 2026-03-24). Log-spaced bins deferred until water masking addresses lake pixel contamination. See `docs/hillslope-binning-rationale.md`.
+- [x] Hillslope structure: 1 aspect x 8 HAND bins, log-spaced with 0.1m noise floor + Q95 upper endpoint (2026-04-09). Tested 6 strategies; A2 chosen for best TAI resolution and balanced ridge bin. See `docs/hillslope-binning-rationale.md`.
 - [x] NEON slope/aspect: use NEON DP3.30025.001 products directly (PI approved 2026-03-23, implemented commit 73c09fe). Slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
 - [x] NWI water mask integration (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchments, wide mask for HAND. Water pixels excluded from HAND binning and DTND tail fitting. See `phases/E-complete-parameters.md` log.
 - [x] Stream channel parameters: leave interim power-law values as-is (2026-03-30). osbs2 runs with `use_hillslope_routing = .false.` — params never read. Phase G will repurpose as lake geometry.
 - [x] PI consultation — all questions resolved (2026-03-30): DEM conditioning (standard fill, accepted limitations), study boundary (90-tile production domain final), stream params (leave as-is), hillslope structure (1x8 log-spaced confirmed as target).
-
-**Remaining:**
-- [ ] Re-evaluate 1x8 log-spaced HAND bins — water masking now in place, HAND values clean (lowest boundary 0.27m)
 
 **Deliverable:** Complete set of physically motivated parameters.
 
@@ -497,7 +494,7 @@ From `progress-tracking.md`, mapped to current phase structure:
 | 2. Port Swenson functions | Complete | pgrid.py copied, tests passing |
 | 3. Validate against published | Complete | 5/6 params >0.95 correlation |
 | 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
-| 5. Generate final dataset (Phase E) | **In progress** | PI questions resolved, NEON slope/aspect adopted, NWI water masking complete, log-spaced bin re-evaluation is the only remaining task |
+| 5. Generate final dataset (Phase E) | **Complete** | 1x8 bins (A2: 0.1m floor + Q95 log), NEON slope/aspect, NWI water masking, all PI questions resolved |
 | 6. CTSM validation (Phase F) | Pending | Validate with `use_hillslope_routing = .false.`, `PCT_LAKE = 0` (matching osbs2) |
 | 7. CTSM source mods (Phase G) | Pending | Weir overflow (~70 lines Fortran), lake-in-hillslope, TAI dynamics |
 
