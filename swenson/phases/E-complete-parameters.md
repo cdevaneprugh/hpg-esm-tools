@@ -170,3 +170,18 @@ Four remaining PI questions resolved in one session:
    now that water masking provides clean HAND values.
 
 Only remaining Phase E work: log-spaced bin re-evaluation.
+
+### 2026-03-30: 1x8 log-spaced bins — Q1/Q99 endpoints fail
+
+Switched pipeline to 1x8 log-spaced HAND bins (`compute_hand_bins_log()`, N_HAND_BINS=8).
+Production run completed (13.5 min, job 28352269). Result: 4 of 8 bins have h=0.0m. The
+Q1/Q99-based geomspace puts the first 4 bin boundaries below 0.02m — all in the resolve_flats
+micro-gradient noise floor.
+
+Water masking removed lake pixel contamination (the original blocker), but flat *land* pixels
+also have micro-gradient HAND values (1e-5 to 1e-2m) from resolve_flats on OSBS's pervasive
+flat terrain. Q1 of positive HAND is ~0.00002m regardless of water masking.
+
+The percentile-based endpoint strategy needs replacement. Four candidate approaches documented
+in `docs/hillslope-binning-rationale.md`: (A) log-spaced with a minimum floor, (B) equal-count
+on restricted range, (C) fixed boundaries, (D) hybrid TAI/ridge split. Systematic testing next.

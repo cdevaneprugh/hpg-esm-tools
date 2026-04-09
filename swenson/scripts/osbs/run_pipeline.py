@@ -4,7 +4,7 @@ OSBS Hillslope Pipeline
 
 Computes representative hillslope parameters from 1m NEON LIDAR data for OSBS
 using the Swenson & Lawrence (2025) methodology. Produces CTSM-compatible NetCDF
-output with 4 hillslope columns (1 aspect x 4 equal-area HAND bins, NWI water-masked).
+output with 8 hillslope columns (1 aspect x 8 log-spaced HAND bins, NWI water-masked).
 
 The processing algorithm follows merit_regression.py (the validated source of
 truth), adapted for UTM CRS using shared modules:
@@ -60,8 +60,8 @@ from dem_processing import identify_basins  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
-    compute_hand_bins,
-    compute_hand_bins_log,  # noqa: F401 — retained for future use
+    compute_hand_bins,  # noqa: F401 — retained for equal-area fallback
+    compute_hand_bins_log,
     fit_trapezoidal_width,
     get_aspect_mask,
     quadratic,
@@ -81,12 +81,11 @@ NODATA_VALUE = -9999  # standardized nodata sentinel
 NODATA_THRESHOLD = -9000  # threshold for valid data detection in GeoTIFFs
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)  # D8 flow direction mapping
 
-# Hillslope binning (1 aspect x 4 equal-area HAND bins)
-# Interim: using Swenson's equal-area bins while water masking is developed.
-# Log-spaced bins deferred — lowest bins contaminated by unmasked lake pixels.
+# Hillslope binning (1 aspect x 8 log-spaced HAND bins)
+# Log spacing concentrates resolution near the stream where TAI dynamics dominate.
+# See docs/hillslope-binning-rationale.md for justification.
 N_ASPECT_BINS = 1
-N_HAND_BINS = 4
-LOWEST_BIN_MAX = 2.0  # meters (Swenson constraint)
+N_HAND_BINS = 8
 ASPECT_BINS = [(0, 360)]
 ASPECT_NAMES = ["All"]
 
@@ -180,54 +179,107 @@ def create_stream_network_plot(
     stream_mask: np.ndarray,
     bounds: dict,
     output_path: Path,
+    water_mask: np.ndarray | None = None,
 ) -> None:
-    """Create stream network overlay plot."""
+    """Create stream network overlay on hillshade background."""
+    from matplotlib.colors import LightSource
+    from scipy.ndimage import binary_dilation
+
     max_plot_size = 4000
     downsample = max(1, max(dem.shape) // max_plot_size)
 
     if downsample > 1:
         dem_plot = dem[::downsample, ::downsample]
         stream_plot = stream_mask[::downsample, ::downsample]
+        water_plot = (
+            water_mask[::downsample, ::downsample] if water_mask is not None else None
+        )
     else:
         dem_plot = dem
         stream_plot = stream_mask
+        water_plot = water_mask
+
+    # Dilate streams by 1px so single-pixel channels survive downsampling
+    stream_dilated = binary_dilation(stream_plot > 0, iterations=1)
 
     fig, ax = plt.subplots(figsize=(12, 10))
-
-    dem_masked = np.ma.masked_less_equal(dem_plot, NODATA_THRESHOLD)
-
     extent = [bounds["west"], bounds["east"], bounds["south"], bounds["north"]]
-    im = ax.imshow(dem_masked, cmap="terrain", extent=extent, aspect="equal")
 
-    stream_display = np.where(stream_plot > 0, 1, np.nan)
-    ax.imshow(stream_display, cmap="Blues", alpha=0.7, extent=extent, aspect="equal")
+    # Hillshade background (gray, high contrast for overlays)
+    dem_filled = np.where(dem_plot <= NODATA_THRESHOLD, np.nan, dem_plot)
+    ls = LightSource(azdeg=315, altdeg=45)
+    hillshade = ls.hillshade(np.nan_to_num(dem_filled, nan=0), vert_exag=3)
+    ax.imshow(hillshade, cmap="gray", extent=extent, aspect="equal")
 
-    plt.colorbar(im, ax=ax, shrink=0.8, label="Elevation (m)")
+    # Water mask (light blue, semi-transparent)
+    if water_plot is not None:
+        water_display = np.where(water_plot > 0, 1.0, np.nan)
+        ax.imshow(
+            water_display,
+            cmap="Blues",
+            vmin=0,
+            vmax=1.5,
+            alpha=0.4,
+            extent=extent,
+            aspect="equal",
+        )
+
+    # Streams (red, high contrast against gray hillshade)
+    from matplotlib.colors import ListedColormap
+
+    stream_cmap = ListedColormap(["red"])
+    stream_display = np.where(stream_dilated, 1.0, np.nan)
+    ax.imshow(
+        stream_display,
+        cmap=stream_cmap,
+        alpha=0.9,
+        extent=extent,
+        aspect="equal",
+    )
+
     ax.set_xlabel("Easting (m UTM 17N)")
     ax.set_ylabel("Northing (m UTM 17N)")
-    ax.set_title(
+
+    n_stream = int(np.sum(stream_mask > 0))
+    n_water = int(np.sum(water_mask > 0)) if water_mask is not None else 0
+    title = (
         f"OSBS Stream Network ({OUTPUT_DESCRIPTOR})\n"
-        f"Stream cells: {np.sum(stream_mask > 0):,} "
-        f"({100 * np.sum(stream_mask > 0) / stream_mask.size:.2f}%)"
+        f"Stream: {n_stream:,} px ({100 * n_stream / stream_mask.size:.2f}%)"
     )
+    if n_water > 0:
+        title += (
+            f"  |  Water (NWI): {n_water:,} px ({100 * n_water / water_mask.size:.1f}%)"
+        )
+    ax.set_title(title)
 
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
 
 
-def create_hand_map_plot(hand: np.ndarray, bounds: dict, output_path: Path) -> None:
-    """Create HAND map plot."""
+def create_hand_map_plot(
+    hand: np.ndarray,
+    bounds: dict,
+    output_path: Path,
+    water_mask: np.ndarray | None = None,
+) -> None:
+    """Create HAND map plot. Water pixels masked out (not in HAND bins)."""
     max_plot_size = 4000
     downsample = max(1, max(hand.shape) // max_plot_size)
 
     if downsample > 1:
         hand_plot = hand[::downsample, ::downsample]
+        water_plot = (
+            water_mask[::downsample, ::downsample] if water_mask is not None else None
+        )
     else:
         hand_plot = hand
+        water_plot = water_mask
 
     fig, ax = plt.subplots(figsize=(12, 10))
 
     hand_display = np.where(hand_plot < 0, np.nan, hand_plot)
+    if water_plot is not None:
+        hand_display = np.where(water_plot > 0, np.nan, hand_display)
     vmax = np.nanpercentile(hand_display, 95)
 
     extent = [bounds["west"], bounds["east"], bounds["south"], bounds["north"]]
@@ -911,10 +963,13 @@ def main():
         stream_mask,
         bounds_dict,
         OUTPUT_DIR / "stream_network.png",
+        water_mask=water_mask,
     )
     print_progress(f"  Saved: {OUTPUT_DIR / 'stream_network.png'}")
 
-    create_hand_map_plot(hand, bounds_dict, OUTPUT_DIR / "hand_map.png")
+    create_hand_map_plot(
+        hand, bounds_dict, OUTPUT_DIR / "hand_map.png", water_mask=water_mask
+    )
     print_progress(f"  Saved: {OUTPUT_DIR / 'hand_map.png'}")
 
     # =========================================================================
@@ -995,9 +1050,7 @@ def main():
 
     # --- 5b: HAND bins ---
     print_progress("  Computing HAND bins...")
-    hand_bounds = compute_hand_bins(
-        hand_flat, aspect_flat, ASPECT_BINS, bin1_max=LOWEST_BIN_MAX
-    )
+    hand_bounds = compute_hand_bins_log(hand_flat, n_bins=N_HAND_BINS)
     print_progress(f"    HAND bins ({len(hand_bounds) - 1}): {hand_bounds}")
 
     # --- 5c: Per-aspect parameter computation ---
