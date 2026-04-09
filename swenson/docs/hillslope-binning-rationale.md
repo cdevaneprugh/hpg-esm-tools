@@ -305,23 +305,89 @@ too fat or too thin.
 
 ## Test Results
 
-*Results from systematic evaluation of candidate solutions will be recorded here.*
+All strategies tested on the same filtered arrays (76,092,006 valid land pixels, NWI
+water-masked). Comparison script: `scripts/osbs/compare_hand_binning.py`. Full results:
+`output/osbs/binning_comparison/`.
 
-### Solution A: Log-spaced with floor
+### Key evaluation metric: adjacent bin height difference
 
-*Not yet tested.*
+The number of "bins below 2m" is a rough proxy. The real criterion is whether adjacent columns
+have enough `hill_elev` separation for CTSM to compute distinct head gradients. At OSBS, the
+water table fluctuates on the order of 0.1-3m, so height differences of at least 0.2m are
+needed for meaningful differentiation.
 
-### Solution B: Equal-count restricted
+### All strategies compared (2026-04-09)
 
-*Not yet tested.*
+| Bin | Baseline | A (0.25+Q99) | A2 (0.1+Q95) | B (equal) | C (fixed) | D (hybrid) |
+|-----|----------|-------------|-------------|-----------|-----------|------------|
+| 1 | 0.0 | 0.0 | 0.0 | 0.2 | 0.0 | 0.0 |
+| 2 | 0.0 (+0.0) | 0.4 (+0.4) | 0.2 (+0.2) | 1.2 (+1.0) | 0.4 (+0.4) | 0.0 (+0.0) |
+| 3 | 0.0 (+0.0) | 0.8 (+0.4) | 0.4 (+0.2) | 2.1 (+0.9) | 0.7 (+0.3) | 0.2 (+0.2) |
+| 4 | 0.0 (+0.0) | 1.5 (+0.7) | 0.8 (+0.4) | 3.2 (+1.1) | 1.5 (+0.8) | 0.8 (+0.6) |
+| 5 | 0.1 (+0.1) | 3.1 (+1.6) | 1.7 (+0.9) | 4.6 (+1.4) | 2.9 (+1.4) | 1.6 (+0.8) |
+| 6 | 0.9 (+0.8) | 6.1 (+3.0) | 3.9 (+2.2) | 6.2 (+1.6) | 5.8 (+2.9) | 3.1 (+1.5) |
+| 7 | 6.2 (+5.3) | 11.3 (+5.2) | 8.2 (+4.3) | 8.5 (+2.3) | 10.8 (+5.0) | 5.7 (+2.6) |
+| 8 | 19.2 (+13.0) | 19.2 (+7.9) | 15.1 (+6.9) | 13.2 (+4.7) | 18.4 (+7.6) | 11.1 (+5.4) |
 
-### Solution C: Fixed boundaries
+**Baseline** (Q1/Q99): 4 consecutive zero-difference transitions. Broken.
 
-*Not yet tested.*
+**B** (equal-count): Effectively linear — same concept as Swenson's equal-area but 1x8. Does
+not concentrate resolution near the stream. Dropped from consideration.
 
-### Solution D: Hybrid
+**D** (hybrid): Two zero-difference transitions at the bottom. The equal-area TAI split still
+starts from the noise floor because it uses all HAND > 0. Needs a floor to work.
 
-*Not yet tested.*
+**A** (0.25m floor + Q99), **C** (fixed), and **A2** (0.1m floor + Q95) are the viable options.
+A and C produce nearly identical profiles. A2 gives more TAI resolution (4 bins below 2.5m vs
+3 for A) and a balanced last bin (5% vs 1%).
+
+### Recommended: A2 (0.1m floor + Q95)
+
+```
+Boundaries: [0, 0.10, 0.22, 0.50, 1.11, 2.47, 5.51, 12.28, 1e6]
+```
+
+| Bin | HAND range (m) | Height (m) | Dist (m) | Width (m) | Pixels | % | h diff |
+|-----|---------------|-----------|---------|---------|--------|-----|--------|
+| 1 | 0.00 - 0.10 | 0.0 | 30 | 569 | 16,838,110 | 22.1% | — |
+| 2 | 0.10 - 0.22 | 0.2 | 65 | 512 | 1,720,962 | 2.3% | +0.2 |
+| 3 | 0.22 - 0.50 | 0.4 | 75 | 506 | 3,433,514 | 4.5% | +0.2 |
+| 4 | 0.50 - 1.11 | 0.8 | 95 | 493 | 6,472,400 | 8.5% | +0.4 |
+| 5 | 1.11 - 2.47 | 1.7 | 132 | 468 | 10,806,818 | 14.2% | +0.9 |
+| 6 | 2.47 - 5.51 | 3.9 | 196 | 424 | 15,995,411 | 21.0% | +2.2 |
+| 7 | 5.51 - 12.28 | 8.2 | 291 | 348 | 17,026,308 | 22.4% | +4.3 |
+| 8 | 12.28 - max | 15.1 | 369 | 243 | 3,798,483 | 5.0% | +6.9 |
+
+**Why A2 over A:** More TAI resolution (4 bins below 2.5m vs 3), balanced last bin (5% vs 1%),
+0.1m floor captures less real topography in the noise bin than 0.25m.
+
+**Why A2 over C:** Adaptive to the terrain — boundaries shift with the HAND distribution rather
+than being hardcoded. Similar performance but more generalizable.
+
+### Open items for the recommended configuration
+
+**Bin 1 is 22% of pixels at h=0.0m.** This is a fifth of the land area in a single stream-level
+column. Whether this is a problem depends on the spatial distribution of those pixels. If they
+cluster around streams and lake shores, the bin correctly represents the near-stream saturated
+zone. If they are scattered across the domain on flat upland patches that happen to have
+resolve_flats micro-gradients, the 0.1m floor may be misclassifying upland pixels as
+stream-adjacent. Checking the spatial distribution of bin 1 pixels against the stream network
+and NWI mask would clarify this.
+
+**Bin 2 is thin (2.3% of pixels, 1.7M).** This is the transition from noise floor to real
+topography. The trapezoidal width fit and per-bin parameter averages should be checked for
+statistical noise in this bin. If the width or slope values are erratic compared to adjacent
+bins, the bin may need widening (raise the floor to 0.15m or merge bins 2-3).
+
+**The 0.1m floor is a judgment call.** A more principled approach would examine the HAND
+cumulative distribution for an inflection point where noise-dominated values transition to
+signal-dominated values. This was not done — the floor was chosen as a round number above the
+observed noise range (1e-5 to 1e-2 m) and below the first clearly physical HAND values (~0.25m
+at Q25).
+
+**The real test is CTSM.** Binning refinements can be iterated indefinitely. The definitive
+evaluation is whether CTSM produces sensible water table dynamics, carbon fluxes, and CH4
+production with these parameters (Phase F).
 
 ---
 

@@ -24,12 +24,13 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib
-import matplotlib.pyplot as plt
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np
 import rasterio
 from pyproj import Proj as PyprojProj
-
-matplotlib.use("Agg")
 
 # pysheds fork
 PYSHEDS_FORK = os.environ.get("PYSHEDS_FORK", "/blue/gerber/cdevaneprugh/pysheds_fork")
@@ -68,6 +69,7 @@ SLOPE_MOSAIC_PATH = MOSAIC_DIR / "slope.tif"
 ASPECT_MOSAIC_PATH = MOSAIC_DIR / "aspect.tif"
 WATER_MASK_PATH = MOSAIC_DIR / "water_mask.tif"
 OUTPUT_DIR = BASE_DIR / "output" / "osbs" / "binning_comparison"
+CACHE_PATH = OUTPUT_DIR / "filtered_arrays.npz"
 
 
 def print_progress(msg: str) -> None:
@@ -131,9 +133,18 @@ def bins_d_hybrid(hand: np.ndarray) -> np.ndarray:
     return bounds
 
 
+def bins_a2_log_floor_01_q95(hand: np.ndarray) -> np.ndarray:
+    """Log-spaced with 0.1m floor and Q95 upper endpoint."""
+    valid = (hand > 0) & np.isfinite(hand)
+    q95 = float(np.percentile(hand[valid], 95))
+    internal = np.geomspace(0.1, q95, N_BINS - 1)
+    return np.concatenate([[0], internal, [1e6]])
+
+
 STRATEGIES = {
     "Baseline (Q1/Q99)": bins_baseline,
     "A: Log floor (0.25m)": bins_a_log_floor,
+    "A2: Log floor (0.1m) + Q95": bins_a2_log_floor_01_q95,
     "B: Equal-count (>0.25m)": bins_b_equal_count,
     "C: Fixed boundaries": bins_c_fixed,
     "D: Hybrid (5 TAI + 3 ridge)": bins_d_hybrid,
@@ -450,9 +461,37 @@ def run_pipeline_through_filtering():
 
 def main():
     t_start = time.time()
+    recompute = "--recompute" in sys.argv
 
-    arrays = run_pipeline_through_filtering()
-    hand_flat, dtnd_flat, slope_flat, aspect_flat, area_flat, drainage_id_flat = arrays
+    if CACHE_PATH.exists() and not recompute:
+        print_progress(f"Loading cached arrays: {CACHE_PATH}")
+        data = np.load(CACHE_PATH)
+        hand_flat = data["hand"]
+        dtnd_flat = data["dtnd"]
+        slope_flat = data["slope"]
+        aspect_flat = data["aspect"]
+        area_flat = data["area"]
+        drainage_id_flat = data["drainage_id"]
+        print_progress(f"  Valid pixels: {len(hand_flat):,}")
+        hand_pos = hand_flat[hand_flat > 0]
+        for p in [1, 5, 10, 25, 50, 75, 90, 95, 99]:
+            print_progress(f"  HAND Q{p:02d}: {np.percentile(hand_pos, p):.4f} m")
+    else:
+        arrays = run_pipeline_through_filtering()
+        hand_flat, dtnd_flat, slope_flat, aspect_flat, area_flat, drainage_id_flat = (
+            arrays
+        )
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        np.savez(
+            CACHE_PATH,
+            hand=hand_flat,
+            dtnd=dtnd_flat,
+            slope=slope_flat,
+            aspect=aspect_flat,
+            area=area_flat,
+            drainage_id=drainage_id_flat,
+        )
+        print_progress(f"  Saved cache: {CACHE_PATH}")
 
     # --- Test all strategies ---
     print()
@@ -538,6 +577,7 @@ def main():
     colors = {
         "Baseline (Q1/Q99)": "#888888",
         "A: Log floor (0.25m)": "#e74c3c",
+        "A2: Log floor (0.1m) + Q95": "#e67e22",
         "B: Equal-count (>0.25m)": "#3498db",
         "C: Fixed boundaries": "#2ecc71",
         "D: Hybrid (5 TAI + 3 ridge)": "#9b59b6",
