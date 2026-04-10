@@ -2,6 +2,18 @@
 
 Date: 2026-03-27
 
+## Status (2026-04-09)
+
+**The weir overflow approach described in this document was superseded on 2026-04-09 by a simpler submerged lake column approach.** See `phases/G-ctsm-lake-representation.md` for the current Phase G direction.
+
+This document remains valuable as historical reference:
+
+- The **NWI water masking analysis and dual-mask solution** are implemented and production-ready (see Problems 1-2 and the "Solution" section). This is current.
+- The **CTSM source investigation** (stream water cycle, lateral flow, carbon-water coupling, PCT_LAKE interaction, MOSART coupling) is still accurate and useful when reasoning about hillslope hydrology behavior. The fact that negative `hill_elev` is permitted (`ColumnType.F90:76`, no guards) is what makes the new submerged-column approach viable.
+- The **modification options A-E** in the "CTSM Modification Options for Lake/Wetland Representation" section are no longer planned implementations.
+
+PI decision (after consulting collaborating scientists): lake bathymetry detail and stream-as-lake repurposing are more complexity than OSBS needs. The submerged-column approach leverages the existing CTSM subgrid machinery without requiring Fortran modifications from our fork — the PI's existing spillheight SourceMod handles the model-side behavior.
+
 ## Background
 
 The OSBS hillslope pipeline generates representative hillslope parameters for

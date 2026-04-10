@@ -1,4 +1,4 @@
-# Phase G: CTSM Lake-in-Hillslope Representation
+# Phase G: Submerged Lake Column in Hillslope File
 
 Status: Not started
 Depends on: Phase F
@@ -6,57 +6,111 @@ Blocks: None
 
 ## Problem
 
-CTSM's lake and hillslope land units are completely separate — there is no water exchange mechanism between them. Setting `PCT_LAKE > 0` creates an independent lake with its own hydrology, but no TAI coupling with the hillslope. The project's scientific goal (TAI dynamics — water table rise near lakes, suppressed aerobic decomposition, increased CH4) requires lateral coupling between lake storage and hillslope soil columns.
+CTSM's `istdlak` (lake) and `istsoil` (hillslope) land units are structurally independent — they combine at the gridcell level via area weighting but have no mechanism for lateral water exchange. The project's scientific goal (TAI dynamics — water table rise near lakes, suppressed aerobic decomposition, increased CH4) requires lake and hillslope to be coupled hydrologically.
 
-The existing stream infrastructure (`stream_water_volume`, Manning discharge, bidirectional hillslope-stream exchange) provides a natural mechanism to represent lake storage if the outflow equation is modified.
+The original Phase G plan (weir overflow, repurposing the stream infrastructure with ~70 lines of Fortran) was deemed more complexity than OSBS needs. Per PI consultation with collaborating scientists (2026-04-09), lake bathymetry detail and stream-as-lake repurposing are unnecessary for the OSBS goals — knowing the fractional lake area and treating it as permanently submerged is sufficient.
 
 ## Approach
 
-**Option B from `docs/water-masking-and-lake-representation.md`:** Replace Manning's continuous discharge with a weir overflow equation. ~70 lines of Fortran, localized to one subroutine plus initialization.
+Append one extra column per gridcell to the hillslope NetCDF. The column represents the aggregate of all NWI-masked lake area as a single "submerged" hillslope column with negative `hill_elev`. CTSM's existing lateral flow machinery handles the water exchange naturally — no Fortran modifications from our fork are planned.
 
-```
-Q = C * L * max(0, h - h_spill)^(3/2)
-```
+### Lake column fields
 
-**Zero discharge below pour point.** Water accumulates in the stream bucket. Water table rises in the lowest column via losing-stream exchange. Soil becomes anaerobic. CH4 production increases. When water level exceeds spill height, discharge begins — the TAI overflow event. Carbon response comes automatically from existing w_scalar, o_scalar, and finundated pathways — no biogeochemistry changes needed.
-
-**Stream fields repurposed as lake geometry:**
-
-| NetCDF field | Standard meaning | Phase G meaning |
+| Field | Value | Source |
 |---|---|---|
-| `stream_channel_width` | Bankfull width | Effective lake width (volume-to-depth) |
-| `stream_channel_depth` | Bankfull depth | Reference depth for exchange zero-point |
-| `stream_channel_slope` | Channel slope | Unused (weir replaces Manning) |
-| `stream_spill_height` (new) | — | Pour point elevation above lake surface |
-| `stream_spill_width` (new) | — | Spillway width |
+| `hill_elev` | `-SPILLHEIGHT` | Negative of the PI's spillheight SourceMod scalar |
+| `hill_distance` | `mean(dtnd[water_mask])` | Pixel-wise mean of DTND across lake pixels (area-weighted collapses to this since pixels are equal-area) |
+| `hill_area` | `sum(water_mask) * pixel_area` | Total NWI lake area in m² (production domain: ~10.68 km²) |
+| `hill_width` | TBD | See open questions |
+| `hill_slope` | TBD (likely 0) | See open questions |
+| `hill_aspect` | TBD (likely 0) | See open questions |
+| `hill_bedrock_depth` | 0 | Matches hillslope convention |
+| `column_index` | TBD (likely `N_HAND_BINS + 1`) | Sequential |
+| `downhill_column_index` | TBD (3 topology options) | See open questions |
+| `hillslope_index` | TBD (reuse `1` or new `2`) | See open questions |
 
-Note: `stream_channel_length` is computed internally by CTSM from hillslope geometry — not a free parameter.
+NetCDF structure change: `nmaxhillcol = N_HAND_BINS + 1` (currently `nmaxhillcol = 8`, becomes `9`).
 
-## Tasks
+## Why this works
 
-- [ ] PI decision on approach (weir overflow recommended — see `docs/water-masking-and-lake-representation.md` for full option analysis)
-- [ ] Implement weir overflow in CTSM fork:
-  - [ ] Replace Manning block in `HillslopeStreamOutflow` (`HillslopeHydrologyMod.F90` lines 999-1041) with weir equation (~40 lines)
-  - [ ] Add `stream_spill_height` and `stream_spill_width` to `LandunitType.F90` (~6 lines)
-  - [ ] Read new variables from NetCDF in `InitHillslope` (~20 lines)
-  - [ ] Optionally add `streamflow_method` namelist selector (Manning vs weir)
-- [ ] Optionally add `h2osfc_thresh` override on lowest column (Option E, ~5 lines in `SoilHydrologyInitTimeConstMod.F90`)
-- [ ] Update pipeline to compute lake parameters from DEM + NWI:
-  - [ ] `stream_spill_height`: elevation difference between lake surface and pour point rim
-  - [ ] `stream_spill_width`: effective spillway width from DEM gradient at pour point
-  - [ ] `stream_channel_width`/`depth`: lake-like values from NWI area and bathymetry estimates
-- [ ] Set `PCT_LAKE = 0`, `use_hillslope_routing = .true.`
-- [ ] Run comparison: Phase F baseline (separate lake, routing off) vs weir overflow (lake-in-hillslope, routing on)
+**Negative `hill_elev` is permitted.** Confirmed in `ColumnType.F90:76` — no guards, sign checks, or absolute value operations on `hill_elev` anywhere in the source. The head gradient equation in `SoilHydrologyMod.F90` (line 2261) works with negative values because it computes differences:
+
+```fortran
+head_gradient = (col%hill_elev(c) - zwt(c)) - min((stream_water_depth - stream_channel_depth), 0._r8)
+head_gradient = head_gradient / col%hill_distance(c)
+```
+
+A column at `hill_elev = -0.2m` (say, lake surface 0.2m below hillslope reference) with a water table near its surface produces a gradient that favors flow *from* upland columns *into* the lake column. Water drains from hillslope to lake naturally through the existing lateral flow pathway.
+
+**TAI response is automatic.** CTSM's carbon-water coupling chain runs without modification:
+
+```
+zwt (water table depth)
+  |-> soilpsi -> w_scalar -> decomposition rate
+  |-> O2 transport -> o2stress_unsat -> o_scalar -> decomposition rate
+  |-> finundated -> CH4 production, transport, oxidation
+```
+
+Columns adjacent to the lake (lowest-HAND hillslope bins) see water tables rising via the lateral flow, which saturates the soil, suppresses aerobic decomposition (`o_scalar` drops), and increases CH4 production (`finundated` rises). No biogeochemistry changes needed.
+
+**Standing water is physically correct.** Per PI guidance (2026-04-09), the small hydraulic gradients between low-HAND columns that produce "stuck" or "standing" water states are the correct representation of wetland terrain, not a bug. This relaxes the previous concern about adjacent-bin height differences being too small to drive lateral flow.
+
+## Why not weir overflow (historical)
+
+The original Phase G plan (documented in `docs/water-masking-and-lake-representation.md`) proposed replacing Manning's equation in `HillslopeStreamOutflow` with a weir equation and repurposing the `stream_channel_*` fields as lake geometry. After PI consultation with collaborators:
+
+- **Lake bathymetry detail is not strictly necessary.** The submerged-column approach captures the first-order effect (lake area is permanently saturated and draws water from upland) without per-lake depth curves or pour-point analysis.
+- **Fortran modifications add scope and maintenance burden** for a research project that should focus on OSBS first.
+- **The PI's existing spillheight SourceMod** already provides the CTSM-side tuning knob needed for this configuration.
+- **Generalization (full lake representation, variable geometry, dynamic inundation)** is better pursued as a separate research project rather than bolted onto OSBS parameter generation.
+
+The `water-masking-and-lake-representation.md` document retains value as reference — the CTSM source investigation (stream water cycle, lateral flow, carbon-water coupling) is still accurate and useful when reasoning about behavior. The modification options A-E in that document are no longer planned implementations.
+
+## Pipeline tasks
+
+- [ ] Add `SPILLHEIGHT` constant to `run_pipeline.py` (value from PI)
+- [ ] Add lake column computation step (between Step 5 hillslope params and Step 6 NetCDF write):
+  - Compute `lake_dtnd = float(np.mean(dtnd[water_mask > 0]))`
+  - Compute `lake_area = float(np.sum(water_mask)) * PIXEL_SIZE**2`
+  - Construct lake column dict with known + TBD fields
+  - Append to `params["elements"]`
+- [ ] Update NetCDF writer to handle `nmaxhillcol = N_HAND_BINS + 1`
+- [ ] Update `pct_hillslope` and `nhillcolumns` metadata to reflect the extra column
+- [ ] Revisit HAND binning strategy (see `docs/hillslope-binning-rationale.md` — "standing water is a feature" relaxes criteria; options include lower noise floor, Q1/Q99 endpoints, or 16 bins with 0-50cm focus)
+- [ ] Production run, verify NetCDF structure with `ncdump -h`
+- [ ] CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod
+
+## Open questions (TBD — need PI clarification)
+
+1. **`SPILLHEIGHT` value.** The PI's existing SourceMod defines this. Need the exact number to hardcode (or configure) in the pipeline.
+
+2. **`downhill_column_index` topology.** Three options:
+   - **Lake in-chain:** lowest hillslope bin → lake → -9999 (stream sentinel). Water routes hillslope → lake → stream.
+   - **Lake as sibling:** lowest bin → -9999, lake → -9999. No flow path through the lake.
+   - **Lake at-bottom (no stream exit):** lowest bin → lake, lake → -9999. Lake is the terminal node below all hillslope columns.
+   
+   The PI's SourceMod likely assumes a specific topology.
+
+3. **`hillslope_index` for the lake column.** Reuse `1` (treat as part of the single hillslope) or assign `2` (separate aspect). If separate, does `nhillslope` become `2`?
+
+4. **Lake column `slope`, `aspect`, `width`.** Physically meaningless but read by CTSM. Likely defaults:
+   - `slope = 0` (no lateral flow driven by slope gradient on the lake column itself)
+   - `aspect = 0` (irrelevant for a flat lake surface)
+   - `width = lake_area / lake_dtnd` (geometric closure of the trapezoidal interpretation)
+   
+   The PI's SourceMod may set these or require specific conventions.
+
+5. **HAND binning strategy.** Current A2 (0.1m floor + Q95) is implemented but the "standing water is a feature" framing relaxes the adjacent-height criterion. See `docs/hillslope-binning-rationale.md`. Options: lower floor, Q1/Q99, 16 bins, etc. Decision should be made alongside Phase G implementation.
 
 ## Deliverable
 
-CTSM fork with TAI-capable hillslope hydrology. Comparison showing impact of lake-in-hillslope representation on water table dynamics, carbon fluxes, and CH4 production.
+Pipeline-generated hillslope NetCDF with `N_HAND_BINS + 1` columns (the extra column being the submerged lake), consumed by CTSM with the PI's spillheight SourceMod active. Comparison simulation against Phase F baseline showing the effect of the submerged lake column on water table dynamics, soil moisture, and CH4 production in near-lake hillslope columns.
 
 ## References
 
-- `docs/water-masking-and-lake-representation.md` — full CTSM source investigation, 5 options analyzed, Fortran code sketches
-- `docs/synthetic_lake_bottoms.md` — lake depth estimation methods (Cael power law, Hollister topography model, GLOBathy)
-- `$TOOLS/docs/SPILLHEIGHT_IMPLEMENTATION.md` — PI's existing spillheight SourceMod experiment
+- `docs/water-masking-and-lake-representation.md` — historical; CTSM source investigation still valid, modification options A-E superseded
+- `docs/hillslope-binning-rationale.md` — binning strategy (A2 current, may be revisited)
+- `$TOOLS/docs/SPILLHEIGHT_IMPLEMENTATION.md` — PI's existing spillheight SourceMod
+- `phases/F-validate-deploy.md` — baseline for Phase G comparison
 
 ## Log
-

@@ -391,6 +391,29 @@ production with these parameters (Phase F).
 
 ---
 
+## Status update (2026-04-09): Adjacent-height criterion relaxed
+
+PI guidance after the 2026-04-09 meeting: small gradients between low-HAND bins that lead to
+"standing water" in CTSM are physically correct for wetland-dominated terrain, not a bug. The
+"adjacent-bin height difference >= 0.2m" criterion used to evaluate binning strategies above
+no longer applies as a hard requirement.
+
+Implications:
+
+- The A2 configuration (0.1m floor + Q95) remains the current implementation
+- Alternative strategies become viable: lower noise floor (e.g., 0.01m), or return to Q1/Q99
+  endpoints (the originally "broken" approach that produced 4/8 bins near h=0.0m), or a
+  no-floor configuration
+- Increasing to 16 bins with focus on the 0-50cm zone is under consideration
+- Specific binning strategy will be revisited alongside Phase G implementation
+
+The comparison script (`scripts/osbs/compare_hand_binning.py`) and cached filtered arrays
+(`output/osbs/binning_comparison/filtered_arrays.npz`) can test new strategies in seconds
+without rerunning the full pipeline. New strategies should be added to the `STRATEGIES` dict
+and the script rerun.
+
+---
+
 ## MERIT Validation
 
 The MERIT regression test (`scripts/merit_validation/merit_regression.py`) validates our pysheds

@@ -8,7 +8,7 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Phase E (parameter completion) is complete.** Hillslope structure is 1 aspect x 8 HAND bins (log-spaced with 0.1m noise floor, Q95 upper endpoint). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Phase F (CTSM validation) and Phase G (CTSM source mods for lake-in-hillslope) follow.
+**Phase E (parameter completion) is complete.** Hillslope structure is 1 aspect x 8 HAND bins (log-spaced with 0.1m noise floor, Q95 upper endpoint). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Phase F (CTSM validation) and Phase G (submerged lake column in hillslope file, no CTSM Fortran changes planned) follow.
 
 ---
 
@@ -424,23 +424,32 @@ Both the spatial scale analysis functions and the hillslope computation function
 
 **Deliverable:** Validated hillslope file ready for production runs.
 
-### Phase G: CTSM lake-in-hillslope representation
+### Phase G: Submerged lake column in hillslope file
 
-**Status: Not started.** Blocked by Phase F (need validated baseline for comparison).
+**Status: Not started.** Blocked by Phase F (need validated baseline for comparison). **Direction changed 2026-04-09** after PI consultation with collaborators — previous weir overflow plan abandoned.
 
-Implement TAI dynamics by repurposing CTSM's stream infrastructure as lake storage with threshold overflow. The weir overflow approach (Option B from `docs/water-masking-and-lake-representation.md`) replaces Manning's continuous discharge with zero-below-spill-height behavior — ~70 lines of Fortran, localized to one subroutine plus initialization.
+Add one extra column to the hillslope NetCDF representing the aggregate of all NWI-masked lake area as a single submerged column with negative `hill_elev`. CTSM's existing lateral flow machinery draws water from adjacent upland columns into the lake column automatically. TAI response (rising water table, suppressed aerobic decomposition, CH4) emerges via existing `w_scalar`, `o_scalar`, `finundated` pathways. No CTSM Fortran modifications from our fork planned — the PI's existing spillheight SourceMod handles the model-side behavior.
+
+**Lake column parameters:**
+
+| Field | Value |
+|---|---|
+| `hill_elev` | `-SPILLHEIGHT` (from PI's SourceMod scalar) |
+| `hill_distance` | `mean(dtnd[water_mask])` |
+| `hill_area` | Total NWI lake area (sum of water mask × pixel area) |
+| `hill_width`, `hill_slope`, `hill_aspect` | TBD (defaults or PI convention) |
 
 **Tasks:**
-1. PI decision on approach (weir overflow is the recommendation)
-2. Implement weir overflow in CTSM fork (`HillslopeStreamOutflow` in `HillslopeHydrologyMod.F90`)
-3. Add `stream_spill_height` and `stream_spill_width` to `LandunitType.F90` + `InitHillslope`
-4. Update pipeline to compute lake parameters from DEM + NWI (pour point analysis)
-5. Optionally add `h2osfc_thresh` override on lowest column (~5 lines, Option E)
-6. Set `PCT_LAKE = 0`, `use_hillslope_routing = .true.`, run comparison vs Phase F baseline
+1. Pipeline: add lake column computation step after Step 5, append to NetCDF output
+2. Update NetCDF writer for `nmaxhillcol = N_HAND_BINS + 1`
+3. Revisit HAND binning strategy (relaxed criteria under "standing water is a feature" framing)
+4. PI clarifications: SPILLHEIGHT value, `downhill_column_index` topology, `hillslope_index` convention, slope/aspect/width defaults
+5. Production run, verify NetCDF structure
+6. CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod, compare vs Phase F baseline
 
-**Deliverable:** CTSM fork with TAI-capable hillslope hydrology. Comparison showing impact of lake-in-hillslope representation on water table, carbon fluxes, and CH4.
+**Deliverable:** Hillslope NetCDF with submerged lake column, consumed by CTSM with the PI's spillheight SourceMod. Comparison showing effect on water table dynamics and CH4 production in near-lake columns.
 
-**Reference:** `docs/water-masking-and-lake-representation.md` — full CTSM source investigation, option analysis, and implementation details.
+**Reference:** `phases/G-ctsm-lake-representation.md` — full plan, open questions, rationale. `docs/water-masking-and-lake-representation.md` — historical CTSM source investigation (still valid), superseded weir overflow design.
 
 ### Dependency Diagram
 
@@ -496,7 +505,7 @@ From `progress-tracking.md`, mapped to current phase structure:
 | 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
 | 5. Generate final dataset (Phase E) | **Complete** | 1x8 bins (A2: 0.1m floor + Q95 log), NEON slope/aspect, NWI water masking, all PI questions resolved |
 | 6. CTSM validation (Phase F) | Pending | Validate with `use_hillslope_routing = .false.`, `PCT_LAKE = 0` (matching osbs2) |
-| 7. CTSM source mods (Phase G) | Pending | Weir overflow (~70 lines Fortran), lake-in-hillslope, TAI dynamics |
+| 7. Lake representation (Phase G) | Pending | Submerged lake column in hillslope file (pipeline only), PI SourceMods handle CTSM side |
 
 The pipeline produces scientifically defensible output. Phase E is nearly complete (log-spaced bins remaining). Phase F (validation) and Phase G (CTSM lake mods) follow.
 
@@ -517,4 +526,4 @@ The pipeline produces scientifically defensible output. Phase E is nearly comple
 | Lc physical validation | `output/osbs/smoke_tests/lc_physical_validation/` | Check 1 & 2 results, plots, JSON |
 | Water masking comparison | `output/osbs/water_masking_comparison/` | Lc comparison: raw vs mean-fill vs zero-Laplacian (3 methods, spectral plots, JSON) |
 | Lc comparison script | `scripts/osbs/compare_lc_water_masking.py` | FFT Lc comparison with and without lake masking |
-| Water masking & lake representation | `docs/water-masking-and-lake-representation.md` | CTSM source investigation, lake representation options, weir overflow design (Phase G reference) |
+| Water masking & lake representation | `docs/water-masking-and-lake-representation.md` | Historical: CTSM source investigation (still valid) + superseded weir overflow design (Phase G direction changed 2026-04-09) |
