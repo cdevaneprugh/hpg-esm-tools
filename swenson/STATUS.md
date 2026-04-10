@@ -64,271 +64,34 @@ This gives confidence that the *approach* is correct — we understand Swenson's
 
 ### NEON slope/aspect products adopted (Phase E)
 
-PI approved using NEON DP3.30025.001 slope/aspect products directly, replacing pgrid Horn 1981 computation on the raw DTM. Scientific rationale:
-
-1. **Reduced TIN interpolation noise on flat terrain.** NEON applies a 3x3 pre-filter before Horn 1981. OSBS is low-relief — flat areas dominate, and raw 1m gradients are noisiest there. The +0.008 m/m slope bias (pgrid steeper) is consistent with pgrid amplifying noise that NEON smooths.
-2. **No border artifacts.** NEON computes with 20m tile-edge buffer — all pixels have valid slope/aspect. pgrid zeros the outermost pixel ring (Horn 1981 3x3 stencil).
-3. **Authoritative provenance.** Published, versioned data product with ATBD (NEON.DOC.003791vB). Citable source vs local computation.
-4. **Better aspect on flat terrain.** Pre-smoothing gives physically meaningful aspect values where raw gradients are noise-dominated. Matters for catchment-mean aspect used by CTSM insolation correction (shr_orb_cosinc).
-5. **Consistency with DTM product.** Both from same LIDAR collection and processing pipeline.
-
-Comparison across 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84. See `output/osbs/slope_aspect_comparison/`.
+Pipeline uses NEON DP3.30025.001 products directly instead of computing slope/aspect from the raw DTM. NEON's 3x3 pre-filter reduces TIN interpolation noise on OSBS's flat terrain and eliminates border artifacts. Comparison across 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84. See `output/osbs/slope_aspect_comparison/`.
 
 ### NWI water masking implemented (Phase E)
 
-NWI data (HU8_03080103, Lower St. Johns Watershed): 103 open water features in production domain, 10.7M pixels (11.9% of domain). Dual-mask approach solves the lake pixel contamination that blocked log-spaced HAND bins:
+NWI data (HU8_03080103 watershed): 103 open water features covering 10.7M pixels (11.9% of production domain). The pipeline uses a dual-mask approach — the natural stream network drives catchment delineation while a "wide mask" (natural streams + lake pixels) defines HAND reference surfaces. Land pixels adjacent to lakes get HAND measured from the lake edge; lake pixels themselves get HAND=0 and are excluded from all binning and tail-fitting statistics.
 
-1. **Natural stream mask** for catchment delineation — preserves natural catchment structure (~508 hillslopes)
-2. **Wide mask** (natural streams + NWI lake pixels) for HAND computation — land near lakes gets HAND relative to lake surface; lake pixels get HAND=0
-3. **Water pixel exclusion** from HAND binning and DTND tail fitting
-
-**Why boundary forcing fails at 1m:** Swenson's method injects lake boundaries into the stream network. At 1m, lake boundaries are thousands of pixels long, creating thousands of spurious "reaches" that fragment catchments (800 to 222K). The dual-mask approach avoids this by keeping the natural stream network for catchment delineation while treating lake pixels as stream-level reference surfaces for HAND.
-
-**Lc is insensitive to water masking:** Raw DEM gives Lc=356m (lognormal, psharp=3.95). Both masking approaches (mean-fill, zero-Laplacian) destroy the spectral peak (psharp drops to 0). Lake surfaces contribute near-zero Laplacian and do not contaminate the drainage-scale peak. See `output/osbs/water_masking_comparison/`.
-
-**Production results with masking (2026-03-27, commit 8c727ca):**
-
-| Metric | Before masking (03-24) | After masking (03-27) |
-|--------|------------------------|-----------------------|
-| Hillslopes | 759 | 508 |
-| Stream reaches | 778 | 552 |
-| Lowest HAND boundary | 0.00027 m | 0.27 m |
-| HAND median | 1.6 m | 2.3 m |
-| Widths (m) | 381 / 334 / 279 / 211 | 569 / 504 / 429 / 339 |
-| Element areas (m²) | ~28,100 | ~37,700 |
-| Runtime | 20.1 min | 16.4 min |
-
-The lowest HAND boundary improved from 0.00027m (resolve_flats micro-gradient artifact on flat water surfaces) to 0.27m. Widths increased 49-61% because lake pixels no longer dilute the trapezoidal fits.
+Boundary forcing (Swenson's original approach) was tried first and broke catchment delineation at 1m resolution by fragmenting ~800 catchments into ~222K. The dual-mask approach preserves the natural catchment count (~508 on the production domain). Lc is insensitive to water masking (raw DEM gives Lc=356m; both masking approaches destroy the spectral peak). See `phases/E-complete-parameters.md` and `output/osbs/water_masking_comparison/`.
 
 ---
 
-## Problems, In Order of Importance
-
-### 1. DTND uses the wrong algorithm — RESOLVED
-
-**Status: RESOLVED in Phase A.** Pipeline now uses `grid.compute_hand()` (line 1073) which is UTM-aware. The EDT workaround has been removed.
-
-**Impact:** Corrupted the distance parameter for all hillslope columns.
-
-**File:** `scripts/osbs/run_pipeline.py` (formerly lines 1480-1483, now resolved)
-
-The pipeline computes DTND using `scipy.ndimage.distance_transform_edt` — Euclidean distance to the *geographically nearest* stream pixel. Swenson's method computes distance to the *hydrologically nearest* stream pixel (the one each pixel actually drains to via D8 routing). These differ whenever a pixel is geographically close to a stream on the opposite side of a divide.
-
-The workaround exists because pysheds' `compute_hand()` computes the correct hydrologically-linked distance internally, but uses haversine math that assumes geographic coordinates. Our UTM data produces garbage distances through haversine.
-
-Neither DTND is currently correct:
-
-| Approach | Concept | Math |
-|----------|---------|------|
-| pysheds DTND | Correct (flow-path-linked) | Wrong (haversine on UTM) |
-| Pipeline EDT | Wrong (nearest regardless of drainage) | Correct (Euclidean on UTM) |
-
-**Fix path:** Modify `compute_hand()` in `$PYSHEDS_FORK/pysheds/pgrid.py` (lines 1928-1942) to detect UTM CRS and use Euclidean distance instead of haversine. Alternatively, expose the `hndx` array (which maps each pixel to its drainage stream pixel — already computed at line 1919) and compute UTM distance externally.
-
-**Downstream effect:** DTND feeds directly into the hillslope distance parameter and the trapezoidal width fit (via A_sum(d) curve). Wrong DTND means wrong widths and wrong distances for all columns.
-
-### 2. Flow routing resolution (4x subsampling) — RESOLVED
-
-**Impact:** Discards 93.75% of the 1m LIDAR data before the core hydrology computation.
-
-**File:** `scripts/osbs/run_pipeline.py` line 1354
-
-**Status: RESOLVED.** Full 1m resolution works at 64GB (peak 29.2 GB, 5.9 min for 90M pixels). Resolution comparison across 1m/2m/4m on two domains confirms 1m is the correct choice: height and distance correlations >0.999 across resolutions (resolution-insensitive), slope systematically underestimated at coarser resolutions, and computational cost is not a barrier (17 min / 58 GB for the full domain). No subsampling will be used. See `phases/B-flow-resolution.md` for full results.
-
-### 3. Characteristic length scale (Lc) — RESOLVED
-
-**Impact:** Everything downstream depends on Lc — accumulation threshold, stream network density, HAND, DTND, all 6 parameters.
-
-**File:** `scripts/osbs/run_pipeline.py` lines 1275-1287
-
-**Status: RESOLVED.** Lc = 300m (range 285-356m), A_thresh = 45,000 m². Confirmed by restricted-wavelength FFT, PI acceptance, and physical validation. See `phases/C-characteristic-length.md` for full analysis.
-
-**Phase C established that the Laplacian spectrum has two real features at 1m resolution:** a micro-topographic peak at ~8m (k² amplification artifact) and a drainage-scale peak at ~285-356m (visible when short wavelengths are excluded). See `output/osbs/phase_c/` for plots.
-
-**Lc comparison across all datasets:**
-
-| Dataset | Lc source | Lc value | A_thresh |
-|---------|-----------|----------|----------|
-| MERIT (90m) | FFT peak | 763m | 275,400 m² |
-| OSBS (full, 4x sub) | Forced minimum | 100m | 5,000 m² |
-| OSBS (interior, 4x sub) | FFT peak (4m res) | 166m | 13,778 m² |
-| OSBS (interior, 1m, full range) | FFT peak (artifact) | 8.1m | 33 m² |
-| **OSBS (interior, 1m, cutoff>=20m)** | **FFT peak** | **356m** | **63,368 m²** |
-| **OSBS (interior, 1m, cutoff>=100m)** | **FFT peak** | **285m** | **40,612 m²** |
-
-**Production Lc by domain size (1m, min_wavelength=20m):**
-
-| Tier | Domain | Lc | A_thresh |
-|------|--------|----|----------|
-| 1 (R6C10) | 1 tile, 1M px | 541m | 146,156 |
-| 2 (R6-R10, C7-C11) | 25 tiles, 25M px | 479m | 114,631 |
-| **3 (R4-R12, C5-C14)** | **90 tiles, 90M px** | **356m** | **63,362** |
-
-Lc varies with domain size because larger domains include more drainage structure, shifting the FFT peak. The production value (tier 3) is 356m.
-
-**Physical validation (2026-02-17, interpretation closed 2026-02-23):** Run on 5x5 tile block (R6-R10, C7-C11, 25M pixels at 1m). Both checks pass:
-- **Check 1 (DTND vs Lc): PASS.** P95 DTND/Lc = 1.17 ("similar magnitude" per paper). The original max(DTND)/Lc = 3.1 appeared to fail, but `max()` is not comparable between 90m MERIT (~12K pixels, implicitly smoothed) and 1m OSBS (25M pixels, raw). At 90m, each pixel averages a 90x90m area, blunting ridge extremes; at 1m, individual ridgeline pixels are preserved. The 2000x sample size difference shifts the extreme value rightward. P95 is the resolution-fair comparison.
-- **Check 2 (mean catchment / Lc²): PASS.** Ratio = 0.876, close to Swenson's 0.94 calibration.
-
-Results: `output/osbs/smoke_tests/lc_physical_validation/`.
-
-### 4. Slope/aspect: N/S aspect swap in OSBS pipeline — RESOLVED
-
-**Status: RESOLVED in Phase A/D, superseded by Phase E.** Pipeline now loads NEON DP3.30025.001 slope/aspect products directly (lines 607-619), bypassing pgrid slope/aspect computation entirely. The `np.gradient` workaround, the interim sign fix, and the pgrid `slope_aspect()` call have all been removed.
-
-**Impact:** Corrupted aspect for all pixels, which corrupted aspect-based binning and area fractions for all hillslope columns.
-
-**File:** `scripts/osbs/run_pipeline.py` (formerly lines 1514-1528, now resolved)
-
-#### How the bug happened
-
-The OSBS pipeline cannot use pgrid's `slope_aspect()` because `_gradient_horn_1981()` internally computes haversine distances, which produce garbage on UTM data. So the pipeline uses `np.gradient(dem, pixel_size)` as a workaround and applies the same `arctan2(-dzdx, -dzdy)` formula from pgrid.
-
-The problem: pgrid and `np.gradient` return `dzdy` with **opposite sign conventions**, and the formula was copied without adjusting for this.
-
-**pgrid's `_gradient_horn_1981()`** references neighbors by compass direction (N, NE, E, ...) and normalizes spacings with `abs()`:
-```python
-dy = re * np.abs(dtr * dlat)  # always positive regardless of data ordering
-```
-Combined with the explicit neighbor ordering, this always returns `dzdy = d(elev)/d(north)` — positive means elevation increases northward.
-
-**`np.gradient`** computes finite differences along array axes, following array indexing order. In a standard GeoTIFF (row 0 = north, row index increases southward):
-- `dzdy = d(elev)/d(row) = d(elev)/d(south) = -d(elev)/d(north)` — **opposite sign** from pgrid
-
-The pipeline's original comment showed the reasoning that led to the error:
-```python
-# Note: numpy y-axis increases downward (row index), x-axis increases rightward (col index)
-# For geographic North (up on map), we need -dzdy for the y component
-```
-The author correctly recognized that dzdy follows rows (southward) and that `-dzdy` converts to d(elev)/d(north). But the aspect formula needs `north_downhill` = **-**d(elev)/d(north) = dzdy (no negation). The extra negation in the formula produces `north_uphill` instead — one level of negation too many.
-
-#### What the bug does
-
-The bug reflects aspect across the east-west axis (the 90°-270° line):
-
-| Correct | Buggy | Error |
-|---------|-------|-------|
-| 0° (N) | 180° (S) | 180° |
-| 45° (NE) | 135° (SE) | 90° |
-| 90° (E) | 90° (E) | 0° |
-| 135° (SE) | 45° (NE) | 90° |
-| 180° (S) | 0° (N) | 180° |
-| 270° (W) | 270° (W) | 0° |
-
-Pure east/west aspects are unaffected. Everything else is corrupted, with maximum error (180°) for pure north/south aspects. At OSBS with nearly uniform aspect distribution, this systematically swaps N-bin and S-bin pixel assignments.
-
-#### What this does NOT affect
-
-Slope magnitude (`sqrt(dzdx² + dzdy²)` — sign-independent), HAND (elevation differences), DTND (distances, always positive), flow routing (compares neighbor elevations directly).
-
-#### What this DOES affect — downstream corruption chain
-
-Everything downstream of line 1527 operated on wrong aspect values:
-
-| Step | Lines | Corruption |
-|------|-------|-----------|
-| Aspect binning | 1587 | Pixels assigned to wrong N/E/S/W hillslope |
-| Area fractions | 1619-1657 | Wrong pixel counts per aspect bin |
-| Trapezoidal width fit | 1624-1626 | Fit on wrong pixel populations |
-| Circular mean aspect | 1681 | Mean computed from wrong pixel sets |
-| All 6 params × 16 elements | 1659-1710 | height, distance, area, slope, aspect, width |
-| NetCDF output | 934-1182 | All hillslope variables in output file |
-
-The `circular_mean_aspect()` function (line 745) and `get_aspect_mask()` function (line 576) are themselves correct — they just received wrong input. No changes to those functions were needed.
-
-#### Where the bug did NOT occur
-
-- **pgrid's `slope_aspect()`** (`pgrid.py:2223`): Uses the same `arctan2(-dzdx, -dzdy)` formula, but correct because pgrid's `_gradient_horn_1981()` returns `dzdy = d/d(north)`.
-- **MERIT validation** (`stage3_hillslope_params.py:800`): Uses pgrid's `slope_aspect()` directly — correct.
-- **`calc_gradient_utm()`** (`run_pipeline.py:275`): Only used for FFT Laplacian computation. The Laplacian is a sum of second derivatives where signs cancel — not affected.
-
-#### History
-
-Stage 8 of MERIT validation discovered the N/S swap and fixed it by switching to pgrid's `slope_aspect()`. That fix could not be applied to the OSBS pipeline because pgrid uses haversine math that fails on UTM data.
-
-**NEON validation data:** NEON provides precalculated slope/aspect rasters (DP3.30025.001) which could serve as an additional validation baseline — see PI question #5.
-
-### 5. DEM conditioning may erase real geomorphic features — RESOLVED
-
-**Impact:** At 1m resolution, pits and depressions include real features: sinkholes, wetland depressions, karst dissolution. Filling them forces a continuous drainage network but destroys information about closed basins that are central to OSBS hydrology.
-
-**File:** `scripts/osbs/run_pipeline.py` lines 932-933, 963
-
-**Status: RESOLVED (2026-03-30).** Proceed with standard depression filling for D8 routing. The Swenson pipeline was never designed to handle microtopography — it characterizes macro-scale watershed structure. Attempting to preserve real closed basins would require fundamentally different flow routing (e.g., RICHDEM priority-flood with depression retention), which is outside the scope of this pipeline. The limitations of standard D8 filling at 1m are understood and accepted.
-
-### 6. Stream channel parameters use interim scaling — RESOLVED
-
-**Impact:** Would affect CTSM lateral subsurface flow and stream-groundwater exchange — but only when `use_hillslope_routing = .true.`.
-
-**File:** `scripts/osbs/run_pipeline.py` lines 1200-1208
-
-**Status: RESOLVED (2026-03-30).** The osbs2 baseline runs with `use_hillslope_routing = .false.`, meaning stream parameters in the hillslope NetCDF are never read by CTSM. The `active_stream` guard in `HillslopeHydrologyMod.F90` (lines 991-996) skips all stream calculations when `stream_channel_width = 0`. Phase F validation will match this configuration (routing off), so stream params are irrelevant.
-
-Current interim values (power-law from per-hillslope area) are left as-is. Phase G will repurpose the stream channel fields as lake geometry parameters for the weir overflow implementation — `stream_channel_width` and `stream_channel_depth` become lake dimensions, `stream_channel_slope` becomes unused (Manning replaced by weir equation). No research into OSBS-specific stream empirical relationships is needed.
-
-| Parameter | Current (interim) | Phase G (lake geometry) |
-|-----------|-------------------|------------------------|
-| Stream depth | 0.118 m (power-law) | Characteristic lake depth (from NWI + DEM) |
-| Stream width | 1.3 m (power-law) | Effective lake width (from NWI area / CTSM-computed length) |
-| Stream slope | 0.00691 (network) | Unused (weir replaces Manning) |
-
-### 7. Bedrock depth is a placeholder — RESOLVED
-
-**Status: RESOLVED (commit 11f465e).** Pipeline now uses zeros (line 553: `bedrock_depth = np.zeros()`), matching Swenson's reference file. CTSM ignores this field when using default soil depth parameters.
-
-**File:** `scripts/osbs/run_pipeline.py` line 553
-
-Pipeline previously used `1e6` (effectively infinite). Swenson reference has all zeros. Updated to match reference.
-
-### 8. FFT parameters untested for OSBS — RESOLVED
-
-**Status:** Resolved by Phase C sensitivity sweep. **Lc is insensitive to all tested parameters.**
-
-**File:** `scripts/osbs/run_pipeline.py` lines 80-85, 489-506
-
-Phase C ran the full test matrix (tests A-E, 20 configurations) at full 1m resolution on the interior mosaic. Lc ranged 8.0-9.8 m across all tests, with the lognormal model selected unanimously. No parameter needs calibration — the spectral peak is strong enough (psharp 9-12) that preprocessing choices don't affect the result.
-
-| Test | Variable | Values tested | Lc range (m) |
-|------|----------|---------------|---------------|
-| A | blend_edges | 4, 25, 50, 100, 200 | 8.1 - 9.6 |
-| B | zero_edges | 5, 20, 50, 100 | 8.1 - 9.8 |
-| C | NLAMBDA | 20, 30, 50, 75 | 8.0 - 8.9 |
-| D | MAX_HILLSLOPE_LENGTH | 500, 1000, 2000, 10000 | 8.1 (stable) |
-| E | detrend | True, False | 8.1 (stable) |
-
-Region size test (F) was deferred as unnecessary given stability. Full results in `phases/C-characteristic-length.md`.
-
-The remaining question is not parameter sensitivity but *interpretation* of the 8m peak — see problem #3.
-
-### 9. ~400 lines of duplicated code — RESOLVED
-
-**Status: RESOLVED in Phase D (commit a51b0e3, 624f05d).** Shared modules extracted. Both pipelines now import from the same source.
-
-**Files:** Formerly `run_pipeline.py` lines 275-568 (spatial scale), lines 666-742 (hillslope computation)
-
-Both the spatial scale analysis functions and the hillslope computation functions were duplicated between the merit_validation scripts and the OSBS pipeline. Any fix had to be applied twice.
-
-**Implemented architecture:**
-
-| Layer | Responsibility | Location |
-|-------|---------------|----------|
-| pysheds (fork) | Flow routing, HAND, DTND, slope/aspect | `$PYSHEDS_FORK/pysheds/pgrid.py` |
-| `hillslope_params.py` | Binning, trapezoidal fit, width, 6-param computation | `scripts/hillslope_params.py` |
-| `spatial_scale.py` | FFT-based Lc computation (dual-CRS) | `scripts/spatial_scale.py` |
-| `dem_processing.py` | Basin detection, open water identification | `scripts/dem_processing.py` |
-| Pipeline scripts | Orchestration, I/O, plotting | `scripts/osbs/run_pipeline.py`, `scripts/merit_validation/merit_regression.py` |
-
-`dirmap` (D8 flow direction mapping) has been moved to the pysheds fork as a constant.
-
-### 10. pysheds fork: deprecation warnings and test suite — RESOLVED
-
-**Status: RESOLVED in Phase A.** All 33 deprecation warnings fixed. Test suite expanded with 28 synthetic DEM tests and mutation testing (30 mutations, 100% effective score). `test_hillslope.py` and `test_grid.py` both pass.
-
-**File:** `$PYSHEDS_FORK/pysheds/pgrid.py`
-
-**Previous state:** 33 deprecation warnings in `pgrid.py` from Swenson's older code created noise that obscured real issues during development. `test_grid.py` had pre-existing API mismatch failures.
-
-**Resolution:** Addressed during Phase A alongside UTM CRS changes. Bare `except: raise` patterns removed, deprecated variable names updated, scipy import quirk resolved.
+## Problems — All Resolved
+
+The ten problems identified in the initial audit have all been resolved. See the referenced phase docs for detailed analysis, bug writeups, and resolution history.
+
+| # | Problem | Resolved in | Reference |
+|---|---------|-------------|-----------|
+| 1 | DTND used Euclidean distance (wrong algorithm) | Phase A | `phases/A-pysheds-utm.md` |
+| 2 | Flow routing subsampled to 4m (discarded 94% of data) | Phase B | `phases/B-flow-resolution.md` |
+| 3 | Characteristic length scale Lc undefined at 1m | Phase C | `phases/C-characteristic-length.md` |
+| 4 | N/S aspect swap from sign convention mismatch | Phase A + E | `docs/ns-aspect-bug.md` |
+| 5 | DEM conditioning erases microtopography at 1m | Phase E (accepted) | `phases/E-complete-parameters.md` |
+| 6 | Stream channel parameters use interim scaling | Phase E (accepted) | `phases/E-complete-parameters.md` |
+| 7 | Bedrock depth was placeholder (1e6) | commit 11f465e | `phases/E-complete-parameters.md` |
+| 8 | FFT parameters untested for OSBS | Phase C | `phases/C-characteristic-length.md` |
+| 9 | ~400 lines of duplicated code between pipelines | Phase D | `phases/D-rebuild-pipeline.md` |
+| 10 | pysheds fork: 33 deprecation warnings + broken tests | Phase A | `phases/A-pysheds-utm.md` |
+
+**Production outcome:** The pipeline produces a CTSM-compatible NetCDF at `output/osbs/2026-04-09_production/hillslopes_osbs_production_c260409.nc` with 8 HAND bins (1 aspect x 8, log-spaced with 0.1m noise floor + Q95 upper endpoint), NWI water masking applied (dual-mask approach), NEON slope/aspect products, Lc = 356m on the 90-tile production domain.
 
 ---
 
@@ -338,76 +101,23 @@ Both the spatial scale analysis functions and the hillslope computation function
 
 ### Phase A: Fix pysheds for UTM — Complete
 
-**Status: Complete.** Both the DTND problem (#1) and the slope/aspect problem (#4) stemmed from the same root cause: pysheds assumed geographic coordinates. Phase A made pysheds UTM-aware, resolving both.
+Both the DTND problem (#1) and the slope/aspect problem (#4) stemmed from pysheds assuming geographic coordinates. Phase A made pysheds UTM-aware, fixed 33 deprecation warnings in `pgrid.py`, and expanded the test suite (28 synthetic DEM tests, mutation testing with 100% effective score). Validated against MERIT regression (all 6 parameters within tolerance) and R6C10 UTM smoke test (14/14 checks). See `phases/A-pysheds-utm.md`.
 
-**Completed:**
-1. Fixed 33 deprecation warnings in `pgrid.py`
-2. Modified `compute_hand()` to detect UTM CRS and use Euclidean distance for DTND
-3. Modified `slope_aspect()` / `_gradient_horn_1981()` to use uniform pixel spacing for UTM
-4. Validated against MERIT regression (PASS — all 6 parameters within tolerance)
-5. Validated on R6C10 UTM smoke test (14/14 checks pass)
-6. Added 28 synthetic DEM tests, mutation testing (30 mutations, 100% effective score)
+### Phase B: Resolve flow routing resolution — Complete
 
-**Deliverable:** pysheds fork that correctly handles both CRS types. See `phases/A-pysheds-utm.md`.
+Full 1m resolution at 64GB confirmed correct; 4x subsampling was a premature optimization. Resolution comparison on 5x5 block and full contiguous region: height/distance correlations >0.999 across 1m/2m/4m (resolution-insensitive), slope systematically underestimated at coarser resolutions (~50% lower at 4m in the lowest HAND bin). See `phases/B-flow-resolution.md`.
 
-### Phase B: Resolve flow routing resolution — Complete (1m, no subsampling)
+### Phase C: Establish trustworthy Lc — Complete (Lc = 356m, A_thresh = 63,362)
 
-**Status:** Complete. Full 1m resolution at 64GB. See `phases/B-flow-resolution.md`.
-
-**Completed:**
-1. Scalability test: 90M pixels at 1m completes in 5.9 min, peak 29.2 GB (64GB allocation)
-2. Resolution comparison: 1m/2m/4m on 5x5 block (25M px) and full contiguous region (90M px)
-3. Height and distance >0.999 correlated across all resolutions (resolution-insensitive)
-4. Slope systematically underestimated at coarser resolutions (~50% lower at 4m in lowest HAND bin)
-5. No parameter improves with subsampling; computational cost is negligible (17 min / 58 GB at 1m)
-
-**Deliverable:** Use 1m resolution, no subsampling. The 4x subsampling was a premature optimization.
-
-### Phase C: Establish trustworthy Lc — Complete (Lc = 356m production)
-
-**Status:** Complete. Lc confirmed by spectral analysis, PI acceptance, and physical validation. Production value (tier 3, 90 tiles): 356m, A_thresh = 63,362. See `phases/C-characteristic-length.md`.
-
-**Completed:**
-1. Full-resolution (1m) FFT on interior mosaic — Laplacian peak at 8.1m (artifact)
-2. Sensitivity sweep (tests A-E) — Lc insensitive to FFT parameters
-3. Code audit — implementation verified against Swenson's original
-4. Raw DEM spectrum test — confirms 8.1m is k² artifact, raw spectrum is red noise
-5. Single-tile FFT (R6C10) — confirms spectral features are intrinsic, not mosaic artifacts
-6. Restricted wavelength sweep — **200-500m hump IS a real peak at cutoff >= 20m: Lc = 285-356m**
-7. Tile coverage documented (`data/neon/tile_coverage.md`)
-8. PI decision: ~300m accepted as working value
-9. Physical validation on 5x5 tile block (R6-R10, C7-C11, 25M pixels at 1m) — Check 1 PASS (P95 DTND/Lc = 1.17), Check 2 PASS (mean catchment/Lc² = 0.876). The original max(DTND)/Lc = 3.1 "failure" was a resolution mismatch: `max()` is not comparable between 90m MERIT (~12K pixels) and 1m OSBS (25M pixels) due to extreme value statistics and implicit smoothing at 90m. P95 is the fair comparison.
-
-**Deliverable:** Lc = 300m with scientific justification. A_thresh = 45,000 m².
+Restricted-wavelength FFT (`min_wavelength = 20m`) identifies the drainage-scale peak and filters the k² micro-topographic artifact at ~8m. Lc varies with domain size: tier 1 (1 tile) = 541m, tier 2 (25 tiles) = 479m, tier 3 (90 tiles, production) = 356m. Physical validation passes on the 5x5 tile block: P95 DTND/Lc = 1.17, mean catchment / Lc² = 0.876. Sensitivity sweep confirmed Lc is insensitive to FFT preprocessing parameters. See `phases/C-characteristic-length.md`.
 
 ### Phase D: Rebuild pipeline with fixes — Complete
 
-**Status: Complete.** Pipeline rebuilt with all Phase A/B/C fixes and verified.
+Pipeline rebuilt with all Phase A/B/C fixes: pysheds hydrological DTND, pgrid Horn 1981 slope/aspect, full 1m resolution, dynamic Lc via FFT. Shared modules extracted (`hillslope_params.py`, `spatial_scale.py`, `dem_processing.py`) to eliminate ~400 lines of duplicated code between the MERIT validation and OSBS pipelines. Equation-by-equation audit passed; tier 3 production run verified. See `phases/D-rebuild-pipeline.md`.
 
-**Completed:**
-1. Replaced EDT-based DTND with pysheds hydrological DTND (Phase A)
-2. Replaced np.gradient slope/aspect with pgrid Horn 1981 (Phase A)
-3. Set processing resolution to 1m, no subsampling (Phase B)
-4. Lc computed dynamically via FFT with min_wavelength=20m cutoff (Phase C)
-5. Extracted shared modules: `hillslope_params.py`, `spatial_scale.py`, `dem_processing.py`
-6. Created tiered SLURM wrappers (tier 1/2/3)
-7. Comprehensive equation-by-equation audit — all 7 key equations verified correct
-8. Tier 3 production run successful (21.8 min, 90 tiles, NetCDF structure verified)
+### Phase E: Complete the parameter set — Complete (2026-04-09)
 
-**Deliverable:** Pipeline that produces scientifically defensible hillslope parameters. See `phases/D-rebuild-pipeline.md`.
-
-### Phase E: Complete the parameter set — Complete
-
-**Status: Complete (2026-04-09).** All parameters finalized. 1x8 HAND bins with 0.1m noise floor + Q95 log spacing (Strategy A2). See `docs/hillslope-binning-rationale.md` for full analysis.
-
-**Completed:**
-- [x] Hillslope structure: 1 aspect x 8 HAND bins, log-spaced with 0.1m noise floor + Q95 upper endpoint (2026-04-09). Tested 6 strategies; A2 chosen for best TAI resolution and balanced ridge bin. See `docs/hillslope-binning-rationale.md`.
-- [x] NEON slope/aspect: use NEON DP3.30025.001 products directly (PI approved 2026-03-23, implemented commit 73c09fe). Slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
-- [x] NWI water mask integration (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchments, wide mask for HAND. Water pixels excluded from HAND binning and DTND tail fitting. See `phases/E-complete-parameters.md` log.
-- [x] Stream channel parameters: leave interim power-law values as-is (2026-03-30). osbs2 runs with `use_hillslope_routing = .false.` — params never read. Phase G will repurpose as lake geometry.
-- [x] PI consultation — all questions resolved (2026-03-30): DEM conditioning (standard fill, accepted limitations), study boundary (90-tile production domain final), stream params (leave as-is), hillslope structure (1x8 log-spaced confirmed as target).
-
-**Deliverable:** Complete set of physically motivated parameters.
+All parameters finalized. 1 aspect x 8 HAND bins, log-spaced with 0.1m noise floor + Q95 upper endpoint (Strategy A2, tested against 5 alternatives). NEON DP3.30025.001 slope/aspect products adopted directly. NWI water masking via dual-mask approach. Stream parameters left as interim power-law values (osbs2 uses `use_hillslope_routing = .false.`, params never read). All PI questions resolved. See `phases/E-complete-parameters.md` and `docs/hillslope-binning-rationale.md`.
 
 ### Phase F: Validate and deploy
 
@@ -460,54 +170,27 @@ Phase B (resolve resolution) ── COMPLETE ───┤
                                              │
 Phase C (establish Lc) ──────── COMPLETE ───┘
 
-Phase E (complete params) ── IN PROGRESS ──┐
-                                            ├──> Phase F (validate & deploy) ──> Phase G (CTSM lake mods)
+Phase E (complete params) ── COMPLETE ─────┐
+                                            ├──> Phase F (validate & deploy) ──> Phase G (lake column)
 Phase D (pipeline ready) ── COMPLETE ──────┘
 ```
 
-Phases A-D complete. Phase E nearly complete (log-spaced bins remaining). Phase F blocked by E. Phase G blocked by F.
+Phases A-E complete. Phase F blocked by E (ready to start). Phase G blocked by F.
 
 ---
 
-## Open Questions for PI
+## PI Decisions (all resolved)
 
-These require scientific judgment, not engineering work:
+All questions raised during Phase C-E have been decided. See phase docs for the reasoning chains.
 
-1. **DEM conditioning — RESOLVED (2026-03-30).** Proceed with standard depression filling for D8 routing. The Swenson pipeline characterizes macro-scale watershed structure — it was never designed to handle microtopography, and we should not force it to. The limitations of standard D8 filling at 1m (erasure of sinkholes, wetland depressions) are understood and accepted.
-
-2. **Hillslope structure — CONFIRMED (1x8 log-spaced, 2026-03-30).** 1 aspect x 8 log-spaced HAND bins is the confirmed target. The 1x4 equal-area configuration is interim — used while water masking was being developed. Now that NWI water masking is in place (2026-03-27, commit 8c727ca) and HAND values are clean (lowest boundary 0.27m), log-spaced bins are ready to re-evaluate. If results still show issues (e.g., lowest bins still problematic), options include increased outlier handling, adjusting bin count, or modified log spacing. See `docs/hillslope-binning-rationale.md` for original justification. CTSM reads `nhillslope` and `nmaxhillcol` dynamically — no Fortran changes needed.
-
-3. **Study boundary — RESOLVED (2026-03-30).** Production domain (R4-R12, C5-C14, 90 tiles, 9x10 km, 0 nodata) is final. Nodata pixels break pysheds flow routing — pysheds fills nodata with `max_elevation + 1`, and if all edges are nodata, there is nowhere for flow to exit (`max_accumulation = 1`). The pipeline requires contiguous valid data at domain edges. Expanding would require re-adding nodata handling (edge trimming, valid masking) — not worth the complexity given the 90-tile domain is already sufficient.
-
-4. **Stream channel parameters — RESOLVED (2026-03-30).** Leave current interim power-law values as-is. The osbs2 baseline runs with `use_hillslope_routing = .false.` — stream params in the hillslope NetCDF are never read by CTSM. With routing off, the `active_stream` guard (`HillslopeHydrologyMod.F90` lines 991-996) skips all stream calculations. Phase F validation matches this (routing off). Phase G will repurpose stream fields as lake geometry for the weir overflow implementation — no research into OSBS-specific stream empirical relationships is needed.
-
-5. **NEON slope/aspect products — RESOLVED (use NEON, 2026-03-23).** PI approved using NEON DP3.30025.001 products directly. Comparison across all 90 production tiles (commit 418880c): slope Pearson r=0.91, aspect circular r=0.84, slope bias +0.008 m/m (pgrid steeper — NEON's 3x3 pre-filter reduces TIN interpolation noise on flat terrain). Results in `output/osbs/slope_aspect_comparison/`. Implemented in Phase E (commit 73c09fe).
-
-6. **Lc at 1m resolution — RESOLVED (Lc = 356m production, 2026-02-23).** The restricted-wavelength FFT finds a drainage-scale peak when micro-topographic wavelengths (< 20m) are excluded. Physical validation confirms: P95 DTND/Lc = 1.17 (PASS), mean catchment/Lc² = 0.876 (PASS). Lc is computed dynamically per run and varies with domain size: tier 1 (1 tile) = 541m, tier 2 (25 tiles) = 479m, tier 3 (90 tiles, production) = 356m, A_thresh = 63,362. See `phases/C-characteristic-length.md` for full analysis.
-
-   **Important: Lc resolution and flow routing resolution are independent.** Lc is used for exactly one thing — setting A_thresh = 0.5 * Lc², which controls stream network density. Once A_thresh is determined, it can be applied at any routing resolution. The fact that Lc requires filtering out sub-20m wavelengths does **not** imply the DEM should be subsampled to ~100m for flow routing. The restricted-wavelength approach computes the full 1m FFT and filters during peak fitting — no information destruction, no aliasing. Flow routing, HAND, and DTND still benefit from 1m resolution: wetland depressions (10-50m across), stream channels (1-5m wide), and sub-meter elevation differences that drive TAI dynamics all require fine resolution to resolve.
-
-   **What the 20m transition means physically:** The Laplacian spectrum separates cleanly at ~20m wavelength — below this is micro-topographic noise (tree-throw mounds, animal burrows, shallow rills), above is organized drainage structure. This is the scale boundary Swenson's method implicitly assumes when using 90m MERIT data (where everything below ~180m is already averaged away). At 1m, the boundary must be made explicit.
-
-   **Uncertainty in the Lc range:** Gaussian fit at cutoff=100m gives 285m; lognormal at cutoff=20m gives 356m. This 25% range in Lc translates to ~56% range in A_thresh (40,000 vs 63,000 m²) since A_thresh scales with Lc². Whether this matters for final hillslope parameters is an empirical question — testable by running the rebuilt pipeline at both endpoints.
-
----
-
-## Where We Are on the Original Arc
-
-From `progress-tracking.md`, mapped to current phase structure:
-
-| Phase | Status | Notes |
-|-------|--------|-------|
-| 1. Setup | Complete | pysheds fork, environment, Swenson code review |
-| 2. Port Swenson functions | Complete | pgrid.py copied, tests passing |
-| 3. Validate against published | Complete | 5/6 params >0.95 correlation |
-| 4. Apply to OSBS (Phases A-D) | **Complete** | pysheds UTM-aware, 1m resolution, Lc=356m, pipeline rebuilt and audited |
-| 5. Generate final dataset (Phase E) | **Complete** | 1x8 bins (A2: 0.1m floor + Q95 log), NEON slope/aspect, NWI water masking, all PI questions resolved |
-| 6. CTSM validation (Phase F) | Pending | Validate with `use_hillslope_routing = .false.`, `PCT_LAKE = 0` (matching osbs2) |
-| 7. Lake representation (Phase G) | Pending | Submerged lake column in hillslope file (pipeline only), PI SourceMods handle CTSM side |
-
-The pipeline produces scientifically defensible output. Phase E is nearly complete (log-spaced bins remaining). Phase F (validation) and Phase G (CTSM lake mods) follow.
+| # | Question | Resolved | Decision |
+|---|----------|----------|----------|
+| 1 | DEM conditioning (fill vs. preserve basins) | 2026-03-30 | Standard fill for D8. Pipeline characterizes macro-scale watershed, not microtopography. |
+| 2 | Hillslope structure (bins × aspects) | 2026-04-09 | 1 aspect × 8 HAND bins, Strategy A2 (0.1m floor + Q95 log). See `docs/hillslope-binning-rationale.md`. |
+| 3 | Study boundary | 2026-03-30 | 90-tile production domain (R4-R12, C5-C14, 0 nodata). Largest contiguous rectangle; nodata at edges breaks pysheds flow routing. |
+| 4 | Stream channel parameters | 2026-03-30 | Leave interim values. osbs2 uses routing off; Phase G will append a submerged lake column. |
+| 5 | NEON slope/aspect vs. pgrid Horn 1981 | 2026-03-23 | Use NEON DP3.30025.001 directly. Slope r=0.91, aspect circ_r=0.84. |
+| 6 | Lc interpretation at 1m resolution | 2026-02-23 | Lc = 356m with `min_wavelength = 20m` cutoff. Sub-20m features are resolve_flats artifacts; drainage-scale peak is stable across sensitivity sweeps. |
 
 ---
 
