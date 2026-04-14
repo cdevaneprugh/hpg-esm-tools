@@ -157,6 +157,8 @@ Add one extra column to the hillslope NetCDF representing the aggregate of all N
 5. Production run, verify NetCDF structure
 6. CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod, compare vs Phase F baseline
 
+**Binning change (confirmed):** Expand from 8 to 16 HAND bins with focus on 0-50cm zone. Revert to Q1/Q99 percentile endpoints (PI: small gradients producing standing water are physically correct for wetland terrain). Final NetCDF: 17 columns (16 bins + 1 lake).
+
 **Deliverable:** Hillslope NetCDF with submerged lake column, consumed by CTSM with the PI's spillheight SourceMod. Comparison showing effect on water table dynamics and CH4 production in near-lake columns.
 
 **Reference:** `phases/G-ctsm-lake-representation.md` — full plan, open questions, rationale. `docs/water-masking-and-lake-representation.md` — historical CTSM source investigation (still valid), superseded weir overflow design.

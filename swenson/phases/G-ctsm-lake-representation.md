@@ -18,9 +18,9 @@ Append one extra column per gridcell to the hillslope NetCDF. The column represe
 
 | Field | Value | Source |
 |---|---|---|
-| `hill_elev` | `-SPILLHEIGHT` | Negative of the PI's spillheight SourceMod scalar |
-| `hill_distance` | `mean(dtnd[water_mask])` | Pixel-wise mean of DTND across lake pixels (area-weighted collapses to this since pixels are equal-area) |
-| `hill_area` | `sum(water_mask) * pixel_area` | Total NWI lake area in m² (production domain: ~10.68 km²) |
+| `hill_elev` | `-SPILLHEIGHT` | Negative of the PI's spillheight SourceMod scalar. Example: if spillheight = 0.2m, then `hill_elev = -0.2m`. The lake column sits below the hillslope reference plane. |
+| `hill_distance` | `mean(dtnd[water_mask])` | Pixel-wise mean of DTND across all NWI lake pixels. Equal-area pixels (1m²) make this equivalent to area-weighted per-lake averaging. Represents the average drainage distance for the aggregate "lake" column. |
+| `hill_area` | `sum(water_mask) * pixel_area` | Total NWI lake area from the water mask (production domain: 103 features, 10.7M pixels, ~10.68 km²). This defines the fractional area of the lake column within the gridcell. |
 | `hill_width` | TBD | See open questions |
 | `hill_slope` | TBD (likely 0) | See open questions |
 | `hill_aspect` | TBD (likely 0) | See open questions |
@@ -29,7 +29,7 @@ Append one extra column per gridcell to the hillslope NetCDF. The column represe
 | `downhill_column_index` | TBD (3 topology options) | See open questions |
 | `hillslope_index` | TBD (reuse `1` or new `2`) | See open questions |
 
-NetCDF structure change: `nmaxhillcol = N_HAND_BINS + 1` (currently `nmaxhillcol = 8`, becomes `9`).
+NetCDF structure change: `nmaxhillcol = N_HAND_BINS + 1` (16 hillslope bins + 1 lake = 17 columns).
 
 ## Why this works
 
@@ -76,7 +76,7 @@ The `water-masking-and-lake-representation.md` document retains value as referen
   - Append to `params["elements"]`
 - [ ] Update NetCDF writer to handle `nmaxhillcol = N_HAND_BINS + 1`
 - [ ] Update `pct_hillslope` and `nhillcolumns` metadata to reflect the extra column
-- [ ] Revisit HAND binning strategy (see `docs/hillslope-binning-rationale.md` — "standing water is a feature" relaxes criteria; options include lower noise floor, Q1/Q99 endpoints, or 16 bins with 0-50cm focus)
+- [ ] Expand to 16 HAND bins with focus on 0-50cm zone (PI confirmed). Revert to Q1/Q99 percentile endpoints — the "standing water is a feature" framing means small gradients and near-zero-height bins are acceptable. See `docs/hillslope-binning-rationale.md` for background. `nmaxhillcol` becomes 17 (16 bins + 1 lake column).
 - [ ] Production run, verify NetCDF structure with `ncdump -h`
 - [ ] CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod
 
@@ -100,11 +100,11 @@ The `water-masking-and-lake-representation.md` document retains value as referen
    
    The PI's SourceMod may set these or require specific conventions.
 
-5. **HAND binning strategy.** Current A2 (0.1m floor + Q95) is implemented but the "standing water is a feature" framing relaxes the adjacent-height criterion. See `docs/hillslope-binning-rationale.md`. Options: lower floor, Q1/Q99, 16 bins, etc. Decision should be made alongside Phase G implementation.
+5. **HAND binning strategy — DECIDED.** Expand to 16 bins with Q1/Q99 log-spaced endpoints. Current A2 (8 bins, 0.1m floor + Q95) will be replaced. The "standing water is a feature" framing (PI, 2026-04-09) means small gradients and near-zero-height bins in the 0-50cm zone are physically correct for wetland terrain. See `docs/hillslope-binning-rationale.md` for testing infrastructure (comparison script + cached arrays).
 
 ## Deliverable
 
-Pipeline-generated hillslope NetCDF with `N_HAND_BINS + 1` columns (the extra column being the submerged lake), consumed by CTSM with the PI's spillheight SourceMod active. Comparison simulation against Phase F baseline showing the effect of the submerged lake column on water table dynamics, soil moisture, and CH4 production in near-lake hillslope columns.
+Pipeline-generated hillslope NetCDF with 17 columns (16 HAND bins + 1 submerged lake column), consumed by CTSM with the PI's spillheight SourceMod active. Comparison simulation against Phase F baseline showing the effect of the submerged lake column on water table dynamics, soil moisture, and CH4 production in near-lake hillslope columns.
 
 ## References
 
