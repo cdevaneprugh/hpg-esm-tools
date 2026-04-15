@@ -188,6 +188,75 @@ def compute_hand_bins_log(
     return np.concatenate([[0], internal, [1e6]])
 
 
+def compute_hand_bins_hybrid(
+    hand: np.ndarray,
+    fixed_upper: float = 0.5,
+    fixed_step: float = 0.1,
+    n_log: int = 10,
+    upper_percentile: float = 99.0,
+) -> np.ndarray:
+    """Hybrid fixed-floor + log-tail HAND bins.
+
+    Produces bin boundaries in three segments:
+      1. Fixed linear bins from 0 to ``fixed_upper`` in ``fixed_step``
+         increments — gives explicit TAI-zone resolution.
+      2. Log-spaced bins from ``fixed_upper`` to the upper percentile
+         (default Q99) of positive HAND — smoothly covers the upland
+         gradient.
+      3. A sentinel bin capped at 1e6 — catches the ridge tail above Q99.
+
+    Default parameters produce 16 bins for OSBS:
+      - Bins 1-5: [0, 0.1, 0.2, 0.3, 0.4, 0.5] m (fixed 10cm)
+      - Bins 6-15: 10 log-spaced boundaries from 0.5m to Q99
+      - Bin 16: [Q99, 1e6] (ridge tail, ~1% of land pixels)
+
+    Bin 1 [0, fixed_step] is designed to absorb resolve_flats
+    micro-gradient noise on flat upland pixels. At OSBS this captures
+    ~22% of land pixels at effectively-stream-level elevations.
+
+    See docs/hillslope-binning-rationale.md for the full rationale and
+    permutation testing that led to this scheme.
+
+    Parameters
+    ----------
+    hand : 1D array of HAND values (pre-filtered to valid land pixels)
+    fixed_upper : upper bound of the fixed-spacing zone (meters)
+    fixed_step : fixed bin width in the 0-fixed_upper zone (meters)
+    n_log : number of log-spaced bins above fixed_upper (excluding sentinel)
+    upper_percentile : percentile of positive HAND for the log-tail upper
+        endpoint. Anything above falls into the sentinel bin.
+
+    Returns
+    -------
+    1D array of bin boundaries.
+    Total bins = int(fixed_upper / fixed_step) + n_log + 1 (sentinel).
+    Default: 5 + 10 + 1 = 16 bins.
+    """
+    valid = (hand > 0) & np.isfinite(hand)
+    hand_valid = hand[valid]
+
+    # Fixed-spacing segment: [0, fixed_step, 2*fixed_step, ..., fixed_upper]
+    n_fixed = int(round(fixed_upper / fixed_step))
+    fixed_bounds = np.linspace(0.0, fixed_upper, n_fixed + 1)
+
+    if hand_valid.size == 0:
+        # Degenerate: no positive HAND. Fall back to linear above fixed_upper.
+        log_tail = np.linspace(fixed_upper, fixed_upper + 10 * n_log, n_log + 1)
+        return np.concatenate([fixed_bounds, log_tail[1:], [1e6]])
+
+    q_upper = float(np.percentile(hand_valid, upper_percentile))
+    if q_upper <= fixed_upper:
+        # Upper percentile lies inside the fixed zone (flat/degenerate terrain).
+        # Fall back to linear tail.
+        log_tail = np.linspace(fixed_upper, fixed_upper + 10 * n_log, n_log + 1)
+        return np.concatenate([fixed_bounds, log_tail[1:], [1e6]])
+
+    # Log-spaced tail: n_log+1 boundary points from fixed_upper to q_upper,
+    # drop the first (duplicate of fixed_upper), keep the remaining n_log.
+    log_tail = np.geomspace(fixed_upper, q_upper, n_log + 1)
+    return np.concatenate([fixed_bounds, log_tail[1:], [1e6]])
+
+
 def fit_trapezoidal_width(
     dtnd: np.ndarray,
     area: np.ndarray,

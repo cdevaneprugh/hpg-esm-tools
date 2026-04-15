@@ -1,6 +1,8 @@
-# Hillslope Binning Rationale: 1x8 Log-Spaced HAND Bins
+# Hillslope Binning Rationale
 
-Date: 2026-03-19
+Date: 2026-03-19 (last updated 2026-04-14)
+
+**Current scheme (2026-04-14):** 1 aspect × 16 HAND bins, hybrid fixed 10cm + log-spaced tail. See "2026-04-14 update" section below for rationale and permutation testing. The sections above that one describe the evolution of the binning decisions up to the prior 1×8 A2 scheme.
 
 ## Decision
 
@@ -411,6 +413,85 @@ The comparison script (`scripts/osbs/compare_hand_binning.py`) and cached filter
 (`output/osbs/binning_comparison/filtered_arrays.npz`) can test new strategies in seconds
 without rerunning the full pipeline. New strategies should be added to the `STRATEGIES` dict
 and the script rerun.
+
+---
+
+## 2026-04-14 update: moved to 16-bin hybrid
+
+PI requested higher concentration of bins in the 0-50cm zone (the TAI transition) while keeping
+the upland coverage reasonable. A2's 8-bin log-spaced scheme had 3 bins below 50cm; the new
+scheme has 5 explicit 10cm bins in that zone.
+
+### Decision
+
+**16 HAND bins:** 5 fixed 10cm bins from 0 to 0.5m + 10 log-spaced bins from 0.5m to Q99 +
+1 sentinel bin above Q99.
+
+Final boundaries at OSBS (Q99 = 17.02m):
+
+```
+[0, 0.1, 0.2, 0.3, 0.4, 0.5,
+ 0.711, 1.012, 1.441, 2.050, 2.917, 4.151, 5.906, 8.404, 11.958, 17.016,
+ 1e6]
+```
+
+### Permutation testing
+
+Thirteen variants were tested on the cached filtered land-pixel arrays (76M pixels) from the
+03-30 production run. Dimensions varied:
+
+- Fixed-step size: 5cm, 10cm, 15cm
+- Fixed-upper: 0.3m, 0.5m, 0.6m
+- Log-tail bin count: 5 to 12
+- Total bin count: 14 to 18
+- Uniform vs. non-uniform fixed spacing
+
+Winning scheme (Case A with 5 fixed + 10 log = 16 bins):
+
+| Bin | HAND range (m) | Mean HAND | Pixels | % land |
+|-----|----------------|-----------|--------|--------|
+| 1 | 0.00 - 0.10 | 0.02 | 16.84M | 22.13% |
+| 2 | 0.10 - 0.20 | 0.15 | 1.43M | 1.87% |
+| 3 | 0.20 - 0.30 | 0.25 | 1.29M | 1.69% |
+| 4 | 0.30 - 0.40 | 0.35 | 1.27M | 1.67% |
+| 5 | 0.40 - 0.50 | 0.45 | 1.20M | 1.58% |
+| 6 | 0.50 - 0.71 | 0.60 | 2.40M | 3.15% |
+| 7 | 0.71 - 1.01 | 0.86 | 3.11M | 4.09% |
+| 8 | 1.01 - 1.44 | 1.22 | 3.95M | 5.20% |
+| 9 | 1.44 - 2.05 | 1.74 | 4.87M | 6.39% |
+| 10 | 2.05 - 2.92 | 2.47 | 5.73M | 7.53% |
+| 11 | 2.92 - 4.15 | 3.52 | 6.79M | 8.93% |
+| 12 | 4.15 - 5.91 | 5.00 | 8.08M | 10.62% |
+| 13 | 5.91 - 8.40 | 7.06 | 8.25M | 10.84% |
+| 14 | 8.40 - 11.96 | 9.95 | 6.70M | 8.81% |
+| 15 | 11.96 - 17.02 | 13.83 | 3.42M | 4.50% |
+| 16 | 17.02 - max | 19.17 | 0.76M | 1.00% |
+
+### Rejected alternatives
+
+- **5cm fixed bins**: The noise floor extends to ~0.1m; splitting 0-10cm into two 5cm bins
+  puts resolve_flats artifacts (HAND 1e-5 to 1e-2 m) in bin 1 and genuinely-near-stream land
+  in bin 2, mixing signal with noise. The 10cm floor cleanly absorbs the noise zone.
+- **10cm × 3 fixed to 0.3m**: Loses the PI's requested 0.3-0.5m resolution.
+- **Non-uniform fixed (e.g. [0, 0.05, 0.1, 0.2, 0.3, 0.5])**: Same noise-bleed issue as 5cm
+  variants.
+- **Q95 upper endpoint**: Q99 chosen instead for the log tail so the sentinel bin catches a
+  cleaner ~1% ridge tail. With PI's "standing water is a feature" framing, the symmetry of
+  Q99-only trimming (retain all low-end data, trim only extreme ridge) is preferred.
+
+### Why Q1 is not trimmed
+
+Q99 defines the upper endpoint of the log spacing; trimming above Q99 into the sentinel bin
+is meaningful. The lower end has a fixed floor [0, 0.1m], so there is no percentile endpoint
+to trim — all low-HAND pixels, including the ~1% below Q1 (0.000017m), fall into bin 1 by
+design. Removing them would break area accounting without changing the binning boundaries.
+Water pixels are already excluded upstream via the NWI mask.
+
+### Function signature
+
+`compute_hand_bins_hybrid(hand, fixed_upper=0.5, fixed_step=0.1, n_log=10, upper_percentile=99.0)`
+in `scripts/hillslope_params.py`. Defaults produce the scheme above; parameters are kept for
+future site-specific tuning without code changes.
 
 ---
 

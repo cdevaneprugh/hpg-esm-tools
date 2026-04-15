@@ -31,6 +31,7 @@ Leave interim power-law values as-is. osbs2 runs with `use_hillslope_routing = .
 - [x] NWI water mask: download, filter, rasterize, visualize (2026-03-24)
 - [x] Integrate water mask into pipeline (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchment delineation, wide mask (streams + NWI lakes) for HAND. Water pixels excluded from HAND binning and DTND tail fitting.
 - [x] Re-evaluate 1x8 HAND bins (2026-04-09). Strategy A2 chosen: 0.1m noise floor + Q95 log-spaced. Tested 6 strategies; A2 gives 4 TAI bins, all adjacent heights separated by >= 0.2m, balanced ridge bin (5%). See `docs/hillslope-binning-rationale.md`.
+- [x] Move to 1x16 hybrid bins (2026-04-14, per PI request for tighter TAI resolution): 5 fixed 10cm bins in 0-0.5m zone + 10 log-spaced to Q99 + 1 sentinel. Tested 13 permutations of fixed-step, fixed-upper, and log-tail count; 5 × 10cm + 10 log chosen. See `docs/hillslope-binning-rationale.md` "2026-04-14 update" section.
 - [x] Stream depth/width: leave interim power-law as-is (2026-03-30). osbs2 uses `use_hillslope_routing = .false.` — params never read. Phase G repurposes as lake geometry.
 - [x] PI consultation — all questions resolved (2026-03-30):
   - DEM conditioning: standard fill for D8, pipeline characterizes macro-scale watershed
@@ -201,3 +202,28 @@ Implemented inline in `run_pipeline.py` (removed `compute_hand_bins_log` import)
 and comparison tables in `docs/hillslope-binning-rationale.md`.
 
 Phase E is complete. All parameters finalized. Phase F (CTSM validation) is next.
+
+### 2026-04-14: Expanded to 1x16 hybrid binning per PI request
+
+PI asked for higher bin concentration in the 0-50cm TAI zone. Tested 13 permutations on
+cached filtered arrays (Cases A/B/C/D varying fixed-step, fixed-upper, and log-tail count).
+Chosen: 5 fixed 10cm bins (0→0.5m) + 10 log-spaced bins (0.5m→Q99) + 1 sentinel = 16 bins.
+
+Why this scheme:
+
+- Bin 1 [0, 0.1m] cleanly absorbs resolve_flats noise (22% of land); splitting into 5cm bins
+  would mix noise with near-stream signal in bin 2.
+- Bins 2-5 give exact 10cm resolution across the 0.1-0.5m TAI zone (PI's focus).
+- Log tail smoothly covers 0.5m → Q99 (17m) with 10 bins, naturally coarsening toward ridge.
+- Q99 upper endpoint trims top 1% into a sentinel bin; Q1 not trimmed (fixed floor absorbs).
+
+Implementation:
+
+- New `compute_hand_bins_hybrid(hand, fixed_upper, fixed_step, n_log, upper_percentile)` in
+  `scripts/hillslope_params.py`. Defaults produce this scheme.
+- `run_pipeline.py` N_HAND_BINS = 16, inline A2 logic replaced with a single function call.
+- `compare_hand_binning.py` adds a "Hybrid (5 fixed 10cm + 10 log Q99)" strategy for future
+  tuning comparisons.
+
+Added to `docs/hillslope-binning-rationale.md` "2026-04-14 update" section with full per-bin
+statistics.

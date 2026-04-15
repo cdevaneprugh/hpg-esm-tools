@@ -41,6 +41,7 @@ from pysheds.pgrid import Grid  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hillslope_params import (  # noqa: E402
     circular_mean_aspect,
+    compute_hand_bins_hybrid,
     compute_hand_bins_log,
     fit_trapezoidal_width,
     get_aspect_mask,
@@ -141,6 +142,13 @@ def bins_a2_log_floor_01_q95(hand: np.ndarray) -> np.ndarray:
     return np.concatenate([[0], internal, [1e6]])
 
 
+def bins_hybrid_fixed_log(hand: np.ndarray) -> np.ndarray:
+    """Hybrid: 5 fixed 10cm (0-0.5m) + 10 log to Q99 + sentinel = 16 bins."""
+    return compute_hand_bins_hybrid(
+        hand, fixed_upper=0.5, fixed_step=0.1, n_log=10, upper_percentile=99.0
+    )
+
+
 STRATEGIES = {
     "Baseline (Q1/Q99)": bins_baseline,
     "A: Log floor (0.25m)": bins_a_log_floor,
@@ -148,6 +156,7 @@ STRATEGIES = {
     "B: Equal-count (>0.25m)": bins_b_equal_count,
     "C: Fixed boundaries": bins_c_fixed,
     "D: Hybrid (5 TAI + 3 ridge)": bins_d_hybrid,
+    "Hybrid (5 fixed 10cm + 10 log Q99)": bins_hybrid_fixed_log,
 }
 
 
@@ -581,6 +590,7 @@ def main():
         "B: Equal-count (>0.25m)": "#3498db",
         "C: Fixed boundaries": "#2ecc71",
         "D: Hybrid (5 TAI + 3 ridge)": "#9b59b6",
+        "Hybrid (5 fixed 10cm + 10 log Q99)": "#1abc9c",
     }
 
     for name, result in all_results.items():

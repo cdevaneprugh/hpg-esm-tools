@@ -8,7 +8,7 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Phase E (parameter completion) is complete.** Hillslope structure is 1 aspect x 8 HAND bins (log-spaced with 0.1m noise floor, Q95 upper endpoint). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Phase F (CTSM validation) and Phase G (submerged lake column in hillslope file, no CTSM Fortran changes planned) follow.
+**Phase E (parameter completion) is complete.** Hillslope structure is 1 aspect x 16 HAND bins (hybrid: 5 fixed 10cm bins in the TAI zone + 10 log-spaced to Q99 + 1 sentinel). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Phase F (CTSM validation) and Phase G (submerged lake column in hillslope file, no CTSM Fortran changes planned) follow.
 
 ---
 
@@ -91,7 +91,7 @@ The ten problems identified in the initial audit have all been resolved. See the
 | 9 | ~400 lines of duplicated code between pipelines | Phase D | `phases/D-rebuild-pipeline.md` |
 | 10 | pysheds fork: 33 deprecation warnings + broken tests | Phase A | `phases/A-pysheds-utm.md` |
 
-**Production outcome:** The pipeline produces a CTSM-compatible NetCDF at `output/osbs/2026-04-09_production/hillslopes_osbs_production_c260409.nc` with 8 HAND bins (1 aspect x 8, log-spaced with 0.1m noise floor + Q95 upper endpoint), NWI water masking applied (dual-mask approach), NEON slope/aspect products, Lc = 356m on the 90-tile production domain.
+**Production outcome:** The pipeline produces a CTSM-compatible NetCDF at `output/osbs/<DATE>_production/` with 16 HAND bins (1 aspect × 16, hybrid: 5 fixed 10cm + 10 log-spaced to Q99 + 1 sentinel), NWI water masking applied (dual-mask approach), NEON slope/aspect products, Lc = 356m on the 90-tile production domain. The 2026-04-09 NetCDF used the prior 1×8 A2 scheme; the 2026-04-14 run supersedes it with the 16-bin hybrid.
 
 ---
 
@@ -117,7 +117,7 @@ Pipeline rebuilt with all Phase A/B/C fixes: pysheds hydrological DTND, pgrid Ho
 
 ### Phase E: Complete the parameter set — Complete (2026-04-09)
 
-All parameters finalized. 1 aspect x 8 HAND bins, log-spaced with 0.1m noise floor + Q95 upper endpoint (Strategy A2, tested against 5 alternatives). NEON DP3.30025.001 slope/aspect products adopted directly. NWI water masking via dual-mask approach. Stream parameters left as interim power-law values (osbs2 uses `use_hillslope_routing = .false.`, params never read). All PI questions resolved. See `phases/E-complete-parameters.md` and `docs/hillslope-binning-rationale.md`.
+All parameters finalized. 1 aspect × 16 HAND bins, hybrid fixed+log (5 × 10cm fixed in the 0-0.5m TAI zone + 10 log-spaced to Q99 + 1 sentinel; moved 2026-04-14 from the prior 8-bin A2 scheme per PI request for tighter TAI resolution). NEON DP3.30025.001 slope/aspect products adopted directly. NWI water masking via dual-mask approach. Stream parameters left as interim power-law values (osbs2 uses `use_hillslope_routing = .false.`, params never read). All PI questions resolved. See `phases/E-complete-parameters.md` and `docs/hillslope-binning-rationale.md`.
 
 ### Phase F: Validate and deploy
 
@@ -188,7 +188,7 @@ All questions raised during Phase C-E have been decided. See phase docs for the 
 | # | Question | Resolved | Decision |
 |---|----------|----------|----------|
 | 1 | DEM conditioning (fill vs. preserve basins) | 2026-03-30 | Standard fill for D8. Pipeline characterizes macro-scale watershed, not microtopography. |
-| 2 | Hillslope structure (bins × aspects) | 2026-04-09 | 1 aspect × 8 HAND bins, Strategy A2 (0.1m floor + Q95 log). See `docs/hillslope-binning-rationale.md`. |
+| 2 | Hillslope structure (bins × aspects) | 2026-04-14 | 1 aspect × 16 HAND bins, hybrid fixed+log (5 × 10cm + 10 log Q99 + sentinel). Previous 1×8 A2 scheme superseded. See `docs/hillslope-binning-rationale.md`. |
 | 3 | Study boundary | 2026-03-30 | 90-tile production domain (R4-R12, C5-C14, 0 nodata). Largest contiguous rectangle; nodata at edges breaks pysheds flow routing. |
 | 4 | Stream channel parameters | 2026-03-30 | Leave interim values. osbs2 uses routing off; Phase G will append a submerged lake column. |
 | 5 | NEON slope/aspect vs. pgrid Horn 1981 | 2026-03-23 | Use NEON DP3.30025.001 directly. Slope r=0.91, aspect circ_r=0.84. |
