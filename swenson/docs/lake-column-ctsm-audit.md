@@ -180,7 +180,12 @@ Written to history files for diagnostics. No calculations involved.
 **Note on col-stream paths:** With routing off and `tdepth(g) = 0`, the gradient
 for the lowest column is always clamped to zero (see Section 4.1). The absolute
 value of `hill_distance` for the lowest column is irrelevant in this
-configuration.
+configuration. However, this assumption depends on MOSART providing zero stream
+depth — see Section 7.3.
+
+**Note on hill_width:** Width scales volumetric lateral outflow for ALL columns
+(line 2360), not just the lowest. It is always relevant for columns with nonzero
+head gradients, regardless of routing. See Section 5.3.
 
 ---
 
@@ -353,30 +358,159 @@ Col 16 (ridge) -> ... -> Col 2 -> Col 1 (former lowest) -> Col 17 (lake) -> [str
 | `hill_distance` | `hill_distance(col1) / 2` | Monotonic by construction |
 | `hill_elev` | `-SPILLHEIGHT` (-0.2m) | Runtime: -0.4m after SourceMod shift |
 | `hill_area` | Sum(water_mask * pixel_area) | ~10.68 km² |
-| `hill_width` | 1.0 | Placeholder (see 5.3) |
+| `hill_width` | NWI lake perimeter (see 5.3) | Physical interface length |
 | `hill_slope` | 0.0 | Flat lake; min_hill_slope floor in SurfaceWaterMod |
 | `hill_aspect` | 0.0 | Irrelevant for flat surface |
-| `hill_bedrock_depth` | 0.0 | Lake sits on surface |
+| `hill_bedrock_depth` | TBD (see 5.4) | Affects subsurface saturation |
 
-### 5.3 Why hill_width Doesn't Matter (for now)
+### 5.3 hill_width
 
-The lake column's width enters calculations in three places:
+`hill_width` controls the cross-sectional area of the lateral flow interface at
+the downslope edge of each column. For ALL columns (not just the lake), it
+directly scales volumetric lateral outflow (line 2360):
 
-1. **Own outflow** (line 2360): `qflx = transmis * width * gradient`. Gradient
-   is always 0 (clamped). Width is irrelevant.
+```fortran
+qflx_latflow_out_vol(c) = transmis * col%hill_width(c) * head_gradient
+```
 
-2. **Inflow from col1** (line 2389): Uses col1's outflow volume divided by the
-   **lake's area**, not the lake's width.
+This applies regardless of whether routing is on or off. Width matters for every
+column with a nonzero head gradient.
 
-3. **Stream channel length** (line 502): Only when routing is on.
+For the **lake column specifically**, the question is whether its gradient is
+ever nonzero. The lake-to-stream gradient is clamped to zero only when
+`stream_water_depth <= 0` (Section 6.3). If MOSART provides nonzero `tdepth(g)`,
+the clamp does not fire and the lake's width enters an active calculation.
 
-Width = 1.0 is a safe placeholder. If routing is ever enabled, revisit.
+**Recommendation:** Use the total perimeter of all NWI lake polygons as the
+lake's width — this is the physical interface length between lake and land. The
+NWI shapefile has the polygon geometries. As a fallback, 1.0 is a safe
+placeholder that produces negligible flow even if the gradient is nonzero, but
+it is not physically motivated.
+
+**Note:** Inflow FROM column 1 TO the lake (line 2389) uses column 1's width and
+the lake's area. The lake's own width does not control how much water enters it
+from uphill.
+
+### 5.4 hill_bedrock_depth and the "Always Submerged" Constraint
+
+The PI requires the lake column to be permanently submerged. Two mechanisms
+contribute to this:
+
+**Surface water:** The spillheight mechanism (SurfaceWaterMod.F90:516) prevents
+surface drainage when `hill_elev + h2osfc*1e-3 < 0`. With `hill_elev = -0.4m`,
+the lake must accumulate >400mm of surface water before any can drain. This keeps
+the surface ponded.
+
+**Subsurface water:** The Darcy lateral flow can drain the lake's soil column
+into adjacent columns. If column 1 dries out (zwt drops to 2m), its head
+(`hill_elev - zwt = -0.1 - 2.0 = -2.1m`) is lower than the lake's head
+(`-0.4 - 0 = -0.4m`), and the gradient drives water FROM the lake INTO column 1.
+The lake's soil column can desaturate even while the surface stays ponded.
+
+Whether this matters depends on what "always submerged" means:
+- **Surface always ponded:** Guaranteed by spillheight. No parameter choice needed.
+- **Entire soil column always saturated:** Not guaranteed by current physics.
+
+`hill_bedrock_depth` controls how much soil the lake column has. A value of 0
+gives a paper-thin soil column — there's almost nothing to desaturate, which
+effectively forces full saturation by construction. But it also means incoming
+lateral flow has nowhere to go except surface ponding, which could cause
+numerical issues.
+
+A full lowland depth (8m) gives the lake a normal soil column that can
+participate in subsurface exchanges — more physically realistic, but the column
+can partially desaturate under dry conditions.
+
+**Recommendation:** Ask the PI. This interacts with the "always submerged"
+requirement.
 
 ---
 
-## 6. Pitfalls Discovered
+## 6. HAND Noise Floor and Fill-Depth Diagnostic
 
-### 6.1 wetlandisfull Flag Ordering (SurfaceWaterMod.F90:506-557)
+### 6.1 The Problem: Conditioned Pixels Contaminate Low HAND Bins
+
+DEM conditioning (pit fill + resolve_flats) creates artificial near-zero HAND
+values. A small depression on a ridgetop gets filled to its spill point, assigned
+a micro-gradient by resolve_flats, and ends up with HAND near zero — even though
+it's physically at high elevation, far from any stream. Its DTND could be 300m+,
+but it gets averaged into the lowest HAND bin alongside genuinely low-lying
+terrain at 10-20m DTND.
+
+This produces a mixed population in bin 1: real lowland pixels and misclassified
+ridgetop artifacts, with a blended mean DTND (~30m) that represents neither
+population accurately. Since the lake column's DTND is derived from column 1's
+DTND, this noise propagates directly into the lake's parameters.
+
+### 6.2 Fill-Depth Diagnostic
+
+The pipeline already has both the original DEM (`dem`) and the conditioned DEM
+(`flooded`) in memory. The difference `fill_depth = flooded - dem` identifies
+which pixels were modified:
+
+- `fill_depth = 0`: Unmodified pixel. Drainage relationship is real.
+- `fill_depth > 0`: Conditioned pixel. Drainage relationship is synthetic.
+
+Not all conditioned pixels are noise — real depressions also get filled (lakes,
+wetland basins, seasonal ponds). The fill depth distribution should show a heavy
+spike near zero (resolve_flats micro-gradients) with a long tail (real
+depressions). A fill depth threshold (e.g., 1cm) separates the two:
+
+- **Noise population:** `0 < fill_depth < threshold` (numerical artifacts)
+- **Real depressions:** `fill_depth >= threshold` (physical features, already
+  handled by NWI mask for the large ones)
+
+### 6.3 Determining the HAND Cutoff
+
+1. Compute `fill_depth = flooded - dem` for all land pixels
+2. Partition into unmodified (`fill_depth <= epsilon`) and conditioned
+   (`fill_depth > epsilon`, where epsilon ~1mm for float tolerance)
+3. Among the noise population (`0 < fill_depth < threshold`), compute the HAND
+   distribution
+4. The HAND cutoff = a high percentile (95th or 99th) of the noise population's
+   HAND values
+5. Any HAND bin whose upper bound falls below this cutoff is dominated by
+   conditioned pixels and should not be treated as physical signal
+
+This is more defensible than an arbitrary sacrificial bin or a fixed Q1 cutoff
+because the threshold is derived from the conditioning itself — it identifies
+which pixels' HAND values are trustworthy vs. synthetic.
+
+### 6.4 Recommended Diagnostic Outputs
+
+1. **Fill-depth histogram:** Distribution of `flooded - dem` for all land pixels.
+   Expect a spike near zero and a tail. Identify the threshold between
+   resolve_flats noise and real depressions.
+2. **HAND histogram (full):** Distribution of HAND values for all land pixels,
+   with the conditioned (noise) and unmodified populations shown separately.
+3. **HAND histogram (0-2m zoom):** Same, zoomed to the TAI zone where bin design
+   matters most.
+4. **DTND histogram:** Distribution of DTND for the cleaned (noise-removed)
+   population in the lowest HAND bins, as a verification that the remaining
+   pixels have plausible lowland distances.
+
+These diagnostics should be generated BEFORE finalizing the binning scheme, as
+the noise floor determines the bin boundaries, which determine column 1's
+parameters, which determine the lake column's DTND.
+
+### 6.5 Sequencing: Bins Before Lake
+
+The recommended order of operations:
+
+1. Run fill-depth diagnostic to establish the HAND noise floor
+2. Design the binning scheme (how many bins, where the boundaries are)
+3. Run the pipeline with the new bins
+4. Verify column 1's DTND is clean (tight distribution, no ridgetop artifacts)
+5. Append the lake column with DTND = col1_distance / 2
+
+If the binning is changed after the lake column is added, the lake's DTND must
+be recomputed. Better to stabilize the bins first.
+
+---
+
+## 7. Other Pitfalls
+
+### 7.1 wetlandisfull Flag Ordering (SurfaceWaterMod.F90:506-557)
 
 **This is the most significant finding of the audit.**
 
@@ -421,7 +555,7 @@ Only the **last column processed** retains its flag value into the second loop.
 was not intended to work as designed. The 17-column case accidentally fixes the
 ordering — whether that's desired is a PI decision.
 
-### 6.2 Soil Depth Profile Method
+### 7.2 Soil Depth Profile Method
 
 If `soil_profile_method == soil_profile_linear` (method 3), the lake column's
 small distance becomes the new `min_hill_dist`, changing the soil depth
@@ -433,7 +567,7 @@ effect — soil depth is assigned by topology (cold == ispval = lowland).
 
 **Need to verify which method osbs4 uses.**
 
-### 6.3 MOSART Stream Depth
+### 7.3 MOSART Stream Depth and the Zero-Gradient Assumption
 
 The lake-to-stream gradient guard (`max(gradient, 0)` when `stream_water_depth
 <= 0`) relies on `tdepth(g) = 0`. If MOSART somehow provides a non-zero stream
@@ -443,7 +577,16 @@ this flow — the water is effectively created from nothing.
 
 **Need to verify `tdepth(g) = 0` for the OSBS DATM configuration.**
 
-### 6.4 Transmissivity of the Lake Column
+Additionally, the subsurface Darcy gradient uses `hill_elev - zwt` as the head
+term — it does NOT include ponded surface water (`h2osfc`). A lake column with
+400mm of standing water and a saturated soil column (`zwt = 0`) has the same
+subsurface head (`-0.4m`) as one with no standing water. The surface water
+exerts no hydraulic pressure on the subsurface lateral flow. Surface and
+subsurface water are decoupled in CTSM. This means the "zero gradient" claim
+only applies to the subsurface path. Surface water flow is handled separately
+by the spillheight ponding logic in SurfaceWaterMod.
+
+### 7.4 Transmissivity of the Lake Column
 
 When the lake column receives lateral inflow from column 1, the transmissivity
 calculation runs normally using the lake column's soil properties. Since the lake
@@ -454,24 +597,28 @@ which water enters the lake subsurface.
 However, the inflow formula (line 2389) adds the volume directly to the lake's
 `qflx_latflow_in` — it's the UPHILL column's transmissivity and width that
 control the flow volume, not the lake's. The lake's transmissivity only matters
-for its own outflow, which is zero (gradient clamped).
+for its own outflow.
 
-**Not a problem in practice.**
+Note that the lake's subsurface outflow is NOT necessarily zero — the column-to-
+column gradient between the lake and column 1 can reverse when column 1 dries
+out. See Section 5.4 for the "always submerged" implications.
 
 ---
 
-## 7. Items Requiring PI Clarification
+## 8. Items Requiring PI Clarification
 
 | # | Question | Why It Matters |
 |---|----------|----------------|
-| 1 | `wetlandisfull` ordering (6.1) | Adding col 17 as the lake accidentally enables a dormant flag. Behavior change. |
+| 1 | `wetlandisfull` ordering (7.1) | Adding col 17 as the lake accidentally enables a dormant flag. Behavior change. |
 | 2 | `soil_profile_method` for osbs4 | Determines if lake's distance affects soil depth of all columns |
 | 3 | SPILLHEIGHT = 0.2m? | Confirm SourceMod value matches our NetCDF assumption |
-| 4 | `tdepth(g) = 0` for OSBS? | Ensures lake-to-stream gradient guard fires correctly |
+| 4 | `tdepth(g) = 0` for OSBS? | Ensures lake-to-stream gradient guard fires correctly; determines if lake width matters |
+| 5 | What does "always submerged" mean? (5.4) | Surface-only (spillheight guarantees) vs. full soil saturation (not guaranteed). Determines bedrock_depth. |
+| 6 | `hill_bedrock_depth` for lake (5.4) | 0 = thin soil, enforces saturation by construction but may cause numerical issues. 8m = full lowland soil, can partially desaturate. |
 
 ---
 
-## 8. References
+## 9. References
 
 | Document | Location |
 |----------|----------|
