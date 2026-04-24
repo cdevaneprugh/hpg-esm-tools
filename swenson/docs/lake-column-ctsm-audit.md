@@ -5,6 +5,21 @@ Revised: 2026-04-23 (lake at col 1, surface infiltration pathway, bedrock depth
 inert under Uniform soil profile, PI items 2 and 6 resolved)
 Revised: 2026-04-23 (bathymetric slope from Lee et al. 2023 for `hill_slope`
 and `hill_aspect`; spill depth discrepancy flagged for PI)
+Revised: 2026-04-23 (verified `tdepth(g) = 0` for osbs4 via
+`flds_r2l_stream_channel_depths = .false.` chain; PI item 4 resolved)
+Revised: 2026-04-23 (lake-at-col-1 converted from PI item to design decision)
+Revised: 2026-04-23 (SPILLHEIGHT=0.2m confirmed; `hill_elev = -SPILLHEIGHT`
+formula holds regardless of PI tuning; item 3 resolved, item 7 reframed as
+spill-depth tuning)
+Revised: 2026-04-23 (Section 6 rewritten: the real HAND contamination source
+at OSBS is unmapped wetland basins being filled to rim elevation, not
+ridgetop dimples — the latter story was mountainous-terrain intuition and
+doesn't apply to OSBS's low relief. Fill_depth diagnostic reframed as
+plots-first-then-decide; 1cm threshold retracted.)
+Revised: 2026-04-23 (Section 6 expanded with fill-depth decomposition
+approach: split the four conditioning stages into separate signals;
+`depression_fill_depth > 0` is the crisp contamination marker with no
+threshold needed. Added 5-phase diagnostic workflow and secondary signals.)
 
 ## Purpose
 
@@ -359,8 +374,9 @@ order of magnitude (~tens of meters from lake edge to surrounding lowland).
 
 ### 5.1 Column Chain
 
-**Recommendation:** Place the lake at column index 1. Land columns shift up
-by one — former col 1 becomes col 2, former col 16 becomes col 17.
+**Design decision (2026-04-23):** Place the lake at column index 1. Land
+columns shift up by one — former col 1 becomes col 2, former col 16 becomes
+col 17.
 
 ```
 Col 17 (ridge) -> Col 16 -> ... -> Col 3 -> Col 2 (lowest land) -> Col 1 (lake) -> [stream]
@@ -552,85 +568,202 @@ OSBS wetland, this is a potential physics mismatch. See PI item #7.
 
 ---
 
-## 6. HAND Noise Floor and Fill-Depth Diagnostic
+## 6. HAND Contamination Analysis and Fill-Depth Diagnostic
 
-### 6.1 The Problem: Conditioned Pixels Contaminate Low HAND Bins
+### 6.1 What Actually Contaminates Low HAND Bins at OSBS
 
-DEM conditioning (pit fill + resolve_flats) creates artificial near-zero HAND
-values. A small depression on a ridgetop gets filled to its spill point, assigned
-a micro-gradient by resolve_flats, and ends up with HAND near zero — even though
-it's physically at high elevation, far from any stream. Its DTND could be 300m+,
-but it gets averaged into the lowest HAND bin alongside genuinely low-lying
-terrain at 10-20m DTND.
+**Superseded framing (2026-04-21, incorrect):** "Ridgetop micro-depressions get
+filled and assigned HAND near zero, polluting bin 1."
 
-This produces a mixed population in bin 1: real lowland pixels and misclassified
-ridgetop artifacts, with a blended mean DTND (~30m) that represents neither
-population accurately. Since the lake column's DTND is derived from column 1's
-DTND, this noise propagates directly into the lake's parameters.
+**Corrected framing (2026-04-23):** At OSBS's low relief (landscape span ~3-5m,
+per CEAP paper Figure 2), a ridgetop pixel has real HAND of 3-5m whether or not
+it's been pit-filled. Filling a 10cm dimple on the ridge doesn't move that pixel
+into bin 1 (0-0.1m HAND) — it stays in the mid-slope bins. The "ridgetop
+contamination" story was imported from mountainous terrain intuition and does
+not apply here.
 
-### 6.2 Fill-Depth Diagnostic
+**The actual contamination source is unmapped wetland basins.** When a wetland
+sits in a depression physically BELOW stream elevation (e.g., basin bottom at
+26.3m when the local stream is at 27m), pit_fill / fill_depressions raises all
+basin pixels to the basin's spill elevation (say 27.2m). The flow routes from
+the spill point to the stream, so:
 
-The pipeline already has both the original DEM (`dem`) and the conditioned DEM
-(`flooded`) in memory. The difference `fill_depth = flooded - dem` identifies
-which pixels were modified:
+```
+HAND_basin = spill_elevation - stream_elevation
+           = 27.2 - 27.0 = 0.2m
+```
 
-- `fill_depth = 0`: Unmodified pixel. Drainage relationship is real.
-- `fill_depth > 0`: Conditioned pixel. Drainage relationship is synthetic.
+That pixel is now mathematically "0.2m above drainage" and lands in bin 3, but
+physically the pixel is INSIDE a closed basin whose bottom is below the stream.
+The pixel's small positive HAND is an artifact of the fill operation, not a
+reflection of real near-stream terrain.
 
-Not all conditioned pixels are noise — real depressions also get filled (lakes,
-wetland basins, seasonal ponds). The fill depth distribution should show a heavy
-spike near zero (resolve_flats micro-gradients) with a long tail (real
-depressions). A fill depth threshold (e.g., 1cm) separates the two:
+**Scale of concern.** NWI captures the larger lakes and wetlands (→ wide mask →
+handled separately). The remaining "unmapped" depressions are smaller basins
+that the NWI inventory didn't include. Their contribution to bin 2/3 HAND
+pixels depends on how many unmapped basins exist on the production domain —
+unknown without the diagnostic.
 
-- **Noise population:** `0 < fill_depth < threshold` (numerical artifacts)
-- **Real depressions:** `fill_depth >= threshold` (physical features, already
-  handled by NWI mask for the large ones)
+### 6.2 Fill-Depth Decomposition (The Real Contamination Signal)
 
-### 6.3 Determining the HAND Cutoff
+**Key insight (2026-04-23):** The pipeline produces FOUR distinct conditioning
+stages, each with different physical meaning and magnitude. Treating `fill_depth
+= inflated − dem` as one scalar conflates them and requires arbitrary
+thresholds. Computing them separately gives a crisp, physically-meaningful
+signal.
 
-1. Compute `fill_depth = flooded - dem` for all land pixels
-2. Partition into unmodified (`fill_depth <= epsilon`) and conditioned
-   (`fill_depth > epsilon`, where epsilon ~1mm for float tolerance)
-3. Among the noise population (`0 < fill_depth < threshold`), compute the HAND
-   distribution
-4. The HAND cutoff = a high percentile (95th or 99th) of the noise population's
-   HAND values
-5. Any HAND bin whose upper bound falls below this cutoff is dominated by
-   conditioned pixels and should not be treated as physical signal
+Pipeline conditioning order (`run_pipeline.py:802-839`):
+```python
+grid.fill_pits("dem", out_name="pit_filled")            # Stage 1
+grid.fill_depressions("pit_filled", out_name="flooded") # Stage 2
+flooded_arr[water_mask > 0] -= 0.1                      # Stage 3
+grid.resolve_flats("flooded", out_name="inflated")      # Stage 4
+```
 
-This is more defensible than an arbitrary sacrificial bin or a fixed Q1 cutoff
-because the threshold is derived from the conditioning itself — it identifies
-which pixels' HAND values are trustworthy vs. synthetic.
+Decomposed per-pixel signals:
 
-### 6.4 Recommended Diagnostic Outputs
+| Stage | Quantity | Typical magnitude | Physical meaning |
+|-------|----------|-------------------|------------------|
+| 1. `fill_pits` | `pit_filled − dem` | mm to cm | LIDAR single-cell noise correction (benign) |
+| 2. `fill_depressions` | `flooded_orig − pit_filled` | cm to meters | **Real basin filled to spill. Synthetic drainage. Contamination source.** |
+| 3. NWI lowering | −0.1m for water pixels, 0 elsewhere | exactly −0.1m | Our routing trick (deterministic; we know who got what) |
+| 4. `resolve_flats` | `inflated − flooded_lowered` | sub-mm | Microgradient tie-breaking (benign) |
 
-1. **Fill-depth histogram:** Distribution of `flooded - dem` for all land pixels.
-   Expect a spike near zero and a tail. Identify the threshold between
-   resolve_flats noise and real depressions.
-2. **HAND histogram (full):** Distribution of HAND values for all land pixels,
-   with the conditioned (noise) and unmodified populations shown separately.
-3. **HAND histogram (0-2m zoom):** Same, zoomed to the TAI zone where bin design
-   matters most.
-4. **DTND histogram:** Distribution of DTND for the cleaned (noise-removed)
-   population in the lowest HAND bins, as a verification that the remaining
-   pixels have plausible lowland distances.
+**The crisp contamination signal is `depression_fill_depth > 0`** — it's a
+yes/no answer to "was this pixel inside a closed basin that got filled to
+rim?" No threshold needed at this level. Tiny values of
+`depression_fill_depth` (say, < 1cm) could still be filtered as numerical
+multi-pixel noise, but now the threshold is principled (it separates
+numerical multi-cell noise from real basin fills).
 
-These diagnostics should be generated BEFORE finalizing the binning scheme, as
-the noise floor determines the bin boundaries, which determine column 1's
-parameters, which determine the lake column's DTND.
+**Pipeline change required for this decomposition.** The current pipeline
+overwrites `grid.flooded` with the water-lowered version at line 816
+(`grid.add_gridded_data(flooded_arr, data_name="flooded", ...)`). To recover
+`flooded_orig`, we need to save a copy BEFORE the overwrite, OR reconstruct it
+as `flooded_lowered + 0.1 * water_mask`.
 
-### 6.5 Sequencing: Bins Before Lake
+**Pipeline history note:** our pipeline has a try/except around `resolve_flats`
+(`run_pipeline.py:826-839`) because large open-water surfaces used to break it.
+Since adding the NWI mask + 0.1m lowering, resolve_flats runs successfully
+(verified in the 2026-04-15 production log, ~3 min runtime). If it ever falls
+back, Stage 4 contributes zero — the decomposition still works cleanly.
+
+### 6.3 Secondary Diagnostic Signals
+
+Beyond fill-depth decomposition, several other signals help cross-check and
+localize contamination:
+
+1. **Raw vs. effective HAND discrepancy.** Compute
+   `raw_hand = dem − dem[flow_termination_pixel]` alongside the pipeline's
+   `hand = inflated − inflated[flow_termination_pixel]`. For unmodified pixels,
+   they match. For depression-filled pixels, effective HAND is inflated above
+   raw HAND. The difference equals `depression_fill_depth` for the source pixel
+   — confirms the decomposition.
+
+2. **HAND/DTND ratio.** A real near-stream pixel has small HAND AND small DTND.
+   A filled-basin pixel has small HAND (by construction) but potentially large
+   DTND (flow path goes up to spill, then down to stream). In bin 1,
+   anomalously large DTND is a contamination red flag.
+
+3. **Flow path length vs. Euclidean distance to nearest wide-mask pixel.**
+   If D8 flow path is much longer than the straight-line distance, drainage is
+   synthetic (routed the long way via spill point).
+
+4. **Drainage catchment accumulation.** Pixels whose flow terminates in a tiny
+   terminal catchment (low accumulation) are candidates for synthetic spill
+   drainage. Well-accumulated catchments indicate real streams.
+
+### 6.4 Proposed Diagnostic Workflow
+
+**Plot first, decide later.** Do NOT pre-specify a threshold. Generate
+diagnostic plots, look at what the data actually does, then choose how (or
+whether) to filter.
+
+**Phase 1: Decompose and plot fill components.** For all non-water land pixels
+with finite HAND, produce log-y histograms of:
+- `pit_fill_depth` (expect mostly zero with small tail)
+- `depression_fill_depth` (expect mostly zero with fat tail — this is the
+  primary signal)
+- `resolve_flat_depth` (expect narrow sub-mm spike only)
+
+If `depression_fill_depth` has a broad tail with significant pixel counts,
+contamination is potentially important. If it's mostly zero, contamination
+is minor.
+
+**Phase 2: Stratify the bin 1 population.** Among pixels in bin 1 (0-0.1m
+HAND):
+- Count pixels with `depression_fill_depth == 0` (clean, real near-stream)
+- Count pixels with `depression_fill_depth > 0` (depression-filled)
+- Overlay DTND histograms of the two subpopulations
+
+If DTND distributions overlap, the depression-filled pixels are actually close
+to streams (benign — they're lowland with internal pits). If the depression-
+filled subpopulation has DTND shifted much higher, that's the "basin far from
+stream lifted to rim" case.
+
+**Phase 3: Visual inspection of contamination.** Plot the production domain
+as a 2D image colored by `depression_fill_depth`. Overlay the NWI water mask.
+Expected patterns:
+- Warm pixels clustered inside NWI polygons → expected (lakes partly filled)
+- Warm pixels clustered OUTSIDE NWI polygons → unmapped wetlands (the real
+  contamination)
+- Scattered warm noise → random LIDAR artifacts (probably fine)
+
+**Phase 4: Cross-check with HAND/DTND ratio.** For bin 1 pixels, compute
+`ratio = DTND / (HAND + 0.01)`. Plot the distribution. A bimodal or
+long-tailed shape indicates mixed populations.
+
+**Phase 5: Decide the filter based on evidence.**
+
+| What the diagnostics show | Recommended filter |
+|---------------------------|-------------------|
+| `depression_fill_depth` is mostly zero; DTND distributions overlap | No filter needed. Col 2 stats are robust. |
+| Clear subpopulation has `depression_fill_depth > 0` AND elevated DTND | Filter on `depression_fill_depth == 0` for col 2 stats. Preserves unmodified lowland, removes basin artifacts. |
+| Contamination is spatially clustered near unmapped wetlands | Consider a separate "near-unmapped-wetland" column rather than lumping into col 2 or the lake column. |
+
+### 6.5 Why Decomposition Beats a Single Threshold
+
+The original framing ("fill_depth > 0" or "fill_depth > 1cm") conflated all
+four conditioning stages into one scalar and then tried to pick a threshold
+separating "noise" from "real." That's guessing at signal boundaries.
+
+Decomposition lets us answer the physical question directly: "was this pixel
+depression-filled?" is a yes/no from `depression_fill_depth`. No threshold
+needed at the first level. Only if we want to exclude numerical multi-cell
+noise do we pick a threshold (e.g., `depression_fill_depth < 1cm = treat as
+noise`), and that threshold is now physically meaningful because it's inside
+a single stage with a clear semantics.
+
+### 6.6 Open Questions
+
+- **Do unmapped wetland basins actually exist in the OSBS production domain?**
+  NWI is supposed to be comprehensive, but at 1m resolution there may be small
+  seasonally wet depressions that NWI missed. This is partially answered by
+  Quintero & Cohen 2019 ("Scale-dependent patterning of wetland depressions in
+  a low-relief karst landscape") cited in the CEAP paper — worth following up.
+- **Do we need to separately analyze water-adjacent pixels?** NWI water pixels
+  get lowered (Stage 3) but may also sit inside basins that got filled (Stage
+  2). The interaction could affect land pixels just outside lake polygons.
+- **Computational cost of diagnostics.** Fill decomposition is cheap
+  (subtraction on 90M-pixel arrays). Histogram/scatter plots are cheap. 2D
+  spatial visualization is just an image plot. Runs in minutes.
+
+### 6.5 Sequencing: Diagnostic → Bins → Lake
 
 The recommended order of operations:
 
-1. Run fill-depth diagnostic to establish the HAND noise floor
-2. Design the binning scheme (how many bins, where the boundaries are)
-3. Run the pipeline with the new bins
-4. Verify column 1's DTND is clean (tight distribution, no ridgetop artifacts)
-5. Append the lake column with DTND = col1_distance / 2
+1. Generate the diagnostic plots (fill_depth histogram, HAND histograms split
+   by fill_depth class, DTND verification)
+2. Decide filtering strategy based on what the plots reveal
+3. If filtering: rerun pipeline with the filter applied, confirm col 2 stats
+   are stable
+4. Finalize the binning scheme (how many bins, where the boundaries are)
+5. Re-run the pipeline producing the final 16-column NetCDF
+6. Append the lake column at col 1 with `DTND(lake) = DTND(col 2) / 2`
 
-If the binning is changed after the lake column is added, the lake's DTND must
-be recomputed. Better to stabilize the bins first.
+If the binning is changed after the lake column is added, the lake's DTND
+must be recomputed. Better to stabilize col 2's stats (and bin boundaries)
+first.
 
 ---
 
@@ -670,20 +803,22 @@ Only the **last column processed** retains its flag value into the second loop.
 - OR: the PI may have intended this behavior — "when the wetland is full, stop
   cascading and drain everything to the stream"
 
-**Options:**
-1. **Place the lake at column index 1** (land columns shift to 2-17) so the
-   `cold == ispval` column is processed FIRST in the loop. Subsequent columns
-   reset the flag to `.false.`, preserving the current 16-column behavior
-   exactly.
-2. Accept the new behavior (lake at col 17) and discuss with PI.
-3. Modify the SourceMod to compute `wetlandisfull` once per landunit instead of
-   per-column (Fortran changes, which Phase G aims to avoid).
+**Resolution (2026-04-23):** Lake placed at column index 1 (land columns
+shift to 2-17). The `cold == ispval` column is processed FIRST in the loop,
+and subsequent columns reset the flag to `.false.`, preserving the current
+16-column behavior exactly.
 
-**Recommendation: Option 1.** Low-risk pipeline-side fix that preserves the
-current behavior without touching Fortran. Side benefit: the lake is the first
-slice along the column axis in the NetCDF — easier to manually inspect. This
-is reflected in the recommended topology in Section 5.1. Still worth flagging
-to PI for confirmation that this is the desired behavior.
+**Alternatives considered and rejected:**
+- Lake at col 17: Would accidentally activate the dormant flag, changing
+  behavior compared to the current 16-column baseline. Undesirable without
+  PI validation that the changed behavior is intended.
+- Modify the SourceMod to compute `wetlandisfull` once per landunit: Requires
+  Fortran changes, which Phase G aims to avoid.
+
+**Design rationale:** Low-risk pipeline-side fix that preserves the current
+behavior without touching Fortran. Side benefit: the lake is the first slice
+along the column axis in the NetCDF — easier to manually inspect. See
+Section 5.1 for the resulting column chain.
 
 ### 7.2 Soil Depth Profile Method — Resolved
 
@@ -697,15 +832,43 @@ not active. The Swenson reference file's `hillslope_bedrock_depth = 0` is
 inert under Uniform, and our lake column can use the same value without
 effect on soil saturation (see Section 5.4).
 
-### 7.3 MOSART Stream Depth and the Zero-Gradient Assumption
+### 7.3 MOSART Stream Depth and the Zero-Gradient Assumption — Resolved
 
 The lake-to-stream gradient guard (`max(gradient, 0)` when `stream_water_depth
-<= 0`) relies on `tdepth(g) = 0`. If MOSART somehow provides a non-zero stream
-depth, the guard doesn't fire and the negative gradient drives water FROM the
-stream INTO the lake. With routing off, there's no `stream_water_volume` to limit
-this flow — the water is effectively created from nothing.
+<= 0`) relies on `tdepth(g) = 0`. Verified (2026-04-23) that this holds for
+osbs4.branch.v2 via a 5-step chain:
 
-**Need to verify `tdepth(g) = 0` for the OSBS DATM configuration.**
+1. `nuopc.runconfig:111` sets `flds_r2l_stream_channel_depths = .false.`
+2. MOSART's `rof_import_export.F90:95-98` makes the `Sr_tdepth`/`Sr_tdepth_max`
+   exports conditional on that flag — with it false, the fields are NOT
+   advertised to the mediator
+3. CTSM's `lnd_import_export.F90:619` calls `fldchk(importState, Sr_tdepth)`
+   which returns FALSE
+4. CTSM falls through to the `else` branch: `tdepth_grc(:) = 0._r8` (line 624).
+   Same for `tdepthmax_grc` (line 630). **Reset to zero every timestep.**
+5. In `SoilHydrologyMod.F90:2270`, `stream_water_depth = tdepth(g) = 0`,
+   triggering the guard on line 2284: `head_gradient = max(head_gradient, 0)`.
+   Negative lake-to-stream gradients are clamped to zero.
+
+**Consequence:** The lake's `hill_distance` value is mathematically irrelevant
+for the lake-to-stream path — the gradient is always zero regardless of the
+denominator. Water cannot flow from the "stream" into the lake.
+
+**Why this is the case for osbs4:** The `flds_r2l_stream_channel_depths` flag
+is documented in the mosart ChangeLog as specifically for the hillslope model
+when routing is active. With `use_hillslope_routing = .false.` in osbs4, the
+flag is left at its `.false.` default, and MOSART does not send stream depth
+to the land model.
+
+**Note on the subsurface Darcy head term.** The subsurface Darcy gradient uses
+`hill_elev - zwt` as the head — it does NOT include ponded surface water
+(`h2osfc`). A lake column with 400mm of standing water and a saturated soil
+column (`zwt = 0`) has the same subsurface head (`-0.4m`) as one with no
+standing water. The surface water exerts no hydraulic pressure on the
+subsurface lateral flow. Surface and subsurface water are decoupled in CTSM.
+This means the "zero gradient" claim only applies to the subsurface path.
+Surface water flow is handled separately by the spillheight ponding logic in
+SurfaceWaterMod.
 
 Additionally, the subsurface Darcy gradient uses `hill_elev - zwt` as the head
 term — it does NOT include ponded surface water (`h2osfc`). A lake column with
@@ -751,17 +914,17 @@ balance works as expected.
 
 | # | Question | Why It Matters |
 |---|----------|----------------|
-| 1 | Confirm lake-at-col-1 placement (7.1, 5.1) | Preserves current 16-column `wetlandisfull` behavior without Fortran changes. Low-risk pipeline-side fix. |
-| 3 | SPILLHEIGHT = 0.2m? | Confirm SourceMod scalar matches our NetCDF assumption of `hill_elev = -SPILLHEIGHT` |
-| 4 | `tdepth(g) = 0` for OSBS? | Ensures lake-to-stream gradient guard fires correctly; determines whether lake width matters |
 | 5 | What does "always submerged" mean? (5.4) | Surface-only (guaranteed by spillheight) vs. full soil saturation (likely maintained by surface→soil infiltration, but should verify in Phase G test) |
-| 7 | Spill depth mismatch (5.5) | Real OSBS wetlands have mean spill depth 2.64m (Lee et al. 2023); our `hill_elev = -0.4m` allows only 0.4m ponding before overflow. Is the 0.2m SPILLHEIGHT scalar intentionally numerical (just to keep column ponded), or should it be tuned to match physical capacity? |
+| 7 | Spill depth tuning (5.5) | Real OSBS wetlands have mean spill depth 2.64m (Lee et al. 2023); our current `hill_elev = -0.2m` (runtime -0.4m with SPILLHEIGHT=0.2) allows only 0.4m ponding before overflow. The PI may tune SPILLHEIGHT upward to match physical capacity. Our NetCDF convention (`hill_elev = -SPILLHEIGHT`) holds regardless of the tuned value. |
 
 ### Resolved during audit
 
 | # | Question | Resolution |
 |---|----------|------------|
+| 1 | Lake-at-col-1 placement (7.1, 5.1) | **Design decision (2026-04-23):** lake at col 1, land at cols 2-17. Preserves current 16-column `wetlandisfull` behavior without Fortran changes. |
 | 2 | `soil_profile_method` for osbs4 | **Uniform** (lnd_in:261). See Section 7.2. No distance/bedrock dependence on soil depth. |
+| 3 | SPILLHEIGHT = 0.2m confirmed | Verified current value is 0.2m (HillslopeHydrologyMod.F90:55). The NetCDF convention `hill_elev = -SPILLHEIGHT` is a design choice; the current value produces `hill_elev = -0.2m` (runtime -0.4m). PI may tune SPILLHEIGHT later — see active item #7 for physical-capacity considerations — but the formulaic relationship holds. |
+| 4 | `tdepth(g) = 0` for OSBS? | **Yes, guaranteed.** `flds_r2l_stream_channel_depths = .false.` in nuopc.runconfig:111 → MOSART does not export Sr_tdepth → CTSM resets tdepth_grc to 0 every timestep (lnd_import_export.F90:624). Empty-stream guard fires; lake-to-stream gradient clamped to zero. See Section 7.3. |
 | 6 | `hill_bedrock_depth` for lake (5.4) | **Moot.** Field is ignored under Uniform soil profile. Set to 0, consistent with all land columns. Saturation enforcement, if needed, must come from elsewhere (infiltration likely handles it). |
 
 ---
