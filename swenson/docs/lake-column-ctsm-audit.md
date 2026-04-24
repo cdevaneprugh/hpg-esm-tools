@@ -1,6 +1,10 @@
 # Lake Column CTSM Audit: hill_distance and Implementation Viability
 
 Date: 2026-04-21
+Revised: 2026-04-23 (lake at col 1, surface infiltration pathway, bedrock depth
+inert under Uniform soil profile, PI items 2 and 6 resolved)
+Revised: 2026-04-23 (bathymetric slope from Lee et al. 2023 for `hill_slope`
+and `hill_aspect`; spill depth discrepancy flagged for PI)
 
 ## Purpose
 
@@ -73,6 +77,10 @@ stream.
 
 ### 1.2 Soil Depth Linear Profile
 
+**Status: NOT A CURRENT CONCERN for osbs4.** Potential concern only if
+`hillslope_soil_profile_method` is ever switched away from `Uniform`. See
+"Relevance" at the end of this section.
+
 **File:** `HillslopeHydrologyUtilsMod.F90` (upstream, lines 48-84)
 
 ```fortran
@@ -100,10 +108,17 @@ columns' soil depths.
 **Guard:** `toosmall_distance = 1e-6` prevents division by zero. If all distances
 are equal, `m = 0` and all columns get uniform depth.
 
-**Relevance:** Only matters if `soil_profile_method == soil_profile_linear`
-(method 3). If the PI uses `soil_profile_set_lowland_upland` (method 2), soil
-depth is assigned by topology (`cold == ispval` = lowland), not distance, and
-this calculation is never called. **Need to confirm which method osbs4 uses.**
+**Relevance — NOT ACTIVE for osbs4.** This calculation is only executed when
+`soil_profile_method == soil_profile_linear` (method 3). Verified (2026-04-23):
+`osbs4/CaseDocs/lnd_in` sets `hillslope_soil_profile_method = 'Uniform'`
+(method 1, line 261), under which every hillslope column gets the same soil
+thickness regardless of `hill_distance` or `hillslope_bedrock_depth`.
+
+**Potential future concern:** If the configuration is ever switched to
+`Linear`, the lake's small `hill_distance` would become the new
+`min_hill_dist`, stretching the interpolation range and shifting all land
+columns' soil depths by a small amount (~2% for our parameters). Revisit this
+section if that method change is ever proposed.
 
 ### 1.3 Volumetric Flow and Inflow Routing
 
@@ -172,7 +187,7 @@ Written to history files for diagnostics. No calculations involved.
 | SoilHydrologyMod:1840 | Perched gradient (col-stream) | None | See note |
 | SoilHydrologyMod:2265 | Saturated gradient (col-col) | None | Yes |
 | SoilHydrologyMod:2282 | Saturated gradient (col-stream) | Empty-stream clamp | See note |
-| HillslopeHydrologyUtilsMod:66 | Soil depth linear profile | toosmall_distance | If linear method |
+| HillslopeHydrologyUtilsMod:66 | Soil depth linear profile | toosmall_distance | NOT ACTIVE (Uniform method); potential concern if switched to Linear |
 | TopoMod:260 | Met downscaling | N/A | Uses hill_elev, not distance |
 | HillslopeHydrologyMod:502 | Stream channel length | N/A | Routing off |
 | histFileMod:3329 | Diagnostic write | N/A | No |
@@ -308,17 +323,20 @@ absolute distance, which is irrelevant when the lake-to-stream path is clamped.
 
 ### 4.4 Approach C: Small Fixed DTND (Recommended)
 
-Set `hill_distance(lake) = hill_distance(col1) / 2`.
+Set `hill_distance(lake) = hill_distance(lowest_land_column) / 2`.
 
-With column 1's distance at ~30m in the production output, this gives ~15m. The
-lake column sits below column 1 in the chain.
+With the lowest land column's distance at ~30m in the production output, this
+gives ~15m. The lake column sits below that column in the chain. (Note on
+indexing: in the recommended topology of Section 5.1, the lake is NetCDF
+column 1 and the lowest land column is NetCDF column 2. "col1" in the Darcy
+equations below refers to the lowest land column, not NetCDF index 1.)
 
 **Why this works:**
 
 1. **Monotonicity guaranteed by construction:** `15 < 30`, so
-   `d(col1) - d(lake) = 15m > 0`. No sign flip.
+   `d(lowest_land) - d(lake) = 15m > 0`. No sign flip.
 
-2. **Col1-to-lake gradient denominator = 15m:** The gradient is
+2. **Land-to-lake gradient denominator = 15m:** The gradient is
    `delta_head / 15m`. Physically reasonable for the distance between a lake edge
    and the nearest upland bin.
 
@@ -341,27 +359,38 @@ order of magnitude (~tens of meters from lake edge to surrounding lowland).
 
 ### 5.1 Column Chain
 
+**Recommendation:** Place the lake at column index 1. Land columns shift up
+by one — former col 1 becomes col 2, former col 16 becomes col 17.
+
 ```
-Col 16 (ridge) -> ... -> Col 2 -> Col 1 (former lowest) -> Col 17 (lake) -> [stream]
+Col 17 (ridge) -> Col 16 -> ... -> Col 3 -> Col 2 (lowest land) -> Col 1 (lake) -> [stream]
 ```
 
-- Column 1's `downhill_column_index` changes from -9999 to 17
-- Column 17 (lake) gets `downhill_column_index = -9999` (terminal)
+- Column 1 (lake) has `downhill_column_index = -9999` (terminal, drains to stream)
+- Column 2 (former col 1, lowest land) has `downhill_column_index = 1`
+- Columns 3-17 chain as before (each points to index - 1)
+
+**Rationale:** The Fortran loop iterates in column index order. Placing the
+lake at col 1 ensures the `cold == ispval` column is processed FIRST in the
+`SurfaceWaterMod` first loop. Subsequent columns reset the `wetlandisfull`
+flag to `.false.`, preserving the current 16-column behavior (see Section 7.1).
+Side benefit: the lake is the first slice along the column axis in the
+NetCDF, easier for manual inspection.
 
 ### 5.2 Lake Column Parameters
 
 | Field | Value | Rationale |
 |-------|-------|-----------|
-| `column_index` | 17 | Last column |
-| `downhill_column_index` | -9999 | Lowest column, drains to stream |
+| `column_index` | 1 | First column; lake at bottom of chain (Section 5.1) |
+| `downhill_column_index` | -9999 | Terminal column, drains to stream |
 | `hillslope_index` | 1 | Same hillslope as all others |
-| `hill_distance` | `hill_distance(col1) / 2` | Monotonic by construction |
+| `hill_distance` | `hill_distance(lowest_land) / 2` | Monotonic by construction |
 | `hill_elev` | `-SPILLHEIGHT` (-0.2m) | Runtime: -0.4m after SourceMod shift |
 | `hill_area` | Sum(water_mask * pixel_area) | ~10.68 km² |
 | `hill_width` | NWI lake perimeter (see 5.3) | Physical interface length |
-| `hill_slope` | 0.0 | Flat lake; min_hill_slope floor in SurfaceWaterMod |
-| `hill_aspect` | 0.0 | Irrelevant for flat surface |
-| `hill_bedrock_depth` | TBD (see 5.4) | Affects subsurface saturation |
+| `hill_slope` | ~0.015 (see 5.5) | Bathymetry-derived bowl-shape slope (Lee et al. 2023) |
+| `hill_aspect` | `hill_aspect(col2)` | Aggregate lake has no preferred direction; inherit from adjacent land |
+| `hill_bedrock_depth` | 0.0 | Inert under Uniform soil profile (Section 5.4) |
 
 ### 5.3 hill_width
 
@@ -393,36 +422,133 @@ from uphill.
 
 ### 5.4 hill_bedrock_depth and the "Always Submerged" Constraint
 
-The PI requires the lake column to be permanently submerged. Two mechanisms
-contribute to this:
+The PI requires the lake column to be permanently submerged. Three mechanisms
+interact:
 
-**Surface water:** The spillheight mechanism (SurfaceWaterMod.F90:516) prevents
-surface drainage when `hill_elev + h2osfc*1e-3 < 0`. With `hill_elev = -0.4m`,
-the lake must accumulate >400mm of surface water before any can drain. This keeps
-the surface ponded.
+**Surface ponding:** The spillheight mechanism (SurfaceWaterMod.F90:516)
+prevents surface drainage when `hill_elev + h2osfc*1e-3 < 0`. With
+`hill_elev = -0.4m` at runtime, the lake must accumulate >400mm of surface
+water before any can drain. Spillheight guarantees the surface stays ponded.
 
-**Subsurface water:** The Darcy lateral flow can drain the lake's soil column
-into adjacent columns. If column 1 dries out (zwt drops to 2m), its head
-(`hill_elev - zwt = -0.1 - 2.0 = -2.1m`) is lower than the lake's head
-(`-0.4 - 0 = -0.4m`), and the gradient drives water FROM the lake INTO column 1.
-The lake's soil column can desaturate even while the surface stays ponded.
+**Subsurface lateral drainage:** The Darcy lateral flow can drain the lake's
+soil column into the adjacent land column. If the lowest land column dries out
+(zwt drops to 2m), its water table elevation
+(`hill_elev - zwt = 0.018 - 2.0 = -1.98m`) is lower than the lake's
+(`-0.4 - 0 = -0.4m`), and the gradient drives water FROM the lake INTO the
+land column.
 
-Whether this matters depends on what "always submerged" means:
-- **Surface always ponded:** Guaranteed by spillheight. No parameter choice needed.
-- **Entire soil column always saturated:** Not guaranteed by current physics.
+**Surface-to-soil infiltration (replenishment):** Ponded surface water
+infiltrates down into the soil column via `qflx_h2osfc_drain`
+(SoilHydrologyMod.F90:510):
+```fortran
+qflx_infl(c) = qflx_in_soil_limited(c) + qflx_h2osfc_drain(c)
+```
+This recharges the soil column from above at the same time the Darcy code may
+be draining it laterally. The spillheight SourceMod only blocks *horizontal*
+surface outflow, not *vertical* infiltration, so this pathway operates
+alongside the surface ponding mechanism. For OSBS sandy soils with high
+hydraulic conductivity, this infiltration is likely fast and should keep the
+lake's soil saturated even during adjacent-column dry-down.
 
-`hill_bedrock_depth` controls how much soil the lake column has. A value of 0
-gives a paper-thin soil column — there's almost nothing to desaturate, which
-effectively forces full saturation by construction. But it also means incoming
-lateral flow has nowhere to go except surface ponding, which could cause
-numerical issues.
+Whether additional enforcement is needed depends on what "always submerged"
+means:
+- **Surface always ponded:** Guaranteed by spillheight. No action needed.
+- **Soil column always saturated:** Likely achieved by the infiltration vs
+  lateral-drainage balance under OSBS conditions. Should verify empirically in
+  the Phase G test run by monitoring lake-column `zwt` and `h2osfc`.
 
-A full lowland depth (8m) gives the lake a normal soil column that can
-participate in subsurface exchanges — more physically realistic, but the column
-can partially desaturate under dry conditions.
+**`hill_bedrock_depth` as a saturation knob — not viable under current config.**
+CTSM only reads `hillslope_bedrock_depth` from the NetCDF when
+`hillslope_soil_profile_method = "FromFile"`. osbs4 uses `'Uniform'` (verified
+in lnd_in:261), under which every hillslope column gets the same soil
+thickness and `hillslope_bedrock_depth` is ignored. The Swenson reference
+file and our production NetCDF both set it to 0 as an inert placeholder.
+Switching to `FromFile` to use this knob would require setting bedrock depths
+for all 16 land columns too — new complexity without clear payoff, especially
+since the infiltration pathway above likely handles the saturation concern
+natively.
 
-**Recommendation:** Ask the PI. This interacts with the "always submerged"
-requirement.
+**Recommendation:** Set `hillslope_bedrock_depth = 0` for the lake (consistent
+with all land columns under Uniform). Verify saturation empirically in the
+Phase G test. Revisit parameter-based enforcement only if the lake soil
+column actually desaturates in practice.
+
+### 5.5 hill_slope from Bathymetry (Lee et al. 2023)
+
+The lake column is a saturated, always-underwater LAND column — the `hill_slope`
+parameter describes the slope of the lake bed, not the flat water surface above
+it. NEON 1m LIDAR cannot measure lake bed slope directly (water blocks laser
+returns), so we need another data source.
+
+**Source:** Lee, E., Epstein, A. & Cohen, M. J. (2023). *Patterns of Wetland
+Hydrologic Connectivity Across Coastal-Plain Wetlandscapes*. Water Resources
+Research, 59(8), e2023WR034553. Also summarized in the USDA NRCS CEAP
+Conservation Insight "Storage and Release of Water in Coastal Plain
+Wetlandscapes" (May 2024).
+
+**Key OSBS bathymetry values from the paper (Table 1, OSBS column):**
+
+| Quantity | Value | Notes |
+|----------|-------|-------|
+| Mean spill depth (basin bottom to rim) | 264.1 ± 95.0 cm | LIDAR-derived via Lane & D'Amico (2010) method |
+| Mean wetland stage (standing water depth) | 177.5 ± 80.2 cm | Observed water level above bottom |
+| Number of wetlands sampled | 14 | From 67-wetland study across 4 sites |
+
+Qualitative: "Depressional wetlands are typically bowl-shaped with gradual
+slopes from the wetland bottom to the spill elevation."
+
+**Derivation of mean slope for the aggregate lake column.** For a bowl-shaped
+basin with depth D and area A, the mean slope from rim to bottom is
+approximately `D / R` where `R = √(A/π)` is the effective radius.
+
+Using the aggregate of 103 NWI features covering 10.7 km²:
+```
+mean_area_per_feature = 10.7e6 / 103 ≈ 104,000 m²
+effective_radius      = √(104000/π) ≈ 182 m
+mean_slope            = 2.64 m / 182 m ≈ 0.0145 (≈ 1.5%)
+```
+
+**Recommended value:** `hill_slope(lake) ≈ 0.015`.
+
+**Caveats:**
+
+1. **Aggregate smoothing.** The 103 features span a size range. A small
+   10,000 m² depression (R ≈ 56m, same 2.64m depth) gives slope ≈ 0.047. A
+   larger 0.5 km² feature (R ≈ 400m, same depth) gives slope ≈ 0.007. The
+   single aggregate value hides this variability. 1.5% is the central
+   estimate but not the only defensible number.
+
+2. **Sample size.** 14 wetlands sampled from OSBS may not be fully
+   representative of all 103 NWI features. The spread (±95 cm on spill
+   depth) is wide enough that the mean is the best estimator we have.
+
+3. **Refinement possible.** Per-feature bathymetric estimates using the
+   Lane & D'Amico (2010) LIDAR method on the actual NWI polygon set would
+   give an area-weighted mean slope. Probably converges to a similar
+   value given the wide variability. Worth doing if Phase G test results
+   motivate it.
+
+**Comparison to alternatives:**
+
+| Source | Slope | Physical meaning |
+|--------|-------|-----------------|
+| Bathymetric (recommended) | 0.015 | Lake bed slope from bowl-shape + measured depth |
+| Surrounding land (col2) | 0.050 | Upland sandhill terrain, not basin floor |
+| Flat water surface | 0.000 | Water surface — wrong quantity for a submerged land column |
+| min_hill_slope floor | 0.001 | Placeholder, no physics |
+
+The bathymetric value is preferable because it's the only option with direct
+physical support: measured depth + measured area → derived slope. The
+surrounding-land value conflates basin and hillslope geology. The flat-water
+value was from an incorrect framing (that the lake column represents the
+water surface rather than the lake bed).
+
+**Spill depth vs `hill_elev` — a separate concern.** The paper's 2.64m spill
+depth describes the actual OSBS wetland storage capacity (basin bottom to
+rim). Our current `hill_elev = -0.4m` (runtime, after the SPILLHEIGHT
+SourceMod shift) allows only 0.4m of surface ponding before overflow — about
+1/7th of the real capacity. For a column that's supposed to behave like an
+OSBS wetland, this is a potential physics mismatch. See PI item #7.
 
 ---
 
@@ -545,27 +671,31 @@ Only the **last column processed** retains its flag value into the second loop.
   cascading and drain everything to the stream"
 
 **Options:**
-1. Place the lake at column index 1 (shift everything else up by 1) to preserve
-   the current (ineffective) behavior
-2. Accept the new behavior and discuss with PI
+1. **Place the lake at column index 1** (land columns shift to 2-17) so the
+   `cold == ispval` column is processed FIRST in the loop. Subsequent columns
+   reset the flag to `.false.`, preserving the current 16-column behavior
+   exactly.
+2. Accept the new behavior (lake at col 17) and discuss with PI.
 3. Modify the SourceMod to compute `wetlandisfull` once per landunit instead of
-   per-column (requires Fortran changes, which Phase G aims to avoid)
+   per-column (Fortran changes, which Phase G aims to avoid).
 
-**Recommendation:** Flag to PI. The current 16-column behavior suggests the flag
-was not intended to work as designed. The 17-column case accidentally fixes the
-ordering — whether that's desired is a PI decision.
+**Recommendation: Option 1.** Low-risk pipeline-side fix that preserves the
+current behavior without touching Fortran. Side benefit: the lake is the first
+slice along the column axis in the NetCDF — easier to manually inspect. This
+is reflected in the recommended topology in Section 5.1. Still worth flagging
+to PI for confirmation that this is the desired behavior.
 
-### 7.2 Soil Depth Profile Method
+### 7.2 Soil Depth Profile Method — Resolved
 
-If `soil_profile_method == soil_profile_linear` (method 3), the lake column's
-small distance becomes the new `min_hill_dist`, changing the soil depth
-interpolation slope for ALL columns. The lake gets the deepest soil; other
-columns get slightly shallower soil.
+Verified (2026-04-23): `osbs4/CaseDocs/lnd_in` sets
+`hillslope_soil_profile_method = 'Uniform'` (line 261). Under Uniform, every
+hillslope column gets the same soil thickness — neither `hill_distance` nor
+`hillslope_bedrock_depth` affects soil depth.
 
-If `soil_profile_method == soil_profile_set_lowland_upland` (method 2), no
-effect — soil depth is assigned by topology (cold == ispval = lowland).
-
-**Need to verify which method osbs4 uses.**
+This resolves the concern in Section 1.2: the linear-profile interaction is
+not active. The Swenson reference file's `hillslope_bedrock_depth = 0` is
+inert under Uniform, and our lake column can use the same value without
+effect on soil saturation (see Section 5.4).
 
 ### 7.3 MOSART Stream Depth and the Zero-Gradient Assumption
 
@@ -586,35 +716,53 @@ subsurface water are decoupled in CTSM. This means the "zero gradient" claim
 only applies to the subsurface path. Surface water flow is handled separately
 by the spillheight ponding logic in SurfaceWaterMod.
 
-### 7.4 Transmissivity of the Lake Column
+### 7.4 Transmissivity and the Saturation Balance
 
-When the lake column receives lateral inflow from column 1, the transmissivity
-calculation runs normally using the lake column's soil properties. Since the lake
-has `hill_bedrock_depth = 0`, the soil column is very shallow. This limits the
-saturated thickness available for lateral flow, which could reduce the rate at
-which water enters the lake subsurface.
+When the lake column receives lateral inflow from the lowest land column, the
+transmissivity calculation runs normally using the lake column's soil
+properties. Under Uniform soil profile, the lake has the same soil thickness
+as all other columns — `hillslope_bedrock_depth = 0` is inert and does not
+restrict the soil column.
 
-However, the inflow formula (line 2389) adds the volume directly to the lake's
+The inflow formula (line 2389) adds volume directly to the lake's
 `qflx_latflow_in` — it's the UPHILL column's transmissivity and width that
-control the flow volume, not the lake's. The lake's transmissivity only matters
+control flow volume, not the lake's. The lake's transmissivity only matters
 for its own outflow.
 
-Note that the lake's subsurface outflow is NOT necessarily zero — the column-to-
-column gradient between the lake and column 1 can reverse when column 1 dries
-out. See Section 5.4 for the "always submerged" implications.
+The lake's subsurface outflow is NOT necessarily zero — the column-to-column
+gradient between the lake and the lowest land column can reverse when the
+land column dries out. However, the surface-to-soil infiltration pathway
+(`qflx_h2osfc_drain`, Section 5.4) provides a replenishment mechanism:
+ponded water on the lake surface infiltrates down to refill the soil column.
+For OSBS sandy soils, this is likely fast enough to maintain saturation.
+
+The exact balance depends on the relative rates of:
+1. Lateral Darcy outflow (lake → adjacent dry column)
+2. Vertical infiltration from h2osfc (lake surface → lake soil)
+
+Monitor `zwt(lake)` and `h2osfc(lake)` in the Phase G test run to confirm the
+balance works as expected.
 
 ---
 
 ## 8. Items Requiring PI Clarification
 
+### Active (need PI input)
+
 | # | Question | Why It Matters |
 |---|----------|----------------|
-| 1 | `wetlandisfull` ordering (7.1) | Adding col 17 as the lake accidentally enables a dormant flag. Behavior change. |
-| 2 | `soil_profile_method` for osbs4 | Determines if lake's distance affects soil depth of all columns |
-| 3 | SPILLHEIGHT = 0.2m? | Confirm SourceMod value matches our NetCDF assumption |
-| 4 | `tdepth(g) = 0` for OSBS? | Ensures lake-to-stream gradient guard fires correctly; determines if lake width matters |
-| 5 | What does "always submerged" mean? (5.4) | Surface-only (spillheight guarantees) vs. full soil saturation (not guaranteed). Determines bedrock_depth. |
-| 6 | `hill_bedrock_depth` for lake (5.4) | 0 = thin soil, enforces saturation by construction but may cause numerical issues. 8m = full lowland soil, can partially desaturate. |
+| 1 | Confirm lake-at-col-1 placement (7.1, 5.1) | Preserves current 16-column `wetlandisfull` behavior without Fortran changes. Low-risk pipeline-side fix. |
+| 3 | SPILLHEIGHT = 0.2m? | Confirm SourceMod scalar matches our NetCDF assumption of `hill_elev = -SPILLHEIGHT` |
+| 4 | `tdepth(g) = 0` for OSBS? | Ensures lake-to-stream gradient guard fires correctly; determines whether lake width matters |
+| 5 | What does "always submerged" mean? (5.4) | Surface-only (guaranteed by spillheight) vs. full soil saturation (likely maintained by surface→soil infiltration, but should verify in Phase G test) |
+| 7 | Spill depth mismatch (5.5) | Real OSBS wetlands have mean spill depth 2.64m (Lee et al. 2023); our `hill_elev = -0.4m` allows only 0.4m ponding before overflow. Is the 0.2m SPILLHEIGHT scalar intentionally numerical (just to keep column ponded), or should it be tuned to match physical capacity? |
+
+### Resolved during audit
+
+| # | Question | Resolution |
+|---|----------|------------|
+| 2 | `soil_profile_method` for osbs4 | **Uniform** (lnd_in:261). See Section 7.2. No distance/bedrock dependence on soil depth. |
+| 6 | `hill_bedrock_depth` for lake (5.4) | **Moot.** Field is ignored under Uniform soil profile. Set to 0, consistent with all land columns. Saturation enforcement, if needed, must come from elsewhere (infiltration likely handles it). |
 
 ---
 
@@ -629,3 +777,17 @@ out. See Section 5.4 for the "always submerged" implications.
 | Upstream TopoMod | `$BLUE/ctsm5.3/src/main/TopoMod.F90` |
 | Phase G plan | `$SWENSON/phases/G-ctsm-lake-representation.md` |
 | STATUS.md | `$SWENSON/STATUS.md` |
+
+### Papers
+
+- Lee, E., Epstein, A., & Cohen, M. J. (2023). Patterns of Wetland Hydrologic
+  Connectivity Across Coastal-Plain Wetlandscapes. *Water Resources Research*,
+  59(8), e2023WR034553. https://doi.org/10.1029/2023WR034553
+- USDA NRCS (May 2024). Storage and Release of Water in Coastal Plain
+  Wetlandscapes. Conservation Effects Assessment Project (CEAP) Conservation
+  Insight. (Summary of Lee et al. 2023 for practitioners.)
+  `~/CEAP-Wetlands-Conservation-Insight-WetlandscapeConnectivity-May2024.pdf`
+- Lane, C. R., & D'Amico, E. (2010). Calculating the ecosystem service of water
+  storage in isolated wetlands using LiDAR in North Central Florida, USA.
+  *Wetlands*, 30(5), 967-977. https://doi.org/10.1007/s13157-010-0085-z
+  (LIDAR spill-depth method cited by Lee et al.)
