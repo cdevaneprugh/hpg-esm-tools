@@ -118,6 +118,11 @@ OUTPUT_DESCRIPTOR = os.environ.get("OUTPUT_DESCRIPTOR", "production")
 OUTPUT_TIMESTAMP = time.strftime("%Y-%m-%d")
 OUTPUT_DIR = BASE_DIR / "output" / "osbs" / f"{OUTPUT_TIMESTAMP}_{OUTPUT_DESCRIPTOR}"
 
+# Diagnostic mode: when SAVE_DIAGNOSTICS=1, save intermediate conditioning
+# arrays for the HAND contamination diagnostic (see diagnose_hand_contamination.py).
+SAVE_DIAGNOSTICS = os.environ.get("SAVE_DIAGNOSTICS", "0") == "1"
+DIAGNOSTICS_DIR = OUTPUT_DIR / "diagnostics"
+
 # OSBS center coordinates (from reference file)
 OSBS_CENTER_LAT = 29.689282
 OSBS_CENTER_LON_360 = 278.006569  # 0-360 convention
@@ -810,6 +815,17 @@ def main():
         f"  NWI water mask: {n_water:,} px ({100 * n_water / water_mask.size:.1f}%)"
     )
 
+    # Capture pre-water-lowering state for HAND contamination diagnostic.
+    # Must be done BEFORE line below overwrites grid.flooded with the
+    # water-lowered version.
+    if SAVE_DIAGNOSTICS:
+        DIAGNOSTICS_DIR.mkdir(parents=True, exist_ok=True)
+        print_progress(f"  Saving diagnostic arrays to {DIAGNOSTICS_DIR}/")
+        np.save(DIAGNOSTICS_DIR / "dem.npy", np.array(grid.dem))
+        np.save(DIAGNOSTICS_DIR / "pit_filled.npy", np.array(grid.pit_filled))
+        np.save(DIAGNOSTICS_DIR / "flooded_orig.npy", np.array(grid.flooded))
+        np.save(DIAGNOSTICS_DIR / "water_mask.npy", water_mask)
+
     # Lower water pixels in flooded DEM to force flow through them
     flooded_arr = np.array(grid.flooded)
     flooded_arr[water_mask > 0] -= 0.1
@@ -837,6 +853,9 @@ def main():
             crs=grid.crs,
             nodata=grid.nodata,
         )
+
+    if SAVE_DIAGNOSTICS:
+        np.save(DIAGNOSTICS_DIR / "inflated.npy", np.array(grid.inflated))
 
     # --- 3e: Flow routing ---
     print_progress("  Computing flow direction...")
@@ -923,6 +942,11 @@ def main():
     )
     hand = np.array(grid.hand)
     dtnd = np.array(grid.dtnd)
+
+    if SAVE_DIAGNOSTICS:
+        np.save(DIAGNOSTICS_DIR / "hand.npy", hand)
+        np.save(DIAGNOSTICS_DIR / "dtnd.npy", dtnd)
+        np.save(DIAGNOSTICS_DIR / "wide_channel_mask.npy", wide_channel_mask)
 
     # HAND diagnostics split by pixel type
     hand_flat_diag = hand.flatten()
