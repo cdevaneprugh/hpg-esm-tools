@@ -67,7 +67,6 @@ from pysheds.pgrid import Grid  # noqa: E402
 # Add parent directory for shared module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dem_processing import identify_basins  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
@@ -377,10 +376,14 @@ def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
     """Create hillslope parameters summary plot.
 
     Phase E.5: elements[0] is the lake column; elements[1..N] are the land
-    columns. The plot shows the 24 land bins as bars and the lake column
-    as a separate marker overlay on each panel — including the lake as a
-    bar would distort the y-axis (hill_elev = -6 m vs. land range, plus
-    lake area >> any single land bin).
+    columns. Bars show the 24 land bins. The lake's hill_elev and DTND sit
+    at the lower edge of their respective panels and are useful as a visual
+    reference line — those panels get a navy axhline for the lake value.
+    The lake's hill_area (~11 km^2) and hill_width (~48 km) are far off-
+    scale relative to land bins, so an axhline on those panels would crush
+    the land detail; the Area and Width panels intentionally omit the lake
+    line. Lake values are still reported in the summary text and NetCDF
+    metadata for cross-reference.
     """
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
@@ -397,19 +400,23 @@ def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
     land_elements = [e for e in elements if not e.get("is_lake")]
     lake_elements = [e for e in elements if e.get("is_lake")]
 
-    for panel_idx, (ax, key, ylabel, title) in enumerate(
-        [
-            (
-                axes[0, 0],
-                "height",
-                "Mean raw HAND (m)",
-                "Height Above Nearest Drainage",
-            ),
-            (axes[0, 1], "distance", "Mean DTND (m)", "Distance to Nearest Drainage"),
-            (axes[1, 0], "area", "Area (km^2)", "Hillslope Element Area"),
-            (axes[1, 1], "width", "Width (m)", "Lower Edge Width"),
-        ]
-    ):
+    # Per-panel config: (ax, key, ylabel, title, show_lake_line).
+    # show_lake_line=False on Area and Width panels because the lake's
+    # values are wildly off-scale and would crush the bar detail.
+    panel_configs = [
+        (
+            axes[0, 0],
+            "height",
+            "Mean raw HAND (m)",
+            "Height Above Nearest Drainage",
+            True,
+        ),
+        (axes[0, 1], "distance", "Mean DTND (m)", "Distance to Nearest Drainage", True),
+        (axes[1, 0], "area", "Area (km^2)", "Hillslope Element Area", False),
+        (axes[1, 1], "width", "Width (m)", "Lower Edge Width", False),
+    ]
+
+    for ax, key, ylabel, title, show_lake_line in panel_configs:
         for i, asp in enumerate(aspect_names):
             start = i * n_land_bins
             values = [land_elements[j][key] for j in range(start, start + n_land_bins)]
@@ -423,8 +430,8 @@ def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
                 color=colors[i],
             )
 
-        # Annotate lake value as a horizontal reference line (one per panel).
-        for lake_idx, lake in enumerate(lake_elements):
+        if show_lake_line and lake_elements:
+            lake = lake_elements[0]  # single-aspect: at most one lake column
             v = lake[key] / 1e6 if key == "area" else lake[key]
             ax.axhline(
                 v,
@@ -432,7 +439,7 @@ def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
                 linestyle="--",
                 linewidth=1.2,
                 alpha=0.8,
-                label=f"Lake: {v:.2f}" if lake_idx == 0 else None,
+                label=f"Lake: {v:.2f}",
             )
 
         ax.set_xlabel("Land bin (chain order, deepest -> ridge)")
@@ -565,18 +572,15 @@ def write_hillslope_netcdf(
             # receives the lowest land bin's flow at i=1.
             downhill_column_index[i] = i  # 1-indexed col_index of previous
 
-    # pct_hillslope sums all column areas under the single aspect (lake +
-    # land). With area_m2 = land_area + lake_area, single-aspect case yields
-    # pct_hillslope[0] = 100.0%. Lake's fractional weight within the
-    # landunit is computed downstream by CTSM via col%hill_area / total.
-    pct_hillslope = np.zeros(n_aspects)
-    total_area_m2 = sum(elem["area"] for elem in elements)
-    if total_area_m2 > 0:
-        pct_hillslope[:] = 100.0 / n_aspects  # equal split for multi-aspect
-        if n_aspects == 1:
-            pct_hillslope[0] = 100.0
-    else:
-        pct_hillslope[:] = 100.0 / n_aspects
+    # pct_hillslope: single-aspect by design (see assert in main()). One
+    # hillslope contains all 25 columns (lake + 24 land bins), which means
+    # the single aspect's percentage is always 100% — independent of how
+    # area is distributed across the columns. Lake's fractional weight
+    # within the landunit is computed downstream by CTSM via the per-column
+    # hill_area / total ratio (see audit Section 3); we don't pre-compute
+    # it here.
+    assert n_aspects == 1, "Writer assumes single-aspect (see main() assert)."
+    pct_hillslope = np.array([100.0])
 
     # Placeholder — matches Swenson (all zeros). Under the current osbs2
     # config (hillslope_soil_profile_method='Uniform'), CTSM never reads
@@ -776,6 +780,19 @@ def main():
     """Run the OSBS hillslope pipeline."""
     start_time = time.time()
 
+    # Single-aspect lock. The pipeline + writer + lake column placement
+    # all assume one hillslope (ASPECT_BINS = [(0, 360)]). At OSBS the
+    # N/S/E/W aspect distribution is ~uniform over the small drainage
+    # basins, so a 4-aspect split would split few real catchments and
+    # produce noisy per-aspect statistics. If multi-aspect is ever
+    # needed: revisit lake-at-i=0 placement, restore the per-aspect
+    # area-summation logic in write_hillslope_netcdf, and decide which
+    # hillslope_index the lake belongs to.
+    assert N_ASPECT_BINS == 1, (
+        "Pipeline is locked to single-aspect; multi-aspect support requires "
+        "redesign of lake column placement and writer pct_hillslope logic."
+    )
+
     print_section("OSBS Hillslope Pipeline")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -828,7 +845,7 @@ def main():
         assert dem.shape == water_mask.shape, (
             f"Shape mismatch: DTM {dem.shape}, water mask {water_mask.shape}"
         )
-        n_water_px = int(np.sum(water_mask == 1))
+        n_water_px = int(np.sum(water_mask > 0))
         print_progress(f"  Water mask: {WATER_MASK_PATH.name}")
         print_progress(
             f"    Water pixels: {n_water_px:,} "
@@ -909,35 +926,19 @@ def main():
         )
         sys.exit(1)
 
-    dem_for_routing = dem
-    region_transform = transform
+    print_progress(f"  Processing region: {dem.shape} ({dem.size:,} pixels)")
 
-    print_progress(
-        f"  Processing region: {dem_for_routing.shape} "
-        f"({dem_for_routing.size:,} pixels)"
-    )
-
-    # --- 3b: Basin detection (pre-conditioning) ---
-    # Both identify_basins and identify_open_water produce zero detections at 1m
-    # (see docs/synthetic_lake_bottoms.md lines 320-404). Retained as placeholder
-    # — will be replaced with 1m-appropriate water detection during Phase E.
-    print_progress("  Detecting basins in raw DEM...")
-    basin_pre_mask = identify_basins(dem_for_routing, nodata=NODATA_VALUE)
-    n_basin_pre = int(np.sum(basin_pre_mask > 0))
-    print_progress(f"    Pre-conditioning basin pixels: {n_basin_pre}")
-    dem_for_routing[basin_pre_mask > 0] = NODATA_VALUE
-
-    # --- 3c: pysheds Grid creation ---
+    # --- 3b: pysheds Grid creation ---
     grid = Grid()
     grid.add_gridded_data(
-        dem_for_routing,
+        dem,
         data_name="dem",
-        affine=region_transform,
+        affine=transform,
         crs=PyprojProj(crs.to_proj4()),
         nodata=NODATA_VALUE,
     )
 
-    # --- 3d: DEM conditioning ---
+    # --- 3c: DEM conditioning ---
     print_progress("  Conditioning DEM...")
     grid.fill_pits("dem", out_name="pit_filled")
     grid.fill_depressions("pit_filled", out_name="flooded")
@@ -1002,7 +1003,7 @@ def main():
     if SAVE_DIAGNOSTICS:
         np.save(DIAGNOSTICS_DIR / "inflated.npy", np.array(grid.inflated))
 
-    # --- 3e: Flow routing ---
+    # --- 3d: Flow routing ---
     print_progress("  Computing flow direction...")
     grid.flowdir("inflated", out_name="fdir", dirmap=DIRMAP, routing="d8")
 
@@ -1021,7 +1022,7 @@ def main():
 
     print_progress(f"  Max accumulation: {max_acc:.0f} cells")
 
-    # --- 3f: Channel mask + stream network ---
+    # --- 3e: Channel mask + stream network ---
     acc_mask = (grid.acc > accum_threshold) & np.isfinite(np.array(grid.inflated))
     grid.create_channel_mask("fdir", mask=acc_mask, dirmap=DIRMAP, routing="d8")
 
@@ -1143,7 +1144,7 @@ def main():
 
     # Plots
     create_stream_network_plot(
-        dem_for_routing,
+        dem,
         stream_mask,
         bounds_dict,
         OUTPUT_DIR / "stream_network.png",
@@ -1160,7 +1161,8 @@ def main():
     # Step 5: Hillslope Parameter Computation
     # =========================================================================
     print_section(
-        f"Step 5: Hillslope Parameters ({N_ASPECT_BINS * N_LAND_BINS} land elements + 1 lake)"
+        f"Step 5: Hillslope Parameters "
+        f"({N_ASPECT_BINS * N_LAND_BINS} land elements + {N_LAKE_COLUMNS} lake)"
     )
 
     t0 = time.time()
@@ -1205,23 +1207,10 @@ def main():
 
     # Combined cleanup mask (Phase E.5). Drop lakes (water_mask), all stream
     # channel pixels (channel_mask — catches streams in filled depressions
-    # which have raw_hand < 0), NaN, and DTND tail outliers. Then apply
-    # basin pre-mask if it removed a non-trivial fraction.
+    # which have raw_hand < 0), NaN, and DTND tail outliers.
     valid_pre_trim = (
         (water_flat == 0) & (channel_flat == 0) & np.isfinite(raw_hand_flat) & keep_tail
     )
-
-    basin_pre_flat = basin_pre_mask.flatten()
-    n_basin = int(np.sum(basin_pre_flat > 0))
-    if n_basin > 0:
-        non_flat_fraction = np.sum(basin_pre_flat == 0) / basin_pre_flat.size
-        if non_flat_fraction > 0.01:
-            valid_pre_trim = valid_pre_trim & (basin_pre_flat == 0)
-            print_progress(f"    Basin masking: {n_basin} px removed")
-        else:
-            print_progress(
-                f"  WARNING: Region too flat (non_flat={non_flat_fraction:.4f})"
-            )
 
     n_pre_trim = int(valid_pre_trim.sum())
     print_progress(f"    Valid pre-Q01/Q99 trim: {n_pre_trim:,}")
@@ -1249,10 +1238,12 @@ def main():
     # Extract drainage_id before applying valid filter
     drainage_id_flat = np.array(grid.drainage_id).flatten()
 
-    # Apply valid filter to all arrays. raw_hand_flat is the binning input;
-    # hand_flat is kept around for legacy diagnostics but not used downstream.
+    # Apply valid filter to all arrays. raw_hand_flat is the binning input.
+    # The conditioned hand_flat is no longer needed downstream (the n_water_hand0
+    # diagnostic above runs on the pre-filter array); the conditioned `hand`
+    # 2D array is still saved under SAVE_DIAGNOSTICS for ad-hoc post-run
+    # debugging.
     raw_hand_flat = raw_hand_flat[valid]
-    hand_flat = hand_flat[valid]
     dtnd_flat = dtnd_flat[valid]
     slope_flat = slope_flat[valid]
     aspect_flat = aspect_flat[valid]
@@ -1296,7 +1287,7 @@ def main():
             "spatial_scale_m": float(lc_m),
             "min_wavelength_m": float(MIN_WAVELENGTH),
             "pixel_size_m": PIXEL_SIZE,
-            "region_shape": list(dem_for_routing.shape),
+            "region_shape": list(dem.shape),
             "bounds": bounds_dict,
         },
         "elements": [],
@@ -1543,8 +1534,11 @@ def main():
     # Stream slope from network (validated approach)
     stream_slope_val = net_stats["slope"]
 
-    # INTERIM power laws for depth/width (Swenson rh:1104-1114)
-    # Phase E will research OSBS-specific empirical relationships
+    # Stream depth/width: Swenson power laws (rh:1104-1114). Kept as-is per
+    # PI decision (#4, 2026-03-30): osbs2 runs with use_hillslope_routing=
+    # .false., so these values are never read by CTSM under the current
+    # configuration. Refining them is deferred until routing is ever
+    # enabled.
     stream_depth = 0.001 * total_area_m2**0.4
     stream_width = 0.001 * total_area_m2**0.6
 
@@ -1593,7 +1587,7 @@ def main():
         f.write(f"OSBS Hillslope Pipeline Summary ({OUTPUT_DESCRIPTOR})\n")
         f.write("=" * 60 + "\n\n")
         f.write(f"Input: {MOSAIC_PATH}\n")
-        f.write(f"Region: {dem_for_routing.shape} pixels\n")
+        f.write(f"Region: {dem.shape} pixels\n")
         f.write(f"Resolution: {PIXEL_SIZE} m (Phase B: no subsampling)\n\n")
 
         f.write("Spatial Scale Analysis:\n")
@@ -1608,8 +1602,12 @@ def main():
         f.write(f"  Stream cells: {stream_cells:,} ({stream_frac:.2%})\n")
         f.write(f"  Network length: {net_stats['length']:.0f} m\n")
         f.write(f"  Network slope: {net_stats['slope']:.6f} m/m\n")
-        f.write(f"  Stream depth: {stream_depth:.3f} m (INTERIM power law)\n")
-        f.write(f"  Stream width: {stream_width:.1f} m (INTERIM power law)\n")
+        f.write(
+            f"  Stream depth: {stream_depth:.3f} m (Swenson power law; routing off)\n"
+        )
+        f.write(
+            f"  Stream width: {stream_width:.1f} m (Swenson power law; routing off)\n"
+        )
         f.write(f"  Stream slope: {stream_slope_val:.6f} m/m\n\n")
 
         f.write("HAND (Phase E.5: bin on raw_hand = hand - dep_fill):\n")
