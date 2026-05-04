@@ -20,6 +20,56 @@ Revised: 2026-04-23 (Section 6 expanded with fill-depth decomposition
 approach: split the four conditioning stages into separate signals;
 `depression_fill_depth > 0` is the crisp contamination marker with no
 threshold needed. Added 5-phase diagnostic workflow and secondary signals.)
+Revised: 2026-04-25 (PI notes incorporated: lake hill_distance ≈ stream
+width, hill_slope = 0 with lake-bottom framing, hill_width = 1/2 NWI
+perimeter. Items 5 and 7 resolved — don't enforce permanent submersion
+parametrically; defer SPILLHEIGHT tuning to model output. Earlier 0.015
+bathymetric slope and col2/2 distance superseded.)
+Revised: 2026-04-25 (Section 6.7 added: the HAND binning fix proposal.
+After diagnostic analysis, identified that compute_hand uses inflated DEM,
+producing geometrically incorrect HAND values for ~25% of land pixels at
+OSBS. Proposed fix: use raw DEM for HAND, keep inflated for routing.
+Generalizes across all bins. Pending PI approval of architectural shift to
+flood-zone bins.)
+Revised: 2026-04-29 (Section 7.5 added: NWI mask has holes from nested-
+polygon rasterization. ~18.5K hole pixels per major lake; ~50-200K total
+domain-wide. Pipeline data impact small (88% of holes are NaN-HAND, filtered
+out); visualization impact visible. Fix deferred to next pipeline rerun via
+NWI re-rasterization with proper nested-polygon handling.)
+Revised: 2026-04-30 (Section 6.7.3 corrected: the prior "NWI-interior fill
+2.97m matches Lee 2023's 2.64m" framing was wrong — those measure different
+quantities (storage above water vs. basin-bottom-to-rim). After reading
+McLaughlin 2019 and Lee 2023 in full, the correct empirical comparison is
+non-NWI basins ≥ 1 ha (n=107, mean 3.33m vs. Lee's 2.64m, within ~25%).
+Section 5.5 and PI item #7 updated accordingly. McLaughlin 2019 added to
+references.)
+
+---
+
+> **POST-PI-MEETING REDESIGN (2026-04-30) — sections referencing the
+> spillheight convention are superseded.**
+>
+> The PI meeting reframed the lake column and FZ bin design. Key changes:
+>
+> 1. The PI's spillheight SourceMod is being retired (SPILLHEIGHT → 0).
+>    The universal `-SPILLHEIGHT` shift in `HillslopeHydrologyMod.F90:363`
+>    becomes a no-op.
+> 2. Lake column `hill_elev` is no longer `-SPILLHEIGHT`. It's set from
+>    basin-physics data (placeholder: -2.64 m per Lee 2023 or -3.33 m per
+>    our pipeline). The constraint is that lake hill_elev must be more
+>    negative than the deepest FZ bin to keep chain monotonicity.
+> 3. The flood zone is the dry continuation of the same basin as the lake
+>    (not a separate buffer). FZ bin count expands to ≥50% of total
+>    columns per PI direction.
+> 4. Sections 5.2, 5.4, 5.5, 6.7.x, 7.1, and PI items #3 / #5 / #7 below
+>    that reference the spillheight convention should be read as historical.
+>    They are retained for context but no longer describe the working plan.
+>
+> **Current working plan:** `phases/E.5-bin-redesign.md` and the
+> Phase E.5 entry in `STATUS.md`. Phase G (`phases/G-ctsm-lake-representation.md`)
+> is effectively folded into Phase E.5.
+
+---
 
 ## Purpose
 
@@ -338,35 +388,38 @@ absolute distance, which is irrelevant when the lake-to-stream path is clamped.
 
 ### 4.4 Approach C: Small Fixed DTND (Recommended)
 
-Set `hill_distance(lake) = hill_distance(lowest_land_column) / 2`.
+**PI direction (2026-04-25):** Set `hill_distance(lake) ≈ stream width` (a few
+meters). The exact value is mathematically inert under the current
+configuration (routing off, `tdepth=0` → empty-stream guard fires → lake-to-
+stream gradient clamped to zero). Picking ~5m vs 15m vs 1m gives identical
+model behavior. Choose stream width as a defensible small nonzero value.
 
-With the lowest land column's distance at ~30m in the production output, this
-gives ~15m. The lake column sits below that column in the chain. (Note on
-indexing: in the recommended topology of Section 5.1, the lake is NetCDF
-column 1 and the lowest land column is NetCDF column 2. "col1" in the Darcy
-equations below refers to the lowest land column, not NetCDF index 1.)
+The earlier `hill_distance(lowest_land) / 2` recommendation gave ~15m and is
+still defensible, but stream width is what the PI prefers and the choice is
+inconsequential.
 
-**Why this works:**
+**Why ANY small nonzero value works:**
 
-1. **Monotonicity guaranteed by construction:** `15 < 30`, so
-   `d(lowest_land) - d(lake) = 15m > 0`. No sign flip.
+1. **Monotonicity guaranteed by construction:** Any value smaller than
+   `hill_distance(lowest_land)` (~30m) keeps the col-to-col denominator
+   positive. 5m, 15m, anything in this range — all fine.
 
-2. **Land-to-lake gradient denominator = 15m:** The gradient is
-   `delta_head / 15m`. Physically reasonable for the distance between a lake edge
-   and the nearest upland bin.
+2. **Land-to-lake gradient denominator:** With lake DTND = 5m and lowest land
+   DTND = 30m, denominator = 25m (vs 15m at the earlier recommendation).
+   Both are physically reasonable.
 
 3. **Lake-to-stream gradient = 0:** With routing off and `tdepth(g) = 0`,
-   the gradient is `(-0.4 - zwt) / 15`. This is negative, clamped to 0. **The
-   absolute value of the lake's distance is irrelevant for this path.**
+   the gradient is `(-0.4 - zwt) / X` regardless of X. This is negative,
+   clamped to 0. **The absolute value of the lake's distance is irrelevant
+   for this path.**
 
 4. **No second-order effects:** If `soil_profile_set_lowland_upland` is used
    (topology-based), soil depth is unaffected. Met downscaling uses `hill_elev`,
    not distance. PFT assignment uses topology. Weights use area, not distance.
 
-**The value is physically motivated:** Half the distance of the nearest upland
-bin places the lake conceptually between the lowest land and the (inactive)
-stream. For OSBS lakes surrounded by low-HAND terrain, this is within the right
-order of magnitude (~tens of meters from lake edge to surrounding lowland).
+**Concrete value:** look up the production NetCDF's stream width
+(`hillslope_stream_width` or computed from network) and use that. Likely
+~5m at OSBS.
 
 ---
 
@@ -400,13 +453,86 @@ NetCDF, easier for manual inspection.
 | `column_index` | 1 | First column; lake at bottom of chain (Section 5.1) |
 | `downhill_column_index` | -9999 | Terminal column, drains to stream |
 | `hillslope_index` | 1 | Same hillslope as all others |
-| `hill_distance` | `hill_distance(lowest_land) / 2` | Monotonic by construction |
-| `hill_elev` | `-SPILLHEIGHT` (-0.2m) | Runtime: -0.4m after SourceMod shift |
+| `hill_distance` | ~stream width (~5m) | PI direction (2026-04-25); inert under current config (Section 4.4) |
+| `hill_elev` | **-6.0 m** | Locked 2026-05-04. Set deeper than the deepest land bin's mean (-5.13 m, bin 1 of 24-bin scheme covering -6.35 to -4.0 m raw HAND) by ~0.87 m to ensure chain monotonicity. Conceptually a chain-bookkeeping value, not a physical lake-bottom elevation. Empirical context: mean NWI lake-surface raw HAND in the production domain is -2.53 m; mean basin-bottom-to-rim spill depth is 2.64-3.33 m (Lee 2023 / our pipeline). Supersedes earlier `-SPILLHEIGHT` convention (now retired with SPILLHEIGHT=0 per Phase E.5 PI reframe 2026-04-30). See Section 5.2.1 below for derivation. |
 | `hill_area` | Sum(water_mask * pixel_area) | ~10.68 km² |
-| `hill_width` | NWI lake perimeter (see 5.3) | Physical interface length |
-| `hill_slope` | ~0.015 (see 5.5) | Bathymetry-derived bowl-shape slope (Lee et al. 2023) |
-| `hill_aspect` | `hill_aspect(col2)` | Aggregate lake has no preferred direction; inherit from adjacent land |
+| `hill_width` | 1/2 NWI total perimeter | PI direction (2026-04-25); see Section 5.3 |
+| `hill_slope` | 0.0 | PI direction (2026-04-25); "lake bottom" framing — water surface is horizontal. See Section 5.5. |
+| `hill_aspect` | 0.0 (or `hill_aspect(col2)`) | Aggregate lake has no preferred direction; either value is inconsequential |
 | `hill_bedrock_depth` | 0.0 | Inert under Uniform soil profile (Section 5.4) |
+
+### 5.2.1 hill_elev derivation (locked 2026-05-04)
+
+The lake column's `hill_elev` is set to **-6.0 m** as a chain-bookkeeping
+value rather than a physical lake-bottom elevation. The derivation
+walks through three constraints and lands at -6.0 m by elimination
+rather than direct calculation.
+
+**Constraint 1 — Chain monotonicity.** CTSM hillslope routing assumes
+water flows monotonically from high to low through the column chain
+(`downhill_column_index`). The lake is at chain index 1 (audit
+Section 5.1) — water flows FROM the chain INTO the lake. So the lake
+must have the *most negative* `hill_elev` in the chain. The 24-bin
+scheme's deepest land bin (Phase E.5, bin 1: deep tail sentinel
+covering -6.35 to -4.0 m raw HAND) has mean = **-5.13 m**. Therefore
+lake `hill_elev` < -5.13 m is required.
+
+**Constraint 2 — Empirical lake geometry doesn't reach -5 m.** The
+mean raw HAND of NWI water pixels in the production domain is **-2.53
+m** (10.68 M pixels, computed via the full pipeline filter). Lee 2023
+reports OSBS mean spill depth = 2.64 m ± 0.95 m (n=14 field-surveyed);
+our pipeline measures 3.33 m mean for non-NWI basins ≥ 1 ha (n=107).
+None of these reach -5 m. The deepest 5% of NWI water raw HAND values
+sit at Q05 = -6.58 m, but that's a tail of LIDAR water-surface
+observations, not a representative bottom.
+
+**Constraint 3 — Don't reorder the chain or fold the deep tail
+sentinel.** Both options were considered and rejected by PI direction
+(2026-05-04). Lake stays at column index 1; the 24-bin scheme stays
+intact; no fold-into-lake.
+
+**Resolution.** With (1) requiring < -5.13 m and (2) saying physical
+lake geometry doesn't reach that depth and (3) blocking other
+restructuring, the lake `hill_elev` becomes a *chain-ordering value*
+that doesn't map to any single physical lake's bottom. Pick a value
+deeper than the deepest land bin with margin: **-6.0 m** (PI's
+suggested starting value). Margin = 0.87 m below the deepest land
+bin's mean.
+
+**What -6.0 m does NOT represent:**
+
+- It is *not* the mean lake-bottom elevation in OSBS (that would be
+  closer to -2.6 to -3.3 m by Lee / our pipeline).
+- It is *not* derived from the spill-depth + lake-surface arithmetic
+  (`-2.53 - 2.64 = -5.17 m` was considered but conflated rim-to-bottom
+  with surface-to-bottom and landed in the chain monotonicity floor by
+  coincidence rather than derivation).
+- It is *not* the deepest pixel in NWI water (-11.6 m) or the Q05 of
+  NWI water raw HAND (-6.58 m) — those characterize tails, not
+  representatives.
+
+**What -6.0 m IS:**
+
+- A chain-bookkeeping reference that satisfies CTSM's monotonicity
+  requirement.
+- A value that allows water from the deepest land bin (mean -5.13 m,
+  containing pixels in unmapped deep depressions) to flow downhill
+  into the lake column at a positive Darcy gradient.
+- A starting point. May be tuned after model output review.
+
+**Tuning context.** If the lake column behavior in CTSM output suggests
+the value is wrong (e.g., unrealistic ponding heights to reach
+spillover, water table dynamics not matching real OSBS lakes,
+lake-to-stream lateral flow misbehaving), we revisit. The chain
+monotonicity constraint pins the value at < -5.13 m as a hard floor;
+above that floor the choice is empirical/iterative.
+
+**Spillheight context.** The earlier framing where `hill_elev =
+-SPILLHEIGHT` (and SourceMod shifted it further negative at runtime)
+is fully retired per the Phase E.5 reframe (2026-04-30). SPILLHEIGHT
+is set to 0 in the SourceMod (effectively disabling the universal
+shift). The NetCDF lake `hill_elev = -6.0 m` is the runtime value
+directly — no SourceMod shift applied.
 
 ### 5.3 hill_width
 
@@ -426,20 +552,74 @@ ever nonzero. The lake-to-stream gradient is clamped to zero only when
 `stream_water_depth <= 0` (Section 6.3). If MOSART provides nonzero `tdepth(g)`,
 the clamp does not fire and the lake's width enters an active calculation.
 
-**Recommendation:** Use the total perimeter of all NWI lake polygons as the
-lake's width — this is the physical interface length between lake and land. The
-NWI shapefile has the polygon geometries. As a fallback, 1.0 is a safe
-placeholder that produces negligible flow even if the gradient is nonzero, but
-it is not physically motivated.
+**PI direction (2026-04-25):** Use **1/2 the total NWI perimeter** as the
+lake's width. Heuristic — captures the effective lateral exchange surface
+(perimeter accounts for both inflow and outflow sides; half captures the
+downslope-facing interface).
 
-**Note:** Inflow FROM column 1 TO the lake (line 2389) uses column 1's width and
-the lake's area. The lake's own width does not control how much water enters it
-from uphill.
+**Inert under current configuration.** With `use_hillslope_routing = .false.`
+and `tdepth(g) = 0`, the lake-to-stream gradient is clamped to zero
+(Section 7.3), so the lake's hill_width does NOT affect outflow. Inflow
+FROM the adjacent land column TO the lake (line 2389) uses the **uphill
+column's** width, not the lake's. So lake hill_width is essentially
+inconsequential for our config. This makes the choice low-stakes; any
+defensible value works.
+
+**Practical computation:**
+
+1. Load NWI shapefile, dissolve overlapping polygons (handles nested-polygon
+   case where lakes have inner open-water rings within outer wetland
+   polygons)
+2. Compute total exterior-ring length across dissolved polygons
+3. `hill_width(lake) = total_perimeter / 2`
+
+**Computed value (2026-04-25):** Using a boundary-pixel approximation on
+the NWI raster mask (rather than the polygon shapefile), the total perimeter
+is approximately **102,810 m** (102,810 boundary pixels × 1 m per pixel).
+Half of that gives **`hill_width(lake) ≈ 51,405 m`**. This is consistent
+with the expected scale: 103 NWI features over 10.68 km² with subcircular
+geometry would give roughly ~117 km of total perimeter for compact circles;
+our 103 km is in the right range for slightly-irregular wetland polygons.
+
+The boundary-pixel approximation uses scipy's `binary_erosion`: boundary
+pixels are mask pixels whose erosion removes them (i.e., they have at least
+one non-mask 4-neighbor). Each boundary pixel contributes ~1 m of perimeter
+at our 1m resolution. This slightly underestimates the true polygon
+perimeter (which would account for diagonal edges) but is within ~5-10% of
+the polygon-shapefile-derived value and avoids the shapely dependency.
+
+**Sanity check via P:A ratio.** Compute perimeter:area ratio per dissolved
+polygon and per the aggregate. Compare to circle reference
+(`P:A = 2/√(A·π)`). For OSBS sandhill wetlands (typically subcircular
+sinkhole-like shapes), P:A should be moderate (within ~2-3× circle
+reference). Extreme P:A (very high) would indicate dendritic shapes that
+might motivate revisiting; OSBS lakes are unlikely to be in this regime.
+
+**Note for future:** if we ever switch routing on, lake hill_width becomes
+consequential and this choice should be revisited.
 
 ### 5.4 hill_bedrock_depth and the "Always Submerged" Constraint
 
-The PI requires the lake column to be permanently submerged. Three mechanisms
-interact:
+**PI direction (2026-04-25):** Don't worry about lakes drying out cyclically.
+Real OSBS lakes do dry out periodically over decadal/centennial cycles —
+forcing permanent submersion would be wrong physically. Run with reasonable
+parameters and watch model output. If vegetation patterns are clearly wrong
+(e.g., pine trees colonizing the lake permanently), revisit. Otherwise,
+occasional drying is correct hydrology.
+
+This resolves PI item #5: **don't enforce permanent submersion
+parametrically.** Use `hill_bedrock_depth = 0` consistent with land columns
+and let CTSM physics produce realistic intermittency.
+
+The earlier analysis below describes the three mechanisms that interact for
+saturation. The takeaway: spillheight handles surface ponding, infiltration
+handles soil recharge, and lateral drainage during dry periods is a feature
+not a bug.
+
+---
+
+The PI's earlier framing (now superseded): require permanent submersion.
+Three mechanisms interact:
 
 **Surface ponding:** The spillheight mechanism (SurfaceWaterMod.F90:516)
 prevents surface drainage when `hill_elev + h2osfc*1e-3 < 0`. With
@@ -489,82 +669,46 @@ with all land columns under Uniform). Verify saturation empirically in the
 Phase G test. Revisit parameter-based enforcement only if the lake soil
 column actually desaturates in practice.
 
-### 5.5 hill_slope from Bathymetry (Lee et al. 2023)
+### 5.5 hill_slope = 0 (lake-bottom framing)
 
-The lake column is a saturated, always-underwater LAND column — the `hill_slope`
-parameter describes the slope of the lake bed, not the flat water surface above
-it. NEON 1m LIDAR cannot measure lake bed slope directly (water blocks laser
-returns), so we need another data source.
+**PI direction (2026-04-25):** Set `hill_slope(lake) = 0`. The lake column
+represents a "lake bottom" — a permanently-ponded soil column with a
+horizontal water surface above it. The water surface IS horizontal, so the
+column's effective surface (the air-facing interface) has slope = 0.
 
-**Source:** Lee, E., Epstein, A. & Cohen, M. J. (2023). *Patterns of Wetland
-Hydrologic Connectivity Across Coastal-Plain Wetlandscapes*. Water Resources
-Research, 59(8), e2023WR034553. Also summarized in the USDA NRCS CEAP
-Conservation Insight "Storage and Release of Water in Coastal Plain
-Wetlandscapes" (May 2024).
+This supersedes the earlier bathymetric-slope recommendation (~0.015 from
+Lee et al. 2023 spill depth + bowl geometry). Both interpretations are
+defensible:
 
-**Key OSBS bathymetry values from the paper (Table 1, OSBS column):**
+- **Bathymetric** (~0.015): represents the inclination of the soil surface
+  beneath the water. The "underwater terrain" framing.
+- **Lake-bottom / water-surface** (0): represents the inclination of the
+  air-facing surface, which is horizontal water.
 
-| Quantity | Value | Notes |
-|----------|-------|-------|
-| Mean spill depth (basin bottom to rim) | 264.1 ± 95.0 cm | LIDAR-derived via Lane & D'Amico (2010) method |
-| Mean wetland stage (standing water depth) | 177.5 ± 80.2 cm | Observed water level above bottom |
-| Number of wetlands sampled | 14 | From 67-wetland study across 4 sites |
+The PI's lake-bottom framing aligns better with how `hill_slope` is used in
+CTSM:
 
-Qualitative: "Depressional wetlands are typically bowl-shaped with gradual
-slopes from the wetland bottom to the spill elevation."
+| Usage | Effect of slope = 0 |
+|-------|---------------------|
+| Surface outflow rate `k_wet = 1e-4 * max(slope, min_hill_slope)` | At minimum floor (1e-3), giving ~8.6 mm/day. For a lake the relevant outflow is spillheight-driven, not slope-driven, so this is fine. |
+| Microtopography `micro_sigma` | Small sigma → low subgrid variability → high h2osfc fractional coverage. Correct for a lake. |
+| Insolation angle | Horizontal water surface receives solar at horizontal incidence. slope=0 is more physically accurate than 0.015. |
+| Kinematic Darcy (not active in osbs4) | Would use slope directly as gradient. Not relevant. |
 
-**Derivation of mean slope for the aggregate lake column.** For a bowl-shaped
-basin with depth D and area A, the mean slope from rim to bottom is
-approximately `D / R` where `R = √(A/π)` is the effective radius.
+**Recommended value:** `hill_slope(lake) = 0`. The min_hill_slope floor in
+SurfaceWaterMod handles the surface-outflow edge case automatically.
 
-Using the aggregate of 103 NWI features covering 10.7 km²:
-```
-mean_area_per_feature = 10.7e6 / 103 ≈ 104,000 m²
-effective_radius      = √(104000/π) ≈ 182 m
-mean_slope            = 2.64 m / 182 m ≈ 0.0145 (≈ 1.5%)
-```
-
-**Recommended value:** `hill_slope(lake) ≈ 0.015`.
-
-**Caveats:**
-
-1. **Aggregate smoothing.** The 103 features span a size range. A small
-   10,000 m² depression (R ≈ 56m, same 2.64m depth) gives slope ≈ 0.047. A
-   larger 0.5 km² feature (R ≈ 400m, same depth) gives slope ≈ 0.007. The
-   single aggregate value hides this variability. 1.5% is the central
-   estimate but not the only defensible number.
-
-2. **Sample size.** 14 wetlands sampled from OSBS may not be fully
-   representative of all 103 NWI features. The spread (±95 cm on spill
-   depth) is wide enough that the mean is the best estimator we have.
-
-3. **Refinement possible.** Per-feature bathymetric estimates using the
-   Lane & D'Amico (2010) LIDAR method on the actual NWI polygon set would
-   give an area-weighted mean slope. Probably converges to a similar
-   value given the wide variability. Worth doing if Phase G test results
-   motivate it.
-
-**Comparison to alternatives:**
-
-| Source | Slope | Physical meaning |
-|--------|-------|-----------------|
-| Bathymetric (recommended) | 0.015 | Lake bed slope from bowl-shape + measured depth |
-| Surrounding land (col2) | 0.050 | Upland sandhill terrain, not basin floor |
-| Flat water surface | 0.000 | Water surface — wrong quantity for a submerged land column |
-| min_hill_slope floor | 0.001 | Placeholder, no physics |
-
-The bathymetric value is preferable because it's the only option with direct
-physical support: measured depth + measured area → derived slope. The
-surrounding-land value conflates basin and hillslope geology. The flat-water
-value was from an incorrect framing (that the lake column represents the
-water surface rather than the lake bed).
-
-**Spill depth vs `hill_elev` — a separate concern.** The paper's 2.64m spill
-depth describes the actual OSBS wetland storage capacity (basin bottom to
-rim). Our current `hill_elev = -0.4m` (runtime, after the SPILLHEIGHT
-SourceMod shift) allows only 0.4m of surface ponding before overflow — about
-1/7th of the real capacity. For a column that's supposed to behave like an
-OSBS wetland, this is a potential physics mismatch. See PI item #7.
+**Note on Lee et al. 2023 and SPILLHEIGHT tuning.** Lee's mean OSBS spill
+depth of 2.64 m (n = 14) and our pipeline's 3.33 m (n = 107 non-NWI basins
+≥ 1 ha; see Section 6.7.3) both characterize basin-bottom-to-rim depth.
+For SPILLHEIGHT tuning, the relevant quantity depends on what the lake
+column is meant to represent: if it starts empty, basin-bottom-to-rim
+(~2.6–3.3 m) is the right scale; if it starts at typical OSBS NWI water
+levels, storage-above-water (our ~4.7 m for NWI-overlapping basins ≥ 1 ha)
+is the right scale. Either interpretation suggests SPILLHEIGHT in the
+1–3 m range — at least 5× the current 0.2 m default. Tuning is deferred
+to model output per PI direction (item #7); these references support that
+discussion when it happens.
 
 ---
 
@@ -734,36 +878,420 @@ noise do we pick a threshold (e.g., `depression_fill_depth < 1cm = treat as
 noise`), and that threshold is now physically meaningful because it's inside
 a single stage with a clear semantics.
 
-### 6.6 Open Questions
+### 6.6 Open Questions (historical, mostly resolved by Section 6.7 analysis)
 
 - **Do unmapped wetland basins actually exist in the OSBS production domain?**
-  NWI is supposed to be comprehensive, but at 1m resolution there may be small
-  seasonally wet depressions that NWI missed. This is partially answered by
-  Quintero & Cohen 2019 ("Scale-dependent patterning of wetland depressions in
-  a low-relief karst landscape") cited in the CEAP paper — worth following up.
-- **Do we need to separately analyze water-adjacent pixels?** NWI water pixels
-  get lowered (Stage 3) but may also sit inside basins that got filled (Stage
-  2). The interaction could affect land pixels just outside lake polygons.
-- **Computational cost of diagnostics.** Fill decomposition is cheap
-  (subtraction on 90M-pixel arrays). Histogram/scatter plots are cheap. 2D
-  spatial visualization is just an image plot. Runs in minutes.
+  YES — confirmed by the 2026-04-24 diagnostic. ~10.5M land pixels are inside
+  depressions outside the NWI mask (~12% of the production domain). NWI is
+  not comprehensive at 1m resolution.
+- **Do we need to separately analyze water-adjacent pixels?** Less critical
+  than initially thought; the fill-depth decomposition cleanly separates them.
+- **Computational cost of diagnostics.** Confirmed cheap. Production-domain
+  diagnostic ran in ~3 minutes after the pipeline data was saved.
 
-### 6.5 Sequencing: Diagnostic → Bins → Lake
+### 6.7 The HAND Binning Fix (Pending PI Approval)
 
-The recommended order of operations:
+**Discovery:** After running the diagnostic and analyzing the 2026-04-24
+production output (Section 6.2-6.5 + summary.json), we identified that the
+pipeline's `compute_hand` produces geometrically incorrect HAND values for
+pixels inside filled basins. This is more fundamental than the
+"contamination" framing in Section 6.1 — it's a structural mismatch between
+Swenson's HAND convention and our high-resolution low-relief application.
 
-1. Generate the diagnostic plots (fill_depth histogram, HAND histograms split
-   by fill_depth class, DTND verification)
-2. Decide filtering strategy based on what the plots reveal
-3. If filtering: rerun pipeline with the filter applied, confirm col 2 stats
-   are stable
-4. Finalize the binning scheme (how many bins, where the boundaries are)
-5. Re-run the pipeline producing the final 16-column NetCDF
-6. Append the lake column at col 1 with `DTND(lake) = DTND(col 2) / 2`
+#### 6.7.1 The geometric issue
 
-If the binning is changed after the lake column is added, the lake's DTND
-must be recomputed. Better to stabilize col 2's stats (and bin boundaries)
-first.
+`compute_hand` uses the inflated (post-conditioning) DEM. After
+`fill_depressions`, every pixel inside a closed basin has been raised to that
+basin's spill elevation. Consequently, every pixel in a single basin — from
+the floor to the rim — is assigned the SAME pipeline HAND value (= basin
+spill elevation − stream elevation).
+
+Concrete example: basin floor at raw elevation 26.3m, spill at 27.2m, stream
+at 27.0m.
+
+| Pixel | Raw elevation | Inflated elevation | Pipeline HAND | Bin (current scheme) | True HAND |
+|-------|---------------|-------------------|---------------|----------------------|-----------|
+| Basin floor | 26.30m | 27.20m | 0.20m | bin 3 | **−0.70m** |
+| Mid-basin | 26.80m | 27.20m | 0.20m | bin 3 | **−0.20m** |
+| Near-rim | 27.15m | 27.20m | 0.20m | bin 3 | +0.15m |
+
+All three pixels get binned identically despite spanning ~85cm of real
+elevation. Their physical relationship to the stream — submerged, just
+below, or just above — is lost.
+
+#### 6.7.2 Mathematical formulation
+
+For any pixel:
+```
+pipeline_HAND = inflated_DEM[pixel] − inflated_DEM[stream]
+              = (raw_DEM[pixel] + depression_fill_depth) − raw_DEM[stream]
+              ≈ raw_HAND + depression_fill_depth
+```
+
+The approximation is exact for stream pixels with `depression_fill = 0`
+(most of them). About 88K stream pixels have small pool fills, introducing
+sub-cm error.
+
+Inverting:
+```
+raw_HAND = pipeline_HAND − depression_fill_depth
+```
+
+This recovers the true elevation of each pixel above its stream termination,
+using arrays we already compute in the pipeline.
+
+#### 6.7.3 Diagnostic findings that exposed this
+
+From the 2026-04-24 production diagnostic run (90 tiles, 90M pixels):
+
+| Population | Count | Fraction |
+|-----------|-------|----------|
+| Total land pixels | 76.6M | 85% of domain |
+| Land pixels inside filled basins (`depression_fill > 0`) | 19.6M | 25.6% of land |
+| Bin 1 land pixels (current pipeline HAND ≤ 0.1m) | 16.7M | 18.6% of land |
+| Bin 1 hot (`depression_fill > 0`) | 15.6M | 93.1% of bin 1 |
+| Bins 2-15 hot | ~3.9M | varies 4-19% per bin |
+
+Hot pixel `depression_fill_depth` distribution: median 0.82m, mean 1.56m,
+q95 5.87m. For most hot pixels in low-HAND bins, the raw HAND is **negative**
+— they sit physically below stream level.
+
+**Empirical sanity check against Lee et al. 2023.** Per-basin spill-depth
+statistics (max `depression_fill_depth` within each connected component of
+`depression_fill > 0`) computed from the 2026-04-24 diagnostic arrays:
+
+| Population | n | Mean spill depth | Median |
+|------------|---|------------------|--------|
+| Non-NWI basins ≥ 1,000 m² | 521 | 1.35 m | 0.68 m |
+| **Non-NWI basins ≥ 1 ha** | **107** | **3.33 m** | **1.88 m** |
+| Non-NWI basins ≥ 10 ha | 10 | 8.06 m | 8.59 m |
+| NWI-overlapping basins ≥ 1 ha | 32 | 4.70 m | 5.03 m |
+
+Non-NWI basins are entirely-dry depressions where the NEON LIDAR captured
+the actual bed, so `max(depression_fill)` measures basin-bottom-to-rim
+depth. NWI-overlapping basins contain water at flight time, so their
+`depression_fill` measures storage capacity above the LIDAR-observed water
+surface — a different quantity, not directly comparable to bottom-to-rim
+spill depth.
+
+Lee et al. 2023 reports a mean OSBS spill depth of **2.64 m (± 0.95 m SD,
+n = 14)**, computed via McLaughlin et al. 2019's LIDAR methodology: ArcMap
+Fill against field-surveyed PVC well bottoms in the deepest part of each
+wetland, with dry-season LIDAR flights and a 5 m local-minima resample to
+strip vegetation artifacts in dome centers. That measurement is
+basin-bottom-to-rim, with the bottom datum *field-measured* (not
+LIDAR-derived).
+
+Our 3.33 m for non-NWI basins ≥ 1 ha is the methodologically equivalent
+quantity (LIDAR captures dry bed, fill operation finds spill elevation),
+and it sits within ~25% of Lee's 2.64 m. The 1.35 m / 1.88 m figures for
+the broader ≥ 1,000 m² bracket and the 3.33 m / 1.88 m for the ≥ 1 ha
+bracket together bracket Lee's reported value across plausible
+size-distribution choices. The agreement validates that our pipeline's
+basin-fill geometry is physically reasonable; it does not validate using
+that fill output as a HAND value, which is the mis-placement issue Section
+6.7 fixes.
+
+**Vintage caveat (2026-04-30).** Our 3.33 m measurement is computed from
+NEON DP3.30024.001 OSBS 2023-05 (late dry season — favorable for capturing
+dry beds). Lee 2023's 2.64 m vintage is ambiguous — the paper cites NCALM
+generically but doesn't specify which dataset was used for the OSBS subset.
+If Lee used the 2010 NCALM Optech Gemini (a peak-wet-season flight), their
+measurement may underestimate true depths in inundated wetlands; if Lee
+used the 2018 USGS Florida Peninsular Putnam dataset (dry-conditions
+design), the comparison is direct. See `docs/data-acquisition-dates.md`
+for full provenance and the action item to resolve via Cohen.
+
+**What was wrong with the earlier framing.** A prior revision (2026-04-25)
+claimed "NWI-interior mean fill = 2.97m matches Lee's 2.64m." That
+comparison was between two different physical quantities — NWI-interior
+fill measures storage above current water surface (the LIDAR-observed
+ceiling at flight time was the water itself), while Lee's 2.64 m measures
+basin-bottom-to-rim. The numerical proximity was coincidental. The
+non-NWI ≥ 1 ha comparison (3.33 m vs. 2.64 m) is the correct one because
+both reference the dry bed.
+
+#### 6.7.4 Why this is resolution-dependent
+
+At MERIT 90m, basins are rare and shallow:
+- A typical depression spans 1-2 cells; fill depth ~ a few meters
+- Most pixels are real terrain with no fill applied
+- Raw vs. inflated HAND differ negligibly (Swenson audit 2026-02-20:
+  height correlation delta 0.002, slope 0.014, area fraction 0.007 — all
+  within rounding)
+
+At OSBS 1m, basins are common and large:
+- A typical wetland spans hundreds to thousands of pixels
+- Mean fill depth 1.56m; q95 5.87m
+- 25.6% of land has depression_fill > 0
+- Raw vs. inflated HAND differ by meters for ~17% of the domain
+
+Swenson's "use inflated DEM" choice (rh:1685) was made under conditions
+where it didn't matter. We're applying it where it does.
+
+#### 6.7.5 Cross-bin implications
+
+The fix doesn't just affect bin 1. Every depression-filled pixel — in any
+bin — gets re-binned by raw HAND. Whether each pixel "stays" or "moves" to
+a lower bin depends on whether its `depression_fill_depth` is smaller than
+its current bin's width:
+
+| Bin range (current) | Hot pixels | Bin width | Likely fate |
+|---------------------|-----------|-----------|-------------|
+| Bin 1 (0-10cm fixed) | 15.6M | 10cm | nearly all move to flood zone (median fill 82cm >> 10cm) |
+| Bins 2-5 (10cm fixed each) | ~790K combined | 10cm each | nearly all move to flood zone |
+| Bins 6-8 (log, 21-43cm wide) | ~960K combined | 21-43cm | most move; some stay if fill < bin width |
+| Bins 9-15 (log, 0.6-5m wide) | ~1.7M combined | 0.6-5m | mixed; smaller fraction needs to move |
+
+Total ~3.9M hot pixels in bins 2-15, in addition to 15.6M in bin 1. The fix
+cleans the entire bin structure, not just the bottom.
+
+#### 6.7.6 Proposed fix
+
+Use the raw DEM for HAND values; keep the inflated DEM for routing.
+
+| Operation | DEM source | Reason |
+|-----------|-----------|--------|
+| D8 flow direction | Inflated | Required for valid downhill paths |
+| Flow accumulation | (derived from above) | Used for stream network identification |
+| Drainage termination per pixel | (derived from above) | Used for HAND/DTND tracing |
+| **HAND value (binning + hill_elev)** | **Raw** | Physically correct elevation above drainage |
+| DTND (lateral path length) | (from inflated routing) | Already correct; not affected |
+| Slope, aspect | NEON DP3.30025.001 | Independent products |
+
+The two operations — routing (which paths exist) and elevation differencing
+(how much vertical drop) — are logically separable. The pipeline currently
+ties them by using the same DEM for both. The fix decouples them.
+
+#### 6.7.7 Implementation
+
+Single-line change in `run_pipeline.py`, after `compute_hand`:
+```python
+grid.compute_hand("fdir", "inflated", wide_channel_mask, ...)
+hand_inflated = np.array(grid.hand)
+depression_fill = np.array(grid.flooded_orig) - np.array(grid.pit_filled)
+hand_raw = hand_inflated - depression_fill
+# use hand_raw downstream for binning and write to NetCDF
+```
+
+`flooded_orig` is currently saved only in diagnostic mode. Either keep it
+in memory always (without saving) or always save it. Trivial either way.
+
+The `hand_raw` array is then used wherever the current code uses
+`grid.hand` for binning and `hill_elev` computation.
+
+#### 6.7.8 New bin structure (proposed)
+
+The current 1×16 hybrid scheme (5 fixed 10cm + 10 log + 1 sentinel) was
+designed assuming pipeline HAND. With raw HAND, the distribution shifts
+substantially:
+- Negative raw HAND becomes a sizable population (~15-19M pixels)
+- Current bin 1 shrinks to ~1.5M pixels — the **True B1** that should have
+  been there all along, finally separated from depression-fill contamination
+- Higher bins are mostly unchanged
+
+Provisional new structure (concrete bin edges TBD from raw HAND distribution
+analysis; numeric labels avoid semantic ambiguity from the earlier
+DEEP/MOD/SHALLOW labels which became awkward when discussing OSBS-specific
+geometry):
+
+```
+Lake column          (NWI permanent water,     hill_elev = -SPILLHEIGHT)
+
+Flood-zone bins      (raw HAND < 0, dry land below stream level):
+  Setup choices ranging from 1 (single FZ bin) up to ~8 (equal-count
+  quantile bins, FZ1=deepest through FZ8=shallowest). Each bin has its own
+  hill_elev (negative), DTND, area, etc. PI input on the right granularity
+  is the next step.
+
+True B1              (raw HAND in (0, 0.1m]):
+  - was bin 1 in the existing scheme; now shrunk to ~1.5M genuinely
+    near-stream-or-near-shoreline pixels
+  - represents what bin 1 should have been all along
+
+Higher bins          (raw HAND > 0.1m):
+  - approximately current bins 2-16
+  - small minority of hot pixels move to flood zone after fix
+```
+
+This gives the lake column a defensible narrow scope (only NWI water),
+populates the flood zone with unmapped depression pixels distributed by
+their physical depth, and preserves upland bin structure.
+
+#### 6.7.9 Methodological positioning
+
+The fix is a **departure from Swenson's literal code** but **consistent with
+Swenson's intent**.
+
+Swenson's pipeline includes a `fflood` mechanism (rh:678-697) that excludes
+lake pixels from the lowest 2m HAND bin. This is the same kind of correction
+we're proposing, applied to a different population:
+
+| Aspect | Swenson | Our proposal |
+|--------|---------|-------------|
+| Signal | Binary lake mask (slope ≈ 0) | Continuous `depression_fill_depth` |
+| Action | Set HAND = −1 (excluded from binning) | Use raw_HAND directly (move pixel to its physical bin) |
+| Population addressed | Lakes (open water) | Lakes + non-lake basin interiors |
+| Resolution scale | Appropriate at MERIT 90m | Appropriate at 1m |
+
+Swenson's mechanism handles the dominant problematic population at his
+resolution. We're using a richer signal (continuous fill depth instead of
+binary mask) to capture the additional populations that emerge at 1m.
+
+The fix also brings us closer to the original physical concept of HAND
+("height above drainage") rather than its computational approximation
+("inflated elevation difference").
+
+#### 6.7.10 Defensibility argument
+
+- We're computing HAND on the raw DEM, which is what HAND nominally means
+- Routing remains on the inflated DEM (required by D8)
+- The two operations have always been logically separable; we're correcting
+  an arbitrary coupling
+- The 25.6% of land affected at OSBS is a resolution-driven phenomenon
+  Swenson didn't encounter; the fix addresses it without inventing new
+  methodology
+- The fix is documented and motivated by direct quantitative evidence from
+  the 2026-04-24 diagnostic
+- We extend Swenson's existing `fflood` exclusion mechanism rather than
+  introducing a new concept
+
+#### 6.7.11 Implementation impact
+
+- Single pipeline change (one subtraction line + bin-edge re-derivation)
+- Pipeline rerun required (~25 min on production domain)
+- Diagnostic script remains valid; numbers change but interpretation logic
+  is the same
+- NetCDF schema unchanged; only values shift
+- Lake column scope tightens to NWI water only (reverses earlier "expand
+  lake column to absorb depression pixels" suggestion)
+
+#### 6.7.12 Pending decisions before implementation
+
+1. **PI approval of the architectural shift** to flood-zone bins
+2. **Concrete bin edges for the negative-HAND range.** Depends on the
+   raw HAND distribution; analysis forthcoming (~10s of seconds on saved
+   diagnostic arrays)
+3. **Total bin count.** Current is 1×16; proposed is 1×N where N = (5 flood
+   zone) + (current bins 1-16 effectively cleaned and possibly compressed) ≈
+   18-20
+4. **Lake column scope.** Stays NWI-only under this proposal (reverses the
+   "expand to all submerged" framing from earlier)
+5. **Whether to compute and persist `flooded_orig` in production runs**
+   (vs. only diagnostic mode). Trivial either way; choose based on whether
+   we want the full conditioning chain reproducible from saved files.
+
+### 6.8 Sequencing: Diagnostic → Fix → Bins → Lake
+
+(Renumbered from 6.5; original sequencing was written before the Section 6.7
+findings.)
+
+Updated order of operations:
+
+1. **Diagnostic** — DONE 2026-04-24. Production pipeline run with
+   `SAVE_DIAGNOSTICS=1`; standalone script generated 6 plots + summary JSON.
+2. **Interpret results** — DONE 2026-04-25. Sections 6.7.3 and 6.7.5 record
+   the findings that exposed the geometric issue.
+3. **Compute raw HAND distribution from saved arrays** (~10 sec). Determine
+   concrete bin edges for the negative-HAND range. Pending.
+4. **PI sign-off** on the architectural shift (flood-zone bins + raw HAND
+   binning). Pending.
+5. **Implement the fix** in `run_pipeline.py` (single subtraction line +
+   bin-edge constants update). Trivial diff.
+6. **Rerun the pipeline** with corrected HAND values. ~25 min on production
+   domain.
+7. **Verify new pipeline output** by re-running the diagnostic script —
+   bin populations should match expected post-fix distribution.
+8. **Append lake column** at col 1 with parameters per Section 5.2 (PI
+   direction). The lake column scope stays NWI-only; flood-zone pixels are
+   handled by the bin restructure rather than absorbed into the lake.
+9. **Phase F validation run** with the corrected NetCDF.
+
+If the binning scheme is later modified, the lake column parameters per
+Section 5.2 are mostly insensitive (`hill_distance ≈ stream width` is inert,
+`hill_width = 1/2 NWI perimeter` is independent of bins). So the lake
+column can be appended after binning is finalized without rework.
+
+### 6.9 Pixel Categories and Binning Filter (raw-HAND scheme)
+
+Reference table for what each pixel class looks like under the
+wide-mask HAND scheme, and the corresponding pipeline filter recipe
+for raw-HAND binning.
+
+#### 6.9.1 Pixel categories
+
+In `run_pipeline.py`, `compute_hand` is called with `wide_channel_mask`
+(natural streams + NWI water pixels), so all wide-channel pixels get
+`hand = 0` by construction. The categories below classify pixels by
+their `water_mask`, `channel_mask`, and conditioning history.
+
+| Category | water_mask | channel_mask | hand | dep_fill | raw_hand | In a hillslope bin? |
+|----------|------------|--------------|------|----------|----------|---------------------|
+| NWI lake interior | 1 | 0 | 0 | typically > 0 | < 0 (large negative) | No — lake column handles |
+| Real stream (not in filled basin) | 0 | 1 | 0 | 0 | 0 | No — channel |
+| Real stream inside a filled depression | 0 | 1 | 0 | > 0 | < 0 | No — still a channel |
+| Upland | 0 | 0 | > 0 | 0 | > 0 (= hand) | Yes — upland bin |
+| **Basin floor / TAI** (filled depression interior, dry continuation of lake basin) | 0 | 0 | small ≥ 0 | > 0 | spans negative through near-zero into slightly positive depending on local fill depth | Yes — TAI/FZ bin |
+
+`raw_hand = hand - dep_fill`, where `dep_fill = flooded_orig - pit_filled`.
+
+#### 6.9.2 TAI is emergent, not a fixed boundary
+
+The Terrestrial-Aquatic Interface (TAI) is a continuous dynamic zone
+that straddles `raw_hand = 0`. Bins on both sides of zero capture it:
+
+- Deeply negative raw HAND — wet most of the time (basin floor near
+  lake).
+- Near zero (either side) — water table oscillates seasonally.
+- Slightly positive (~0 to ~2 m raw HAND) — dry most of the time but
+  inundates seasonally; CTSM's water table can rise into this band.
+
+The TAI is therefore an *emergent property* of the model's water-table
+dynamics, not a topographic threshold we define a priori. The
+column-chain transition at `raw_hand = 0` is just a binning convention.
+
+**Practical implication for bin design:** the immediate upland band
+(0 to ~2 m raw HAND) is as TAI-relevant as the FZ side. Bin density
+there should reflect that — not be sacrificed to give resolution to
+the high ridge, where the model rarely interacts with the water table.
+The Phase E.5 candidate bin schemes (3c, 3d, 3e, 3f) all concentrate
+edges in this band; preserving that density across iteration matters.
+
+#### 6.9.3 Filter recipe for raw-HAND binning
+
+The existing pipeline binning filter `(hand > 0) & np.isfinite(hand)`
+implicitly excludes both stream channel pixels and lake pixels because
+both have `hand = 0` in the wide-mask scheme. When the binning input
+switches from `hand` to `raw_hand` (Phase E.5), this shortcut breaks —
+streams in filled depressions have `raw_hand < 0` and would be
+misclassified as FZ.
+
+**Use explicit channel and water masks instead:**
+
+```python
+valid = (
+    (water_mask == 0)            # exclude NWI lakes (handled by lake column)
+    & (channel_mask == 0)        # exclude all stream channel pixels regardless of fill
+    & np.isfinite(raw_hand)      # exclude NaN
+    & post_dtnd_tail_mask        # existing tail_index DTND outlier filter
+    & (raw_hand >= q01)          # Phase E.5 lower outlier trim
+    & (raw_hand <= q99)          # Phase E.5 upper outlier trim
+)
+```
+
+`channel_mask` (just natural streams, not lakes) is computed at
+`run_pipeline.py:881`. `wide_channel_mask` is the same plus NWI lakes;
+either works here since `water_mask` already filters lakes.
+
+**Why `channel_mask`, not `raw_hand != 0`:** the raw-HAND test misses
+real stream pixels that pass through filled depressions. Those have
+`hand = 0` and `dep_fill > 0`, so `raw_hand < 0`, and would slip past
+the heuristic and end up in FZ bins. The explicit channel-mask filter
+catches them regardless of conditioning history.
+
+**Q01/Q99 cutoffs:** see Phase E.5 doc 2026-05-02 log entry for the
+formalized defense. Computed dynamically from the post-DTND-tail-removal
+pixel set (recompute each run; do not hardcode).
 
 ---
 
@@ -906,16 +1434,79 @@ The exact balance depends on the relative rates of:
 Monitor `zwt(lake)` and `h2osfc(lake)` in the Phase G test run to confirm the
 balance works as expected.
 
+### 7.5 NWI Mask Holes from Nested-Polygon Rasterization
+
+**Discovery (2026-04-29):** The NWI water mask
+(`data/mosaics/production/water_mask.tif`) has holes inside larger lake
+polygons. Pixels in these holes have `water_mask == 0` despite being
+physically inside the lake, surrounded on all sides by `water_mask == 1`
+pixels.
+
+**Root cause:** NWI shapefiles often contain nested polygon rings — for
+example, an outer "wetland" polygon with inner "open water" polygons inside
+it. When the shapefile was rasterized to produce `water_mask.tif`, the
+inner rings appear to have been treated as **negative space** (holes) rather
+than as additional water area. Pixels inside the inner rings end up flagged
+non-water.
+
+**Quantitative scope (R4C10/C11 region as a sample):**
+- 4 distinct hole regions inside a single lake
+- 18,564 hole pixels total in this one lake
+- Most (16,282) have NaN HAND (pysheds couldn't trace a flow path)
+- Small minority have finite HAND: 244 pixels in (0, 0.1m], 2,038 with HAND > 0.1m
+- All have `depression_fill_depth ≈ 1.6m` (consistent with surrounding lake basin)
+- None are in `wide_channel_mask`
+
+Estimated domain-wide impact: probably 50-200K hole pixels across all major
+lakes. Less than 0.3% of the production domain.
+
+**Pipeline data impact: small.** The NaN-HAND hole pixels (~88% of holes)
+are excluded by the standard `np.isfinite(hand) & (hand > 0)` filter that
+runs on all hillslope statistics. Only the small fraction with finite
+positive HAND (~2,200 in the sample lake) could leak into hillslope binning
+— and these would land in the lowest HAND bins where they'd be a tiny
+contamination relative to the millions of legitimate pixels there.
+
+**Visualization impact: noticeable.** The hole pixels appear:
+- BRIGHT RED in the spatial contamination heat-map plots — heat layer renders
+  their depression_fill values (~1.6m) and the NWI overlay doesn't cover them
+  (water_mask == 0)
+- WHITE in the categorical map — most have NaN HAND, falling outside every
+  layer's mask
+
+The production `hand_map.png` happens to look mostly clean because pixels
+with NaN HAND render as transparent in viridis, masking the issue
+inadvertently.
+
+**Fix path: re-rasterize the NWI shapefile.** Properly handle nested
+polygon rings (treat inner rings as additional water rather than holes).
+This regenerates `water_mask.tif`. After that, a pipeline rerun produces
+correct binning and clean visualizations automatically. The
+`scripts/osbs/generate_water_mask.py` script (or equivalent) is the
+candidate to update.
+
+**Cosmetic-only workaround (not applied):** `scipy.ndimage.binary_fill_holes`
+on the in-memory water_mask before plotting would close the visual holes
+without modifying the underlying data file. Skipped per current direction —
+the proper fix should land before any production pipeline rerun.
+
+**Action item:** when we next rerun the pipeline (e.g., after PI sign-off
+on the binning approach), regenerate `water_mask.tif` first with corrected
+nested-polygon handling. Document the regeneration step in the run log.
+
 ---
 
 ## 8. Items Requiring PI Clarification
 
 ### Active (need PI input)
 
-| # | Question | Why It Matters |
-|---|----------|----------------|
-| 5 | What does "always submerged" mean? (5.4) | Surface-only (guaranteed by spillheight) vs. full soil saturation (likely maintained by surface→soil infiltration, but should verify in Phase G test) |
-| 7 | Spill depth tuning (5.5) | Real OSBS wetlands have mean spill depth 2.64m (Lee et al. 2023); our current `hill_elev = -0.2m` (runtime -0.4m with SPILLHEIGHT=0.2) allows only 0.4m ponding before overflow. The PI may tune SPILLHEIGHT upward to match physical capacity. Our NetCDF convention (`hill_elev = -SPILLHEIGHT`) holds regardless of the tuned value. |
+_(none currently — all items resolved as of 2026-04-25)_
+
+Open question for follow-up:
+- **HAND binning methodology change.** Whether to switch to raw-DEM HAND
+  for binning (resolves the 17%-of-domain mis-placement of basin-interior
+  pixels). Possible re-architecting into flood-zone bins with finer TAI
+  resolution. Pending PI decision; covered in separate planning doc.
 
 ### Resolved during audit
 
@@ -923,9 +1514,14 @@ balance works as expected.
 |---|----------|------------|
 | 1 | Lake-at-col-1 placement (7.1, 5.1) | **Design decision (2026-04-23):** lake at col 1, land at cols 2-17. Preserves current 16-column `wetlandisfull` behavior without Fortran changes. |
 | 2 | `soil_profile_method` for osbs4 | **Uniform** (lnd_in:261). See Section 7.2. No distance/bedrock dependence on soil depth. |
-| 3 | SPILLHEIGHT = 0.2m confirmed | Verified current value is 0.2m (HillslopeHydrologyMod.F90:55). The NetCDF convention `hill_elev = -SPILLHEIGHT` is a design choice; the current value produces `hill_elev = -0.2m` (runtime -0.4m). PI may tune SPILLHEIGHT later — see active item #7 for physical-capacity considerations — but the formulaic relationship holds. |
+| 3 | SPILLHEIGHT = 0.2m confirmed | Verified current value is 0.2m (HillslopeHydrologyMod.F90:55). The NetCDF convention `hill_elev = -SPILLHEIGHT` is a design choice; the current value produces `hill_elev = -0.2m` (runtime -0.4m). PI direction (2026-04-25): keep 0.2m default; revisit only if model output suggests issues. Item #7 (spill depth tuning) deferred to model output. |
 | 4 | `tdepth(g) = 0` for OSBS? | **Yes, guaranteed.** `flds_r2l_stream_channel_depths = .false.` in nuopc.runconfig:111 → MOSART does not export Sr_tdepth → CTSM resets tdepth_grc to 0 every timestep (lnd_import_export.F90:624). Empty-stream guard fires; lake-to-stream gradient clamped to zero. See Section 7.3. |
+| 5 | "Always submerged" definition (5.4) | **Don't enforce parametrically.** PI direction (2026-04-25): real lakes dry cyclically (decadal/centennial). Forcing permanent submersion would be wrong. Run with reasonable parameters; if vegetation patterns are clearly wrong (e.g., pine trees colonizing the lake permanently) revisit. |
 | 6 | `hill_bedrock_depth` for lake (5.4) | **Moot.** Field is ignored under Uniform soil profile. Set to 0, consistent with all land columns. Saturation enforcement, if needed, must come from elsewhere (infiltration likely handles it). |
+| 7 | Spill depth tuning (5.5) | **Deferred to model output.** PI direction (2026-04-25): keep current SPILLHEIGHT = 0.2m default. Don't tune to Lee 2023's 2.64m parametrically; let CTSM model output guide whether tuning is needed. Empirical references retained for the future tuning conversation: Lee 2023 (2.64 m, n=14, field-surveyed bottoms) and our own pipeline (3.33 m, n=107 non-NWI basins ≥ 1 ha; 4.70 m for NWI-overlapping basins ≥ 1 ha — different physical quantity, see Section 6.7.3). Both lines of evidence put the empirically supported range at 1–3 m, vs. the current 0.2 m default. |
+| Lake hill_distance | DTND ≈ stream width (~5m) | PI direction (2026-04-25). Mathematically inert under current config (Section 4.4). Earlier "col2/2" recommendation (~15m) was also defensible; PI prefers stream width as the simpler choice. |
+| Lake hill_slope | 0 | PI direction (2026-04-25). "Lake bottom" framing — water surface is horizontal. Earlier bathymetric value (0.015) reverted. See Section 5.5. |
+| Lake hill_width | 1/2 NWI total perimeter | PI direction (2026-04-25). Inert under current config. Sanity-check via P:A ratio. See Section 5.3. |
 
 ---
 
@@ -946,6 +1542,18 @@ balance works as expected.
 - Lee, E., Epstein, A., & Cohen, M. J. (2023). Patterns of Wetland Hydrologic
   Connectivity Across Coastal-Plain Wetlandscapes. *Water Resources Research*,
   59(8), e2023WR034553. https://doi.org/10.1029/2023WR034553
+  Source of OSBS mean spill depth (2.64 m, n=14). Methodology for OSBS
+  wetlands cites McLaughlin et al. 2019 directly (CFS stage-breakpoint
+  method failed because OSBS wetlands never reach spill).
+- McLaughlin, D. L., Diamond, J. S., Quintero, C., Heffernan, J., & Cohen, M.
+  J. (2019). Wetland Connectivity Thresholds and Flow Dynamics from Stage
+  Measurements. *Water Resources Research*, 55(7), 6018–6032.
+  https://doi.org/10.1029/2018WR024652
+  LIDAR h_crit methodology used at OSBS by Lee 2023: dry-season flight
+  timing, 5-m resample with local-minima filter on dense-vegetation areas
+  to strip canopy artifacts, ArcMap Fill against field-surveyed PVC well
+  bottoms (3-cm wells installed ~1 m below ground in deepest part of each
+  wetland). h_crit = (fill elevation) − (well bottom elevation).
 - USDA NRCS (May 2024). Storage and Release of Water in Coastal Plain
   Wetlandscapes. Conservation Effects Assessment Project (CEAP) Conservation
   Insight. (Summary of Lee et al. 2023 for practitioners.)
