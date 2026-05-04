@@ -119,9 +119,48 @@ Pipeline rebuilt with all Phase A/B/C fixes: pysheds hydrological DTND, pgrid Ho
 
 All parameters finalized. 1 aspect × 16 HAND bins, hybrid fixed+log (5 × 10cm fixed in the 0-0.5m TAI zone + 10 log-spaced to Q99 + 1 sentinel; moved 2026-04-14 from the prior 8-bin A2 scheme per PI request for tighter TAI resolution). NEON DP3.30025.001 slope/aspect products adopted directly. NWI water masking via dual-mask approach. Stream parameters left as interim power-law values (osbs2 uses `use_hillslope_routing = .false.`, params never read). All PI questions resolved. See `phases/E-complete-parameters.md` and `docs/hillslope-binning-rationale.md`.
 
+### Phase E.5: Bin redesign and spillheight removal (Reframed 2026-04-30)
+
+**Status: In design.** Outlier strategy locked (2026-05-02). Bin scheme exploration complete; final scheme awaits PI selection. See `phases/E.5-bin-redesign.md`.
+
+**Outlier cutoffs (locked 2026-05-02):** Q01 = -6.34 m (FZ) and Q99 = +17.46 m (upland). True discard, ~2% of land pixels removed. Cutoffs match classical sigma clipping on the raw HAND distribution (mean − 2σ = −6.10 m; mean + 3σ = +17.65 m); the asymmetric σ multipliers reflect the right-skewness of the distribution. Lee 2023 OSBS spill depths (mean 2.64 m + 2·SD = 4.54 m, n = 14) used as a one-way physical sanity check — our deep cutoff is 1.8 m deeper than any wetland in their field survey. See phase doc 2026-05-02 log entry for the full defense framing.
+
+**PI meeting reframe (2026-04-30).** The PI meeting dissolved several constraints we had been working against and pivoted the approach:
+
+1. **The flood zone is the dry continuation of the same basin as the lake**, not a separate buffer. NWI lake pixels and surrounding non-NWI flood-zone pixels were both raised by `fill_depressions` to the same spill elevation. Physically and hydrologically continuous.
+
+2. **The PI's spillheight SourceMod is being retired.** Its purpose was to fake low-lying wetland and flood-zone columns by lowering all `hill_elev` values uniformly. Raw HAND now provides those columns from real data. SPILLHEIGHT will be set to 0 (effectively disabling it); SourceMods stay in place for now.
+
+3. **Lake column `hill_elev` becomes data-derived**, not the arbitrary `-SPILLHEIGHT` convention. **Locked 2026-05-04: -6.0 m** as a chain-bookkeeping value, set 0.87 m below the deepest land bin mean (-5.13 m, bin 1 of 24-bin scheme) to satisfy chain monotonicity. Empirical context: NWI lake-surface mean -2.53 m; Lee 2023 / pipeline spill depths 2.64-3.33 m. The -6.0 m value doesn't represent any single physical lake; it's the chain reference. Tuning deferred to model output. See audit doc Section 5.2.1.
+
+4. **The flood zone gets ≥50% of the columns** (possibly ⅔ per PI). FZ areas should increase going uphill, mirroring upland-bin behavior. Bin design is iterative — outlier removal first, then a baseline log-spaced 16-bin scheme, then permutations as needed.
+
+**Working notes:**
+- Bin design is **not** a "final" decision on first pass. Expect iteration.
+- Observation-date research (NEON LIDAR, NWI, Lee LIDAR) is parallel, not blocking.
+- Phase G is folded into this phase (the "submerged lake column with spillheight SourceMod" framing no longer applies).
+
+**Reference:** `phases/E.5-bin-redesign.md` for the full task list, log, and iteration record. Audit doc Section 5.x and 6.7 sections about spillheight are flagged as superseded. `docs/data-acquisition-dates.md` documents the NEON DTM, NWI mask, and Lee 2023 LIDAR vintages (NEON 2023-05, NWI 2017 1m TC; Lee LIDAR ambiguous, awaiting confirmation from Cohen).
+
+### Phase E.6: NWI water mask regeneration (Complete 2026-04-30)
+
+**Status: Complete.** Fix applied; mask regenerated. Awaits next pipeline rerun (Phase E.5 / Phase F) to consume.
+
+**Discovery (2026-04-29):** Inspection of the categorical and contamination spatial maps revealed that `data/mosaics/production/water_mask.tif` had **holes inside larger lake polygons**. Pixels in these holes had `water_mask = 0` despite sitting fully inside the NWI lake outline, surrounded on all sides by `water_mask = 1`.
+
+**Root cause:** The NWI shapefile contains nested polygon rings (e.g., outer "wetland" polygon with inner "open water" rings). The original rasterization treated inner rings as **negative space** rather than additional water area.
+
+**Scope (measured 2026-04-30):** 400,219 hole pixels in 7 connected components (4× higher than the original 50–200K estimate). Largest single hole: 377,916 px (~0.38 km²).
+
+**Fix:** `scripts/osbs/generate_water_mask.py` patched with a `scipy.ndimage.binary_fill_holes` post-process after rasterization. Flood-fills any topologically enclosed background pixel; safe at OSBS because the production domain has no real islands inside lakes. Regenerated mask: 11,082,394 water pixels (12.3% of domain), up from 10,682,175 (11.87%). Post-fix diagnostic confirms zero remaining hole pixels.
+
+**Diagnostic:** `scripts/osbs/diagnose_water_mask.py` (new). Plots `output/osbs/water_mask_diagnostic/before.png` and `after.png` — simple blue-on-white renderings of the mask with hole stats. Pre-fix backup retained at `data/mosaics/production/water_mask_pre_holefill.tif`.
+
+**Reference:** `docs/lake-column-ctsm-audit.md` Section 7.5 — original quantitative scope and root-cause analysis.
+
 ### Phase F: Validate and deploy
 
-**Status: Not started.** Blocked by Phase E (log-spaced bin re-evaluation).
+**Status: Not started.** Blocked by Phase E.5 (HAND binning fix). Phase E.6 (NWI mask regeneration) is complete (2026-04-30); the corrected `water_mask.tif` will be consumed automatically by the next pipeline rerun.
 
 **Key context:** osbs2 runs with `use_hillslope_routing = .false.` and `PCT_LAKE = 0` (no lake land unit). Phase F validation matches this configuration — routing off, stream params irrelevant, no lake land unit. The only variable changed is the hillslope file. This establishes a clean baseline comparison before Phase G enables routing with lake-modified parameters.
 
@@ -136,32 +175,39 @@ All parameters finalized. 1 aspect × 16 HAND bins, hybrid fixed+log (5 × 10cm 
 
 ### Phase G: Submerged lake column in hillslope file
 
-**Status: Not started.** Blocked by Phase F (need validated baseline for comparison). **Direction changed 2026-04-09** after PI consultation with collaborators — previous weir overflow plan abandoned.
+**Status: In design.** Blocked by Phase E.5 (HAND binning fix). **Direction changed 2026-04-09** after PI consultation — weir overflow plan abandoned. **Scope refined 2026-04-25** — lake column stays narrow (NWI water only); unmapped depression pixels go into flood-zone bins from Phase E.5.
 
-Add one extra column to the hillslope NetCDF representing the aggregate of all NWI-masked lake area as a single submerged column with negative `hill_elev`. CTSM's existing lateral flow machinery draws water from adjacent upland columns into the lake column automatically. TAI response (rising water table, suppressed aerobic decomposition, CH4) emerges via existing `w_scalar`, `o_scalar`, `finundated` pathways. No CTSM Fortran modifications from our fork planned — the PI's existing spillheight SourceMod handles the model-side behavior.
+Add one column to the hillslope NetCDF representing the aggregate of all NWI-mapped lake area as a single submerged column with negative `hill_elev`. CTSM's existing lateral flow machinery draws water from adjacent upland columns into the lake column automatically. TAI response (rising water table, suppressed aerobic decomposition, CH4) emerges via existing `w_scalar`, `o_scalar`, `finundated` pathways. No CTSM Fortran modifications from our fork planned — the PI's existing spillheight SourceMod handles the model-side behavior.
 
-**Lake column parameters:**
+**Lake column parameters (resolved 2026-04-25 via PI direction):**
 
-| Field | Value |
-|---|---|
-| `hill_elev` | `-SPILLHEIGHT` (from PI's SourceMod scalar) |
-| `hill_distance` | `mean(dtnd[water_mask])` |
-| `hill_area` | Total NWI lake area (sum of water mask × pixel area) |
-| `hill_width`, `hill_slope`, `hill_aspect` | TBD (defaults or PI convention) |
+| Field | Value | Source |
+|---|---|---|
+| `column_index` | 1 | Design decision (avoid wetlandisfull behavior change) |
+| `downhill_column_index` | -9999 | Terminal |
+| `hill_elev` | **-6.0 m** | Locked 2026-05-04. Chain-bookkeeping value below deepest land bin mean (-5.13 m). SPILLHEIGHT=0, no SourceMod shift. See audit doc Section 5.2.1 for full derivation. |
+| `hill_distance` | ≈ stream width (~5m) | PI direction; mathematically inert under current config |
+| `hill_area` | Sum(water_mask × pixel_area) ≈ 10.68 km² | NWI mask |
+| `hill_width` | 1/2 NWI total perimeter | PI direction; inert under current config |
+| `hill_slope` | 0 | PI direction; "lake bottom" framing |
+| `hill_aspect` | 0 | Inconsequential |
+| `hill_bedrock_depth` | 0 | Inert under Uniform soil profile |
 
 **Tasks:**
-1. Pipeline: add lake column computation step after Step 5, append to NetCDF output
-2. Update NetCDF writer for `nmaxhillcol = N_HAND_BINS + 1`
-3. Revisit HAND binning strategy (relaxed criteria under "standing water is a feature" framing)
-4. PI clarifications: SPILLHEIGHT value, `downhill_column_index` topology, `hillslope_index` convention, slope/aspect/width defaults
+1. Phase E.5 (HAND binning fix) — landed first; affects bin structure
+2. Compute lake perimeter from NWI shapefile (with polygon dissolve for nested rings)
+3. Pipeline: add lake column at index 1, shift land columns up
+4. Update NetCDF writer for `nmaxhillcol = N_BINS + 1`
 5. Production run, verify NetCDF structure
 6. CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod, compare vs Phase F baseline
 
-**Binning change (confirmed):** Expand from 8 to 16 HAND bins with focus on 0-50cm zone. Revert to Q1/Q99 percentile endpoints (PI: small gradients producing standing water are physically correct for wetland terrain). Final NetCDF: 17 columns (16 bins + 1 lake).
+**Outstanding considerations (deferred to model output):**
+- SPILLHEIGHT tuning (default 0.2m for now; Lee 2023 measured 2.64m — revisit if model output suggests issues)
+- "Always submerged" — don't enforce parametrically; lakes dry cyclically per real hydrology
 
-**Deliverable:** Hillslope NetCDF with submerged lake column, consumed by CTSM with the PI's spillheight SourceMod. Comparison showing effect on water table dynamics and CH4 production in near-lake columns.
+**Deliverable:** Hillslope NetCDF with submerged lake column + flood-zone bins (per Phase E.5), consumed by CTSM with PI's spillheight SourceMod. Comparison showing effect on water table dynamics and CH4 production in near-lake and flood-zone columns.
 
-**Reference:** `phases/G-ctsm-lake-representation.md` — full plan, open questions, rationale. `docs/water-masking-and-lake-representation.md` — historical CTSM source investigation (still valid), superseded weir overflow design.
+**Reference:** `docs/lake-column-ctsm-audit.md` — full audit including Sections 5 (lake column parameters) and 6.7 (HAND binning fix). `phases/G-ctsm-lake-representation.md` — phase plan and open questions.
 
 ### Dependency Diagram
 

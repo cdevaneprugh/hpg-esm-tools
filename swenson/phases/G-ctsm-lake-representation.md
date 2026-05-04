@@ -1,8 +1,35 @@
 # Phase G: Submerged Lake Column in Hillslope File
 
-Status: Not started
-Depends on: Phase F
-Blocks: None
+Status: **Folded into Phase E.5** (reframed 2026-04-30)
+Depends on: —
+Blocks: —
+
+**2026-05-04 update — lake column hill_elev locked at -6.0 m.** The
+`hill_elev` table entry below has been updated; remaining narrative
+text in this doc still uses the older `-SPILLHEIGHT` / `-0.2 m`
+illustrative numbers in places (e.g., the "Why this works" section
+and "Integration risks" sections) — those are kept as historical
+context for the CTSM behavior analysis but are NOT the current values.
+The canonical lake column reference is
+`docs/lake-column-ctsm-audit.md` Sections 5.1-5.5 + 5.2.1.
+
+**2026-04-30 update — Phase G effectively retired.** The PI meeting on
+2026-04-30 retired the spillheight SourceMod and shifted the lake column
+representation onto an empirical, data-derived `hill_elev` (locked
+2026-05-04 at -6.0 m; see Section 5.2.1 of audit doc). The "submerged
+lake column with spillheight SourceMod" framing of this phase no longer
+applies. The lake column is now built as part of the bin redesign in
+**Phase E.5** (`phases/E.5-bin-redesign.md`).
+
+The content below is retained for historical reference only. See
+`STATUS.md` Phase E.5 entry for the current plan.
+
+**2026-04-25 update:** Lake column scope refined to NWI water only. Earlier
+discussions about absorbing all depression-filled pixels into the lake
+column have been superseded by Phase E.5 (HAND binning fix), which
+introduces flood-zone bins to handle unmapped depression pixels separately.
+Lake column = permanent open water; flood-zone bins = land that floods
+seasonally. See `docs/lake-column-ctsm-audit.md` Section 6.7.
 
 ## Problem
 
@@ -29,22 +56,24 @@ Combined with our added lake column, the runtime elevation profile becomes:
 
 This produces a **stratified submergence system**: the lake column anchors the "always wet" regime (NWI-identified open water), the spillheight subtraction enables the "usually wet, sometimes dry" TAI transition zone, and upper columns behave as normal upland. Each mechanism does a distinct job — they do not double-count or conflict.
 
-### Lake column fields
+### Lake column fields (resolved 2026-04-25 via PI direction)
 
 | Field | Value | Source |
 |---|---|---|
-| `hill_elev` | `-SPILLHEIGHT` (in NetCDF) | Pre-SourceMod value. The PI's SourceMod subtracts `SPILLHEIGHT` again at runtime, so the final in-memory value is `-2*SPILLHEIGHT`. With the default spillheight = 0.2m, the lake column ends up at -0.4m — permanently and deeply submerged, deeper than any upland column that might flip negative from the spillheight subtraction alone. |
-| `hill_distance` | `mean(dtnd[water_mask])` | Pixel-wise mean of DTND across all NWI lake pixels. Equal-area pixels (1m²) make this equivalent to area-weighted per-lake averaging. Represents the average drainage distance for the aggregate "lake" column. |
-| `hill_area` | `sum(water_mask) * pixel_area` | Total NWI lake area from the water mask (production domain: 103 features, 10.7M pixels, ~10.68 km²). This defines the fractional area of the lake column within the gridcell. |
-| `hill_width` | TBD | See open questions |
-| `hill_slope` | TBD (likely 0) | See open questions |
-| `hill_aspect` | TBD (likely 0) | See open questions |
-| `hill_bedrock_depth` | 0 | Matches hillslope convention |
-| `column_index` | TBD (likely `N_HAND_BINS + 1`) | Sequential |
-| `downhill_column_index` | TBD (3 topology options) | See open questions |
-| `hillslope_index` | TBD (reuse `1` or new `2`) | See open questions |
+| `column_index` | 1 | Design decision (2026-04-23): place lake at col 1, shift land columns up. Preserves current 16-column `wetlandisfull` behavior in the PI's SourceMod by keeping the `cold == ispval` column processed first in the SurfaceWaterMod loop. |
+| `downhill_column_index` | -9999 | Terminal column. Drains to stream. |
+| `hillslope_index` | 1 | Same hillslope as all others (single-aspect setup). |
+| `hill_elev` | **-6.0 m** | **Locked 2026-05-04** (supersedes the earlier `-SPILLHEIGHT` framing). PI suggestion. Chain-bookkeeping value, set 0.87 m below the deepest land bin mean (-5.13 m, bin 1 of the 24-bin scheme). SPILLHEIGHT=0 in the SourceMod (no runtime shift). The value does NOT represent a physical lake bottom — empirical lake geometry (NWI mean -2.53 m; Lee/pipeline spill 2.64-3.33 m) doesn't reach the chain monotonicity floor. Tuning deferred to model output. See `docs/lake-column-ctsm-audit.md` Section 5.2.1 for full derivation. |
+| `hill_distance` | ~stream width (~5m) | PI direction (2026-04-25). Mathematically inert under current config (routing off, `tdepth=0` clamps lake-to-stream gradient to zero). Earlier "col2/2" recommendation (~15m) is also defensible; PI prefers stream width as the simpler choice. |
+| `hill_area` | `sum(water_mask) * pixel_area` ≈ 10.68 km² | Total NWI lake area from the water mask. Production domain: 103 features, 10.7M pixels. Defines fractional area of lake column within gridcell. |
+| `hill_width` | 1/2 NWI total perimeter | PI direction (2026-04-25). Heuristic: half the perimeter captures the effective lateral exchange surface. Inert under current config (routing off, lake-to-stream gradient clamped). Sanity-check via P:A ratio. |
+| `hill_slope` | 0 | PI direction (2026-04-25). "Lake bottom" framing — water surface is horizontal. Earlier bathymetric value (0.015 from Lee 2023 bowl geometry) reverted. |
+| `hill_aspect` | 0 | Inconsequential for flat lake column. |
+| `hill_bedrock_depth` | 0 | Matches hillslope convention. Inert under Uniform soil profile method (verified osbs4 lnd_in:261). |
 
-NetCDF structure change: `nmaxhillcol = N_HAND_BINS + 1` (16 hillslope bins + 1 lake = 17 columns).
+NetCDF structure change: `nmaxhillcol = N_BINS + 1` where N_BINS depends on the Phase E.5 outcome. Under the proposed flood-zone-bin scheme: ~16-22 columns total (1 lake + ~5 flood zone + ~10-16 upland-direction bins).
+
+Authoritative reference: `docs/lake-column-ctsm-audit.md` Sections 5.1-5.5 — full rationale for each parameter value with PI direction notes.
 
 ## Why this works
 
