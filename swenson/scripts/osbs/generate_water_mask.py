@@ -17,6 +17,7 @@ import geopandas as gpd
 import numpy as np
 import rasterio
 from rasterio.features import rasterize
+from scipy.ndimage import binary_fill_holes
 
 # --- Paths ---
 SCRIPT_DIR = Path(__file__).parent
@@ -66,6 +67,19 @@ def main():
         dtype=np.uint8,
         all_touched=True,
     )
+
+    n_water_raw = int(np.sum(water_mask == 1))
+
+    # --- Fill holes from nested polygon rings ---
+    # Inner rings (e.g. open-water rings inside outer wetland polygons) are
+    # rasterized as negative space by rasterio, leaving pixels with mask=0
+    # surrounded by mask=1. Flood-fill from the array boundary (background)
+    # to close any topologically enclosed pocket. Safe at OSBS because the
+    # production domain has no real islands inside lakes.
+    print("\nFilling holes from nested polygon rings...")
+    water_mask = binary_fill_holes(water_mask).astype(np.uint8)
+    n_filled = int(np.sum(water_mask == 1)) - n_water_raw
+    print(f"  Hole pixels filled: {n_filled:,}")
 
     # --- Summary ---
     n_water = int(np.sum(water_mask == 1))
