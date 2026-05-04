@@ -3,8 +3,10 @@
 OSBS Hillslope Pipeline
 
 Computes representative hillslope parameters from 1m NEON LIDAR data for OSBS
-using the Swenson & Lawrence (2025) methodology. Produces CTSM-compatible NetCDF
-output with 16 hillslope columns (1 aspect x 16 HAND bins, 5 fixed 10cm + 10 log-spaced to Q99, NWI water-masked).
+using the Swenson & Lawrence (2025) methodology. Produces a CTSM-compatible
+NetCDF with 25 hillslope columns: 1 lake column at chain index 1 + 24 land
+bins (1 aspect x 24 HAND bins, raw-HAND scheme with Q01/Q99 trim, locked
+Phase E.5 design 2026-05-04).
 
 The processing algorithm follows merit_regression.py (the validated source of
 truth), adapted for UTM CRS using shared modules:
@@ -17,12 +19,21 @@ Phase decisions baked in:
   - Phase B: Full 1m resolution, no subsampling (64GB sufficient)
   - Phase C: min_wavelength=20m filters k^2 micro-topographic artifact in FFT
   - Phase E: NEON DP3.30025.001 slope/aspect replaces pgrid computation
+  - Phase E.5: Q01/Q99 raw-HAND trim with true discard, 24-bin TAI-focused
+    scheme on raw_hand = hand - (flooded_orig - pit_filled), explicit
+    channel/water-mask filter, lake column at chain index 1.
 
 Configuration:
     Set MOSAIC_DIR below to select the input mosaics (DTM, slope, aspect):
       - Production (default): data/mosaics/production/ (90 tiles, R4C5-R12C14)
       - Smoke test: point individual paths at single NEON tiles (R6C10)
     The mosaics must be contiguous (no nodata pixels).
+
+References:
+    phases/E.5-bin-redesign.md  - Outlier strategy, bin layout, LIDAR error
+                                  budget, working scheme rationale.
+    docs/lake-column-ctsm-audit.md  - Lake column parameters (Sections 5.1-5.5,
+                                      5.2.1) and pixel filter recipe (6.9).
 
 Usage:
     python scripts/osbs/run_pipeline.py
@@ -60,12 +71,13 @@ from dem_processing import identify_basins  # noqa: E402
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
-    compute_hand_bins_hybrid,
+    compute_hand_bins_tai_focused,
     fit_trapezoidal_width,
     get_aspect_mask,
     quadratic,
     tail_index,
 )
+from scipy.ndimage import binary_erosion  # noqa: E402
 from spatial_scale import identify_spatial_scale_laplacian_dem  # noqa: E402
 
 
@@ -79,21 +91,42 @@ MIN_WAVELENGTH = 20  # meters (Phase C: filters k^2 micro-topographic artifact)
 NODATA_VALUE = -9999  # standardized nodata sentinel
 NODATA_THRESHOLD = -9000  # threshold for valid data detection in GeoTIFFs
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)  # D8 flow direction mapping
+SMALLEST_DTND_M = 1.0  # Swenson rh:699-700 — minimum DTND clamp
 
-# Hillslope binning (1 aspect x 16 HAND bins, hybrid fixed+log)
+# Hillslope binning (Phase E.5: 24 land bins + 1 lake column = 25 total)
 #
-# Bins 1-5 are fixed 10cm bins spanning 0 to 0.5m — explicit TAI-zone
-# resolution per PI request. Bin 1 [0, 0.1m] absorbs resolve_flats
-# micro-gradient noise from flat upland pixels (~22% of land).
-# Bins 6-15 are log-spaced from 0.5m to Q99 of positive HAND.
-# Bin 16 [Q99, max] catches the ridge tail (~1% of pixels).
+# Land bins: 1 aspect x 24 raw-HAND bins, hand-tuned TAI-focused scheme
+# (12 FZ + 12 upland, 0.25 m floor in TAI core, smooth 2x width
+# progression outward). Outermost edges set dynamically to Q01/Q99 of
+# the cleaned land population per run; expected ~-6.34 m / +17.46 m on
+# the production domain.
 #
-# See docs/hillslope-binning-rationale.md for full analysis and the
-# 13-permutation comparison that led to this scheme.
+# Lake column: prepended at chain index 1 with hill_elev = -6.0 m
+# (chain-bookkeeping value, see audit Section 5.2.1). Land columns
+# shift up: former col 1 (lowest land bin) becomes col 2, ..., col 24
+# becomes col 25.
+#
+# See:
+#   - phases/E.5-bin-redesign.md "Working bin scheme" subsection
+#   - docs/lake-column-ctsm-audit.md Sections 5.1-5.5 + 5.2.1 + 6.9
+#   - hillslope_params.compute_hand_bins_tai_focused() for the edge list
 N_ASPECT_BINS = 1
-N_HAND_BINS = 16
+N_LAND_BINS = 24
+N_LAKE_COLUMNS = 1
+N_TOTAL_COLUMNS = N_ASPECT_BINS * N_LAND_BINS + N_LAKE_COLUMNS  # 25
 ASPECT_BINS = [(0, 360)]
 ASPECT_NAMES = ["All"]
+
+# Lake column parameters (locked 2026-05-04 — see audit Sections 5.1-5.5).
+# Inert under current osbs2 config (use_hillslope_routing=.false. and
+# tdepth=0 clamp the lake-to-stream subsurface gradient to zero), so
+# distance/width/slope/aspect/bedrock are mathematically inconsequential
+# but must be present and finite. Lake column is at chain index 1.
+LAKE_HILL_ELEV_M = -6.0  # PI direction; deeper than deepest land bin mean (-5.13 m)
+LAKE_HILL_DISTANCE_M = 5.0  # PI direction; ~stream width
+LAKE_HILL_SLOPE = 0.0  # PI direction; "lake bottom" framing (water surface horizontal)
+LAKE_HILL_ASPECT_DEG = 0.0  # inconsequential for flat lake column
+LAKE_HILL_BEDROCK_DEPTH_M = 0.0  # inert under Uniform soil profile method
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent
@@ -119,7 +152,9 @@ OUTPUT_TIMESTAMP = time.strftime("%Y-%m-%d")
 OUTPUT_DIR = BASE_DIR / "output" / "osbs" / f"{OUTPUT_TIMESTAMP}_{OUTPUT_DESCRIPTOR}"
 
 # Diagnostic mode: when SAVE_DIAGNOSTICS=1, save intermediate conditioning
-# arrays for the HAND contamination diagnostic (see diagnose_hand_contamination.py).
+# arrays (dem, pit_filled, flooded_orig, hand, dtnd, raw_hand, water_mask,
+# wide_channel_mask) to OUTPUT_DIR/diagnostics/ for ad-hoc post-run debugging
+# via numpy.load. Off by default for production runs.
 SAVE_DIAGNOSTICS = os.environ.get("SAVE_DIAGNOSTICS", "0") == "1"
 DIAGNOSTICS_DIR = OUTPUT_DIR / "diagnostics"
 
@@ -147,6 +182,26 @@ def print_progress(msg: str) -> None:
     timestamp = time.strftime("%H:%M:%S")
     print(f"[{timestamp}] {msg}")
     sys.stdout.flush()
+
+
+def compute_lake_perimeter(water_mask: np.ndarray, pixel_size: float) -> float:
+    """Boundary-pixel approximation of total NWI lake perimeter (meters).
+
+    A boundary pixel is a water pixel with at least one non-water 4-neighbor.
+    Approach: subtract the eroded mask from the original to isolate boundary
+    pixels, then multiply count by pixel_size.
+
+    Underestimates the true polygon perimeter by ~5-10% (diagonals not
+    counted). Adequate for the lake column's `hill_width` field, which is
+    mathematically inert under the current osbs2 configuration (routing off,
+    lake-to-stream subsurface gradient clamped to zero by the empty-stream
+    guard in SoilHydrologyMod). See docs/lake-column-ctsm-audit.md Section
+    5.3 for the full discussion. If routing is ever enabled, switch to a
+    shapefile-based polygon perimeter (geopandas + shapely).
+    """
+    eroded = binary_erosion(water_mask > 0)
+    boundary = (water_mask > 0) & ~eroded
+    return float(np.sum(boundary)) * pixel_size
 
 
 # =============================================================================
@@ -319,29 +374,45 @@ def create_hand_map_plot(
 
 
 def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
-    """Create hillslope parameters summary plot."""
+    """Create hillslope parameters summary plot.
+
+    Phase E.5: elements[0] is the lake column; elements[1..N] are the land
+    columns. The plot shows the 24 land bins as bars and the lake column
+    as a separate marker overlay on each panel — including the lake as a
+    bar would distort the y-axis (hill_elev = -6 m vs. land range, plus
+    lake area >> any single land bin).
+    """
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     elements = params["elements"]
-    n_bins = params["metadata"]["n_hand_bins"]
+    n_land_bins = params["metadata"]["n_land_bins"]
     n_aspects = params["metadata"]["n_aspect_bins"]
     colors = plt.cm.Set2(np.linspace(0, 1, max(n_aspects, 2)))
 
     aspect_names = params["metadata"]["aspect_names"]
-    bin_labels = range(1, n_bins + 1)
+    bin_labels = range(1, n_land_bins + 1)
     bar_width = 0.7 / n_aspects
+
+    # Skip lake column (element[0]) — bars are land bins only.
+    land_elements = [e for e in elements if not e.get("is_lake")]
+    lake_elements = [e for e in elements if e.get("is_lake")]
 
     for panel_idx, (ax, key, ylabel, title) in enumerate(
         [
-            (axes[0, 0], "height", "Mean HAND (m)", "Height Above Nearest Drainage"),
+            (
+                axes[0, 0],
+                "height",
+                "Mean raw HAND (m)",
+                "Height Above Nearest Drainage",
+            ),
             (axes[0, 1], "distance", "Mean DTND (m)", "Distance to Nearest Drainage"),
             (axes[1, 0], "area", "Area (km^2)", "Hillslope Element Area"),
             (axes[1, 1], "width", "Width (m)", "Lower Edge Width"),
         ]
     ):
         for i, asp in enumerate(aspect_names):
-            start = i * n_bins
-            values = [elements[j][key] for j in range(start, start + n_bins)]
+            start = i * n_land_bins
+            values = [land_elements[j][key] for j in range(start, start + n_land_bins)]
             if key == "area":
                 values = [v / 1e6 for v in values]
             ax.bar(
@@ -351,11 +422,23 @@ def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
                 label=asp,
                 color=colors[i],
             )
-        ax.set_xlabel("Elevation Bin")
+
+        # Annotate lake value as a horizontal reference line (one per panel).
+        for lake_idx, lake in enumerate(lake_elements):
+            v = lake[key] / 1e6 if key == "area" else lake[key]
+            ax.axhline(
+                v,
+                color="navy",
+                linestyle="--",
+                linewidth=1.2,
+                alpha=0.8,
+                label=f"Lake: {v:.2f}" if lake_idx == 0 else None,
+            )
+
+        ax.set_xlabel("Land bin (chain order, deepest -> ridge)")
         ax.set_ylabel(ylabel)
         ax.set_title(title)
-        if n_aspects > 1:
-            ax.legend()
+        ax.legend(loc="best", fontsize=8)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -379,14 +462,32 @@ def write_hillslope_netcdf(
     lc_m: float | None = None,
     accum_threshold: int | None = None,
     min_wavelength: float | None = None,
+    q01: float | None = None,
+    q99: float | None = None,
+    n_pre_trim: int | None = None,
+    n_post_trim: int | None = None,
 ) -> None:
     """
     Write hillslope parameters to CTSM-compatible NetCDF file.
 
+    Phase E.5 element ordering convention: elements[0] is the lake column
+    (chain index 1, terminal sink); elements[1..N] are the land columns in
+    chain order (lowest land at index 1, ridge at the end). All columns share
+    `hillslope_index = 1` (single-aspect setup). The chain topology is:
+
+        col 25 (ridge) -> col 24 -> ... -> col 3 -> col 2 (lowest land)
+                       -> col 1 (lake) -> [-9999 stream sentinel]
+
+    `downhill_column_index` is `-9999` for the lake (terminal) and `i` for
+    every land column at chain index `i+1` (drains to the previous chain
+    index). See docs/lake-column-ctsm-audit.md Sections 5.1 + 7.1 for
+    rationale.
+
     Parameters
     ----------
     params : dict
-        Hillslope parameters with "elements" list
+        Hillslope parameters with "elements" list (lake at index 0, land
+        bins at indices 1..N).
     output_path : Path
         Output NetCDF file path
     center_lon : float
@@ -407,14 +508,23 @@ def write_hillslope_netcdf(
         Flow accumulation threshold for metadata
     min_wavelength : float, optional
         FFT minimum wavelength filter (m) for metadata
+    q01, q99 : float, optional
+        Phase E.5 outlier cutoffs in raw HAND (m). Stored as global attrs.
+    n_pre_trim, n_post_trim : int, optional
+        Pixel counts before/after the Q01/Q99 trim, for verifiability.
     """
     import netCDF4 as nc
 
     elements = params["elements"]
 
     n_aspects = params["metadata"]["n_aspect_bins"]
-    n_bins = params["metadata"]["n_hand_bins"]
-    n_columns = n_aspects * n_bins
+    n_land_bins = params["metadata"]["n_land_bins"]
+    n_lake_columns = params["metadata"].get("n_lake_columns", 0)
+    n_columns = len(elements)
+    assert n_columns == n_aspects * n_land_bins + n_lake_columns, (
+        f"Element count {n_columns} does not match "
+        f"{n_aspects} aspects x {n_land_bins} bins + {n_lake_columns} lake"
+    )
 
     elevation = np.zeros(n_columns)
     distance = np.zeros(n_columns)
@@ -426,15 +536,15 @@ def write_hillslope_netcdf(
     column_index = np.zeros(n_columns, dtype=np.int32)
     downhill_column_index = np.zeros(n_columns, dtype=np.int32)
 
-    # NOTE: This loop assumes all bins are populated (no empty columns).
-    # Swenson's pipeline has a compression step (rh:971-1012) that removes
-    # empty bins, renumbers column_index/downhill_column_index, and sets
-    # nhillcolumns to the actual count. We omit this because at OSBS with
-    # 90M pixels and a single-aspect configuration, empty bins are not
-    # possible. If this pipeline is applied to smaller domains or sites
-    # with sparse topography, a compression step would be needed to avoid
-    # writing zero-area columns that CTSM would try to route flow through.
-    # See: docs/osbs-pipeline-divergence-audit-260316.md, issue #1.
+    # Chain topology (Phase E.5):
+    #   - Lake at i=0 -> column_index=1, downhill=-9999 (terminal sink)
+    #   - Lowest land at i=1 -> column_index=2, downhill=1 (drains to lake)
+    #   - Subsequent land at i=2..N -> column_index=i+1, downhill=i
+    #
+    # NOTE: this assumes single-aspect (all columns share hillslope_index=1).
+    # For multi-aspect configurations a compression step would be needed to
+    # handle empty bins; not relevant at OSBS with 90M pixels and 1 aspect.
+    # See docs/osbs-pipeline-divergence-audit-260316.md issue #1.
     for i, elem in enumerate(elements):
         elevation[i] = elem["height"]
         distance[i] = elem["distance"]
@@ -443,24 +553,30 @@ def write_hillslope_netcdf(
         slope[i] = elem["slope"]
         aspect[i] = elem["aspect"] * np.pi / 180
 
-        asp_idx = i // n_bins
-        hillslope_index[i] = asp_idx + 1
+        # Single-aspect: all columns (lake + land) share hillslope_index=1.
+        hillslope_index[i] = 1
         column_index[i] = i + 1
 
-        bin_idx = i % n_bins
-        if bin_idx == 0:
+        if i == 0:
+            # Lake at chain index 1 — terminal sink.
             downhill_column_index[i] = -9999
         else:
-            downhill_column_index[i] = i  # 1-indexed column_index of previous column
+            # Land columns drain to the previous chain index. Index 1 (lake)
+            # receives the lowest land bin's flow at i=1.
+            downhill_column_index[i] = i  # 1-indexed col_index of previous
 
+    # pct_hillslope sums all column areas under the single aspect (lake +
+    # land). With area_m2 = land_area + lake_area, single-aspect case yields
+    # pct_hillslope[0] = 100.0%. Lake's fractional weight within the
+    # landunit is computed downstream by CTSM via col%hill_area / total.
     pct_hillslope = np.zeros(n_aspects)
     total_area_m2 = sum(elem["area"] for elem in elements)
-    for asp_idx in range(n_aspects):
-        asp_area = sum(elements[asp_idx * n_bins + j]["area"] for j in range(n_bins))
-        if total_area_m2 > 0:
-            pct_hillslope[asp_idx] = 100.0 * asp_area / total_area_m2
-        else:
-            pct_hillslope[asp_idx] = 100.0 / n_aspects
+    if total_area_m2 > 0:
+        pct_hillslope[:] = 100.0 / n_aspects  # equal split for multi-aspect
+        if n_aspects == 1:
+            pct_hillslope[0] = 100.0
+    else:
+        pct_hillslope[:] = 100.0 / n_aspects
 
     # Placeholder — matches Swenson (all zeros). Under the current osbs2
     # config (hillslope_soil_profile_method='Uniform'), CTSM never reads
@@ -481,6 +597,25 @@ def write_hillslope_netcdf(
             ds.accumulation_threshold = int(accum_threshold)
         if min_wavelength is not None:
             ds.fft_min_wavelength_m = float(min_wavelength)
+
+        # Phase E.5 metadata (locked design 2026-05-04). Recorded as global
+        # attrs so the cutoffs and method are reproducible per-run without
+        # reading them out of pipeline logs.
+        ds.bin_scheme = "Phase E.5 TAI-focused 24-bin (locked 2026-05-04)"
+        ds.binning_input = "raw_hand = hand - (flooded_orig - pit_filled)"
+        ds.outlier_method = "Q01/Q99 percentile trim, true discard"
+        ds.n_land_bins = int(n_land_bins)
+        ds.n_lake_columns = int(n_lake_columns)
+        if q01 is not None:
+            ds.q01_cutoff_m = float(q01)
+        if q99 is not None:
+            ds.q99_cutoff_m = float(q99)
+        if n_pre_trim is not None:
+            ds.n_pixels_pre_trim = int(n_pre_trim)
+        if n_post_trim is not None:
+            ds.n_pixels_post_trim = int(n_post_trim)
+        ds.lake_column_at_index = 1
+        ds.lake_hill_elev_m = float(LAKE_HILL_ELEV_M)
 
         # Dimensions
         ds.createDimension("lsmlat", 1)
@@ -815,19 +950,29 @@ def main():
         f"  NWI water mask: {n_water:,} px ({100 * n_water / water_mask.size:.1f}%)"
     )
 
-    # Capture pre-water-lowering state for HAND contamination diagnostic.
-    # Must be done BEFORE line below overwrites grid.flooded with the
-    # water-lowered version.
+    # Phase E.5: capture pre-water-lowering conditioning state to derive raw HAND.
+    # The four-stage conditioning pipeline is: dem -> pit_filled -> flooded ->
+    # (water-lowered) -> inflated. We need pit_filled and flooded BEFORE the
+    # water-lowering line overwrites grid.flooded, so we materialize them here
+    # unconditionally. dep_fill_arr = flooded_orig - pit_filled isolates the
+    # depression-fill stage from the other (sub-cm) conditioning stages.
+    # See phases/E.5-bin-redesign.md "Pipeline implementation steps" subsection
+    # and docs/lake-column-ctsm-audit.md Section 6.2 for the decomposition.
+    # Memory cost: ~720 MB peak (3 x ~240 MB float64 for 89M pixels).
+    pit_filled_arr = np.array(grid.pit_filled)
+    flooded_orig_arr = np.array(grid.flooded)
+    dep_fill_arr = flooded_orig_arr - pit_filled_arr
+
     if SAVE_DIAGNOSTICS:
         DIAGNOSTICS_DIR.mkdir(parents=True, exist_ok=True)
         print_progress(f"  Saving diagnostic arrays to {DIAGNOSTICS_DIR}/")
         np.save(DIAGNOSTICS_DIR / "dem.npy", np.array(grid.dem))
-        np.save(DIAGNOSTICS_DIR / "pit_filled.npy", np.array(grid.pit_filled))
-        np.save(DIAGNOSTICS_DIR / "flooded_orig.npy", np.array(grid.flooded))
+        np.save(DIAGNOSTICS_DIR / "pit_filled.npy", pit_filled_arr)
+        np.save(DIAGNOSTICS_DIR / "flooded_orig.npy", flooded_orig_arr)
         np.save(DIAGNOSTICS_DIR / "water_mask.npy", water_mask)
 
     # Lower water pixels in flooded DEM to force flow through them
-    flooded_arr = np.array(grid.flooded)
+    flooded_arr = flooded_orig_arr.copy()
     flooded_arr[water_mask > 0] -= 0.1
     grid.add_gridded_data(
         flooded_arr,
@@ -943,9 +1088,18 @@ def main():
     hand = np.array(grid.hand)
     dtnd = np.array(grid.dtnd)
 
+    # Phase E.5: derive raw HAND by removing the depression-fill component
+    # of conditioning. Pixels in unmapped basins that fill_depressions raised
+    # to spill elevation will have raw_hand < 0, reflecting their true depth
+    # below stream level — these populate the FZ bins. Pixels never touched
+    # by fill_depressions (dep_fill = 0) have raw_hand = hand. This is the
+    # binning input for the 24-bin TAI-focused scheme.
+    raw_hand = hand - dep_fill_arr
+
     if SAVE_DIAGNOSTICS:
         np.save(DIAGNOSTICS_DIR / "hand.npy", hand)
         np.save(DIAGNOSTICS_DIR / "dtnd.npy", dtnd)
+        np.save(DIAGNOSTICS_DIR / "raw_hand.npy", raw_hand)
         np.save(DIAGNOSTICS_DIR / "wide_channel_mask.npy", wide_channel_mask)
 
     # HAND diagnostics split by pixel type
@@ -1006,71 +1160,98 @@ def main():
     # Step 5: Hillslope Parameter Computation
     # =========================================================================
     print_section(
-        f"Step 5: Hillslope Parameters ({N_ASPECT_BINS * N_HAND_BINS} elements)"
+        f"Step 5: Hillslope Parameters ({N_ASPECT_BINS * N_LAND_BINS} land elements + 1 lake)"
     )
 
     t0 = time.time()
 
-    # --- 5a: Filtering ---
-
-    # Water diagnostic: with dual-mask approach, water pixels have HAND=0
-    # (they are "stream" in the wide mask). Excluded from stats at valid filter.
-    n_water_hand0 = int(np.sum((water_mask.flatten() > 0) & (hand.flatten() == 0)))
-    print_progress(f"    Water pixels with HAND=0: {n_water_hand0:,}")
+    # --- 5a: Filtering (Phase E.5 recipe) ---
+    #
+    # See docs/lake-column-ctsm-audit.md Section 6.9 for the pixel-category
+    # table and filter rationale. Replaces the prior `(hand > 0)` shortcut,
+    # which silently misclassified streams routed through filled depressions
+    # (raw_hand < 0) into FZ bins.
 
     # Flatten all fields
     hand_flat = hand.flatten()
-    dtnd_flat = dtnd.flatten()
+    raw_hand_flat = raw_hand.flatten()
+    dtnd_flat = dtnd.flatten().copy()  # we mutate via DTND minimum clip
     slope_flat = slope.flatten()
     aspect_flat = aspect.flatten()
+    water_flat = water_mask.flatten()
+    channel_flat = (np.array(grid.channel_mask) > 0).flatten()
     pixel_area = PIXEL_SIZE * PIXEL_SIZE
     area_flat = np.full(hand_flat.shape, pixel_area)
 
-    # DTND tail removal — exclude water pixels (HAND=0, DTND=0) before fitting
-    # the exponential tail. 10.7M zero-DTND pixels would skew the fit.
-    water_mask_flat = water_mask.flatten()
-    land_finite = np.isfinite(hand_flat) & (water_mask_flat == 0)
-    tail_ind = tail_index(dtnd_flat[land_finite], hand_flat[land_finite])
-    land_indices = np.where(land_finite)[0]
+    n_water_hand0 = int(np.sum((water_flat > 0) & (hand_flat == 0)))
+    print_progress(f"    Water pixels with HAND=0: {n_water_hand0:,}")
+
+    # DTND tail-index outlier removal (Swenson convention via expon fit;
+    # tail_index() in hillslope_params.py). Exclude water pixels first
+    # (HAND=0, DTND=0) so the 10.7M zero-DTND lake pixels don't skew the
+    # exponential fit.
+    land_finite_for_tail = np.isfinite(hand_flat) & (water_flat == 0)
+    tail_ind = tail_index(
+        dtnd_flat[land_finite_for_tail], hand_flat[land_finite_for_tail]
+    )
+    land_indices = np.where(land_finite_for_tail)[0]
     keep_tail = np.zeros(hand_flat.shape, dtype=bool)
     keep_tail[land_indices[tail_ind]] = True
-    n_removed = int(np.sum(land_finite) - np.sum(keep_tail))
-    print_progress(f"    DTND tail removal: {n_removed} px removed")
+    n_tail_removed = int(land_finite_for_tail.sum() - keep_tail.sum())
+    print_progress(f"    DTND tail removal: {n_tail_removed:,} px removed")
 
     # DTND minimum clip (Swenson rh:699-700)
-    smallest_dtnd = 1.0  # meters — Swenson's fixed minimum
-    dtnd_flat[dtnd_flat < smallest_dtnd] = smallest_dtnd
+    dtnd_flat[dtnd_flat < SMALLEST_DTND_M] = SMALLEST_DTND_M
 
-    # Valid mask: tail-filtered pixels with finite HAND
-    valid = keep_tail.copy()
+    # Combined cleanup mask (Phase E.5). Drop lakes (water_mask), all stream
+    # channel pixels (channel_mask — catches streams in filled depressions
+    # which have raw_hand < 0), NaN, and DTND tail outliers. Then apply
+    # basin pre-mask if it removed a non-trivial fraction.
+    valid_pre_trim = (
+        (water_flat == 0) & (channel_flat == 0) & np.isfinite(raw_hand_flat) & keep_tail
+    )
 
-    # Water masking: exclude NWI water pixels from hillslope statistics
-    n_water_in_tail = int(np.sum((water_mask_flat > 0) & keep_tail))
-    valid = valid & (water_mask_flat == 0)
-    if n_water_in_tail > 0:
-        print_progress(f"    Water masking: {n_water_in_tail:,} px excluded")
-
-    # Basin masking: remove pre-conditioning basin pixels
     basin_pre_flat = basin_pre_mask.flatten()
     n_basin = int(np.sum(basin_pre_flat > 0))
     if n_basin > 0:
         non_flat_fraction = np.sum(basin_pre_flat == 0) / basin_pre_flat.size
         if non_flat_fraction > 0.01:
-            valid = valid & (basin_pre_flat == 0)
+            valid_pre_trim = valid_pre_trim & (basin_pre_flat == 0)
             print_progress(f"    Basin masking: {n_basin} px removed")
         else:
             print_progress(
                 f"  WARNING: Region too flat (non_flat={non_flat_fraction:.4f})"
             )
 
+    n_pre_trim = int(valid_pre_trim.sum())
+    print_progress(f"    Valid pre-Q01/Q99 trim: {n_pre_trim:,}")
+
+    # Phase E.5 outlier strategy (locked 2026-05-02): true-discard Q01/Q99
+    # trim on raw HAND. Cutoffs computed dynamically from the cleaned land
+    # population each run; expected ~-6.34 m / +17.46 m on the production
+    # domain. The Q01/Q99 values double as the outermost edges of the 24-bin
+    # TAI-focused scheme. See phases/E.5-bin-redesign.md 2026-05-02 log
+    # entry for the formal defense.
+    q01 = float(np.percentile(raw_hand_flat[valid_pre_trim], 1))
+    q99 = float(np.percentile(raw_hand_flat[valid_pre_trim], 99))
+    valid = valid_pre_trim & (raw_hand_flat >= q01) & (raw_hand_flat <= q99)
+    n_post_trim = int(valid.sum())
+    n_trimmed = n_pre_trim - n_post_trim
+    print_progress(
+        f"    Q01 = {q01:.4f} m   Q99 = {q99:.4f} m   "
+        f"trimmed {n_trimmed:,} ({100 * n_trimmed / n_pre_trim:.2f}%)"
+    )
+    print_progress(
+        f"  Valid pixels (post-trim): {n_post_trim:,} "
+        f"({100 * n_post_trim / valid.size:.1f}%)"
+    )
+
     # Extract drainage_id before applying valid filter
     drainage_id_flat = np.array(grid.drainage_id).flatten()
 
-    # Apply valid filter to all arrays
-    print_progress(
-        f"  Valid pixels: {np.sum(valid):,} ({100 * np.sum(valid) / valid.size:.1f}%)"
-    )
-
+    # Apply valid filter to all arrays. raw_hand_flat is the binning input;
+    # hand_flat is kept around for legacy diagnostics but not used downstream.
+    raw_hand_flat = raw_hand_flat[valid]
     hand_flat = hand_flat[valid]
     dtnd_flat = dtnd_flat[valid]
     slope_flat = slope_flat[valid]
@@ -1078,26 +1259,39 @@ def main():
     area_flat = area_flat[valid]
     drainage_id_flat = drainage_id_flat[valid]
 
-    # --- 5b: HAND bins (hybrid: 5 fixed 10cm + 10 log + sentinel = 16 bins) ---
+    # --- 5b: HAND bins (Phase E.5: 24-bin TAI-focused, raw HAND) ---
     #
-    # Fixed 10cm bins in the 0-0.5m zone give explicit TAI-zone resolution
-    # per PI request. Bin 1 [0, 0.1m] absorbs resolve_flats micro-gradient
-    # noise from flat upland pixels (~22% of OSBS land pixels).
-    # Log tail covers the upland gradient from 0.5m to Q99 of positive HAND.
-    # Sentinel bin captures the ridge ~1% above Q99.
-    # Defaults in compute_hand_bins_hybrid() produce exactly this scheme.
-    print_progress("  Computing HAND bins...")
-    hand_bounds = compute_hand_bins_hybrid(hand_flat)
-    print_progress(f"    HAND bins ({len(hand_bounds) - 1}): {hand_bounds}")
+    # The locked scheme (compute_hand_bins_tai_focused) returns 25 hand-tuned
+    # edges with q01/q99 as the outermost edges. 12 FZ + 12 upland; 0.25 m
+    # floor in the TAI core (LIDAR 2-sigma distinguishability rule). The
+    # binning input is raw_hand, so FZ bins occupy raw_hand < 0 and upland
+    # bins occupy raw_hand > 0. See phases/E.5-bin-redesign.md "Working
+    # bin scheme" subsection for the per-bin density table and rationale.
+    print_progress("  Computing HAND bins (Phase E.5 TAI-focused)...")
+    hand_bounds = compute_hand_bins_tai_focused(q01, q99)
+    assert len(hand_bounds) == N_LAND_BINS + 1, (
+        f"Expected {N_LAND_BINS + 1} edges, got {len(hand_bounds)}"
+    )
+    print_progress(f"    Land bins ({len(hand_bounds) - 1}): {hand_bounds}")
 
-    # --- 5c: Per-aspect parameter computation ---
+    # --- 5c: Per-aspect parameter computation (land columns only) ---
+    # Lake column is constructed in section 5d below and prepended to the
+    # elements list.
     params = {
         "metadata": {
             "n_aspect_bins": N_ASPECT_BINS,
-            "n_hand_bins": N_HAND_BINS,
+            "n_land_bins": N_LAND_BINS,
+            "n_lake_columns": N_LAKE_COLUMNS,
+            "n_total_columns": N_TOTAL_COLUMNS,
             "aspect_bins": ASPECT_BINS,
             "aspect_names": ASPECT_NAMES,
             "hand_bounds": hand_bounds.tolist(),
+            "binning_input": "raw_hand = hand - (flooded_orig - pit_filled)",
+            "outlier_method": "Q01/Q99 percentile trim, true discard",
+            "q01_cutoff_m": q01,
+            "q99_cutoff_m": q99,
+            "n_pixels_pre_trim": n_pre_trim,
+            "n_pixels_post_trim": n_post_trim,
             "accum_threshold": accum_threshold,
             "spatial_scale_m": float(lc_m),
             "min_wavelength_m": float(MIN_WAVELENGTH),
@@ -1115,9 +1309,10 @@ def main():
         "slope": 0,
         "aspect": 0,
         "width": 0,
+        "is_lake": False,
     }
 
-    # For 1x16 config: loops once with asp_bin=(0,360), capturing all pixels.
+    # For 1x24 config: loops once with asp_bin=(0,360), capturing all pixels.
     for asp_idx, (asp_bin, asp_name) in enumerate(zip(ASPECT_BINS, ASPECT_NAMES)):
         print_progress(f"  Processing {asp_name} aspect...")
 
@@ -1126,7 +1321,7 @@ def main():
 
         if len(asp_indices) == 0:
             print_progress(f"    No pixels in {asp_name} aspect")
-            for h_idx in range(N_HAND_BINS):
+            for h_idx in range(N_LAND_BINS):
                 params["elements"].append(
                     {
                         "aspect_name": asp_name,
@@ -1158,13 +1353,13 @@ def main():
         trap_width = trap["width"]
         trap_area = trap["area"]
 
-        # First pass: raw areas per bin
+        # First pass: raw areas per bin (binning on raw_hand under Phase E.5)
         bin_raw_areas = []
         bin_data = []
-        for h_idx in range(N_HAND_BINS):
+        for h_idx in range(N_LAND_BINS):
             h_lower = hand_bounds[h_idx]
             h_upper = hand_bounds[h_idx + 1]
-            hand_mask = (hand_flat >= h_lower) & (hand_flat < h_upper)
+            hand_mask = (raw_hand_flat >= h_lower) & (raw_hand_flat < h_upper)
             bin_mask = asp_mask & hand_mask
             bin_indices = np.where(bin_mask)[0]
 
@@ -1191,12 +1386,18 @@ def main():
         area_fractions = (
             [a / total_raw for a in bin_raw_areas]
             if total_raw > 0
-            else [1.0 / N_HAND_BINS] * N_HAND_BINS
+            else [1.0 / N_LAND_BINS] * N_LAND_BINS
         )
         fitted_areas = [trap_area * frac for frac in area_fractions]
 
-        # Second pass: compute parameters
-        for h_idx in range(N_HAND_BINS):
+        # Second pass: compute parameters.
+        # Note (Phase E.5): the Swenson `mean(hand) <= 0` skip guard from
+        # merit_regression.py:706-717 is intentionally NOT applied here. That
+        # guard discards bins whose mean conditioned-HAND is non-positive — a
+        # sensible filter when binning on `hand` (where 0 means stream
+        # channel) but it would zero out every FZ bin under raw-HAND binning,
+        # defeating the design.
+        for h_idx in range(N_LAND_BINS):
             data = bin_data[h_idx]
             bin_indices = data["indices"]
 
@@ -1214,23 +1415,12 @@ def main():
                             (asp_bin[0] + asp_bin[1]) / 2 % 360
                         ),  # 180 for (0,360)
                         "width": 0,
+                        "is_lake": False,
                     }
                 )
                 continue
 
-            # HAND <= 0 bin skip (merit_regression.py:706-717)
-            if np.mean(hand_flat[bin_indices]) <= 0:
-                params["elements"].append(
-                    {
-                        "aspect_name": asp_name,
-                        "aspect_bin": asp_idx,
-                        "hand_bin": h_idx,
-                        **zero_element,
-                    }
-                )
-                continue
-
-            mean_hand = float(np.mean(hand_flat[bin_indices]))
+            mean_raw_hand = float(np.mean(raw_hand_flat[bin_indices]))
             mean_slope = float(np.nanmean(slope_flat[bin_indices]))
             # With 1-aspect, averages all pixel aspects in this HAND bin.
             mean_aspect = circular_mean_aspect(aspect_flat[bin_indices])
@@ -1265,21 +1455,82 @@ def main():
                     "aspect_name": asp_name,
                     "aspect_bin": asp_idx,
                     "hand_bin": h_idx,
-                    "height": mean_hand,
+                    "height": mean_raw_hand,
                     "distance": distance,
                     "area": fitted_area,
                     "slope": mean_slope,
                     "aspect": mean_aspect,
                     "width": width,
+                    "is_lake": False,
                 }
             )
 
             print_progress(
-                f"    Bin {h_idx + 1}: h={mean_hand:.1f}m, "
-                f"d={distance:.0f}m, w={width:.0f}m"
+                f"    Bin {h_idx + 1}: raw_h={mean_raw_hand:+.2f}m, "
+                f"d={distance:.0f}m, w={width:.0f}m, "
+                f"area={fitted_area / 1e6:.3f}km^2"
             )
 
     print_progress(f"  Parameter computation time: {time.time() - t0:.1f} seconds")
+
+    # =========================================================================
+    # Step 5d: Lake Column (Phase E.5 / Phase G integration, locked 2026-05-04)
+    # =========================================================================
+    # Add one column representing the aggregate of NWI-mapped lake area as a
+    # submerged "lake" column at chain index 1. Land columns shift up: former
+    # col 1 (lowest land bin) becomes col 2, ..., col 24 becomes col 25.
+    #
+    # Why col 1: preserves the existing 16-column `wetlandisfull` flag
+    # behavior in the PI's SourceMod (the `cold == ispval` column is processed
+    # FIRST in SurfaceWaterMod's loop, and subsequent columns reset the flag).
+    # Putting the lake at col 25 would accidentally activate that dormant
+    # flag, changing CTSM behavior compared to the 16-column baseline. See
+    # docs/lake-column-ctsm-audit.md Section 7.1.
+    #
+    # Why hill_elev = -6.0 m: chain-bookkeeping value, not a physical lake
+    # bottom. Constraint: lake hill_elev must be more negative than the
+    # deepest land bin's mean (-5.13 m for bin 1 of the 24-bin scheme) to
+    # satisfy CTSM chain monotonicity. Empirical lake geometry doesn't reach
+    # that depth (NWI mean -2.53 m, Lee 2023 spill 2.64 m), so the value is
+    # set 0.87 m below the floor with PI's blessing. Tuning deferred to model
+    # output. See docs/lake-column-ctsm-audit.md Section 5.2.1.
+    print_section("Step 5d: Lake Column (Phase E.5)")
+
+    lake_n_pixels = int(np.sum(water_mask > 0))
+    lake_area_m2 = float(lake_n_pixels) * (PIXEL_SIZE**2)
+    lake_perimeter_m = compute_lake_perimeter(water_mask, PIXEL_SIZE)
+    lake_hill_width_m = lake_perimeter_m / 2.0
+
+    print_progress(f"  NWI water pixels: {lake_n_pixels:,}")
+    print_progress(f"  Lake area: {lake_area_m2 / 1e6:.3f} km^2")
+    print_progress(
+        f"  Lake perimeter (boundary-pixel approx): {lake_perimeter_m:,.0f} m"
+    )
+    print_progress(f"  Lake hill_width (1/2 perimeter): {lake_hill_width_m:,.0f} m")
+    print_progress(f"  Lake hill_elev (locked 2026-05-04): {LAKE_HILL_ELEV_M} m")
+
+    lake_element = {
+        "aspect_name": "Lake",
+        "aspect_bin": 0,
+        "hand_bin": -1,  # sentinel: lake is not a HAND bin
+        "is_lake": True,
+        "height": LAKE_HILL_ELEV_M,
+        "distance": LAKE_HILL_DISTANCE_M,
+        "area": lake_area_m2,
+        "slope": LAKE_HILL_SLOPE,
+        "aspect": LAKE_HILL_ASPECT_DEG,
+        "width": lake_hill_width_m,
+    }
+
+    # Prepend lake to elements list — lake gets chain index 1, land columns
+    # shift to indices 2..25.
+    params["elements"] = [lake_element] + params["elements"]
+    params["metadata"]["lake_pixels"] = lake_n_pixels
+    params["metadata"]["lake_area_m2"] = lake_area_m2
+    params["metadata"]["lake_perimeter_m"] = lake_perimeter_m
+    params["metadata"]["lake_hill_elev_m"] = LAKE_HILL_ELEV_M
+    params["metadata"]["lake_hill_distance_m"] = LAKE_HILL_DISTANCE_M
+    params["metadata"]["lake_hill_width_m"] = lake_hill_width_m
 
     # =========================================================================
     # Step 6: Save Results
@@ -1330,6 +1581,10 @@ def main():
         lc_m=lc_m,
         accum_threshold=accum_threshold,
         min_wavelength=MIN_WAVELENGTH,
+        q01=q01,
+        q99=q99,
+        n_pre_trim=n_pre_trim,
+        n_post_trim=n_post_trim,
     )
 
     # Summary text
@@ -1357,24 +1612,47 @@ def main():
         f.write(f"  Stream width: {stream_width:.1f} m (INTERIM power law)\n")
         f.write(f"  Stream slope: {stream_slope_val:.6f} m/m\n\n")
 
-        f.write("HAND:\n")
+        f.write("HAND (Phase E.5: bin on raw_hand = hand - dep_fill):\n")
         f.write("-" * 40 + "\n")
-        f.write(f"  Range: 0 - {np.max(hand_positive):.1f} m\n")
-        f.write(f"  Median: {np.median(hand_positive):.1f} m\n")
-        f.write(f"  HAND bins: {hand_bounds.tolist()}\n\n")
-
-        f.write(f"Hillslope Elements ({N_ASPECT_BINS * N_HAND_BINS} total):\n")
-        f.write("-" * 60 + "\n")
         f.write(
-            f"{'Aspect':<10} {'Bin':<5} {'Height':<8} "
-            f"{'Distance':<10} {'Area':<10} {'Width':<8}\n"
+            f"  Conditioned-HAND positive range: 0 - {np.max(hand_positive):.1f} m\n"
         )
-        f.write("-" * 60 + "\n")
+        f.write(f"  Conditioned-HAND median: {np.median(hand_positive):.1f} m\n")
+        f.write(f"  Q01 cutoff (raw HAND): {q01:.4f} m\n")
+        f.write(f"  Q99 cutoff (raw HAND): {q99:.4f} m\n")
+        f.write(f"  Pixels pre-trim:  {n_pre_trim:,}\n")
+        f.write(f"  Pixels post-trim: {n_post_trim:,}\n")
+        f.write(f"  Land bin edges (24 bins): {hand_bounds.tolist()}\n\n")
 
-        for elem in params["elements"]:
+        f.write("Lake Column (Phase E.5, chain index 1; locked 2026-05-04):\n")
+        f.write("-" * 60 + "\n")
+        f.write(f"  hill_elev:     {LAKE_HILL_ELEV_M} m  (chain-bookkeeping value)\n")
+        f.write(
+            f"  hill_distance: {LAKE_HILL_DISTANCE_M} m  (PI direction; ~stream width)\n"
+        )
+        f.write(
+            f"  hill_area:     {lake_area_m2 / 1e6:.3f} km^2  ({lake_n_pixels:,} NWI water px)\n"
+        )
+        f.write(f"  hill_width:    {lake_hill_width_m:,.0f} m  (1/2 NWI perimeter)\n")
+        f.write(f"  hill_slope:    {LAKE_HILL_SLOPE} (lake-bottom framing)\n\n")
+
+        f.write(
+            f"Hillslope Elements ({len(params['elements'])} total: "
+            f"{N_LAKE_COLUMNS} lake + {N_ASPECT_BINS * N_LAND_BINS} land):\n"
+        )
+        f.write("-" * 70 + "\n")
+        f.write(
+            f"{'Col':<5} {'Type':<8} {'Bin':<5} {'Height':<10} "
+            f"{'Distance':<10} {'Area_km2':<10} {'Width':<8}\n"
+        )
+        f.write("-" * 70 + "\n")
+
+        for col_i, elem in enumerate(params["elements"], start=1):
+            label = "Lake" if elem.get("is_lake") else elem["aspect_name"]
+            bin_str = "-" if elem.get("is_lake") else str(elem["hand_bin"] + 1)
             f.write(
-                f"{elem['aspect_name']:<10} {elem['hand_bin'] + 1:<5} "
-                f"{elem['height']:<8.1f} {elem['distance']:<10.0f} "
+                f"{col_i:<5} {label:<8} {bin_str:<5} "
+                f"{elem['height']:<10.3f} {elem['distance']:<10.0f} "
                 f"{elem['area'] / 1e6:<10.3f} {elem['width']:<8.0f}\n"
             )
 

@@ -142,119 +142,83 @@ def compute_hand_bins(
     return bounds
 
 
-def compute_hand_bins_log(
-    hand: np.ndarray,
-    n_bins: int = 8,
+def compute_hand_bins_tai_focused(
+    raw_hand_min: float,
+    raw_hand_max: float,
 ) -> np.ndarray:
-    """Log-spaced HAND bins with percentile-based range.
+    """Phase E.5 24-bin TAI-focused raw-HAND bin scheme (locked 2026-05-04).
 
-    Uses Q1/Q99 of positive HAND values as geomspace endpoints. Bins are
-    denser near the stream (low HAND) where TAI dynamics concentrate.
+    Returns 25 hand-tuned edges (24 bins) spanning the trimmed raw-HAND
+    distribution, with the outermost edges set dynamically to the run's
+    Q01/Q99 cutoffs. Asymmetric tilt: 12 flood-zone bins (raw HAND < 0)
+    and 12 upland bins (raw HAND > 0). The 0.25 m floor in the TAI core
+    is set by the LIDAR 2-sigma distinguishability rule for NEON
+    DP3.30024.001 (sigma(raw_hand) ~ 0.12 m at OSBS); the smooth width
+    progression 0.25 -> 0.5 -> 1.0 -> 2.0 -> 7.0 m mirrors the DOE BER
+    framing that TAI process gradients attenuate gradually upland.
 
-    The 2m Swenson constraint (lowest bin upper bound <= 2m) is satisfied by
-    design at OSBS — the first several log-spaced bins are well below 2m.
+    Internal edges are hard-coded from the diagnostic at
+    output/osbs/2026-05-04_bin_schemes/setup_working.png. Pending PI
+    review; iterate by editing this list.
 
-    See docs/hillslope-binning-rationale.md for full justification.
+    See:
+      - phases/E.5-bin-redesign.md "Working bin scheme" subsection for
+        the per-bin density table and design rationale.
+      - phases/E.5-bin-redesign.md "Bin minimum width" subsection for
+        the LIDAR error budget that motivates the 0.25 m floor.
+      - docs/lake-column-ctsm-audit.md Section 6.9 for the filter
+        recipe that produces the trimmed raw_hand population fed to
+        this binning step.
 
     Parameters
     ----------
-    hand : 1D array of HAND values (pre-filtered to valid pixels)
-    n_bins : number of elevation bins (default 8)
+    raw_hand_min : float
+        Lower outer edge (typically Q01 of raw HAND, e.g., -6.34 m).
+    raw_hand_max : float
+        Upper outer edge (typically Q99 of raw HAND, e.g., +17.46 m).
 
     Returns
     -------
-    1D array of n_bins+1 bin boundaries: [0, geomspace..., 1e6]
+    1D array of 25 edges defining 24 bins.
     """
-    valid = (hand > 0) & np.isfinite(hand)
-    hand_valid = hand[valid]
-
-    if hand_valid.size == 0:
-        # Degenerate: no valid HAND values. Return uniform spacing.
-        return np.concatenate([[0], np.linspace(0.5, 10, n_bins - 1), [1e6]])
-
-    q01 = float(np.percentile(hand_valid, 1))
-    q99 = float(np.percentile(hand_valid, 99))
-
-    if q01 <= 0 or q01 >= q99:
-        # Degenerate distribution: fall back to linspace over the range.
-        q01 = float(np.min(hand_valid))
-        q99 = float(np.max(hand_valid))
-        if q01 <= 0 or q01 >= q99:
-            return np.concatenate([[0], np.linspace(0.5, 10, n_bins - 1), [1e6]])
-        internal = np.linspace(q01, q99, n_bins - 1)
-    else:
-        internal = np.geomspace(q01, q99, n_bins - 1)
-
-    return np.concatenate([[0], internal, [1e6]])
-
-
-def compute_hand_bins_hybrid(
-    hand: np.ndarray,
-    fixed_upper: float = 0.5,
-    fixed_step: float = 0.1,
-    n_log: int = 10,
-    upper_percentile: float = 99.0,
-) -> np.ndarray:
-    """Hybrid fixed-floor + log-tail HAND bins.
-
-    Produces bin boundaries in three segments:
-      1. Fixed linear bins from 0 to ``fixed_upper`` in ``fixed_step``
-         increments — gives explicit TAI-zone resolution.
-      2. Log-spaced bins from ``fixed_upper`` to the upper percentile
-         (default Q99) of positive HAND — smoothly covers the upland
-         gradient.
-      3. A sentinel bin capped at 1e6 — catches the ridge tail above Q99.
-
-    Default parameters produce 16 bins for OSBS:
-      - Bins 1-5: [0, 0.1, 0.2, 0.3, 0.4, 0.5] m (fixed 10cm)
-      - Bins 6-15: 10 log-spaced boundaries from 0.5m to Q99
-      - Bin 16: [Q99, 1e6] (ridge tail, ~1% of land pixels)
-
-    Bin 1 [0, fixed_step] is designed to absorb resolve_flats
-    micro-gradient noise on flat upland pixels. At OSBS this captures
-    ~22% of land pixels at effectively-stream-level elevations.
-
-    See docs/hillslope-binning-rationale.md for the full rationale and
-    permutation testing that led to this scheme.
-
-    Parameters
-    ----------
-    hand : 1D array of HAND values (pre-filtered to valid land pixels)
-    fixed_upper : upper bound of the fixed-spacing zone (meters)
-    fixed_step : fixed bin width in the 0-fixed_upper zone (meters)
-    n_log : number of log-spaced bins above fixed_upper (excluding sentinel)
-    upper_percentile : percentile of positive HAND for the log-tail upper
-        endpoint. Anything above falls into the sentinel bin.
-
-    Returns
-    -------
-    1D array of bin boundaries.
-    Total bins = int(fixed_upper / fixed_step) + n_log + 1 (sentinel).
-    Default: 5 + 10 + 1 = 16 bins.
-    """
-    valid = (hand > 0) & np.isfinite(hand)
-    hand_valid = hand[valid]
-
-    # Fixed-spacing segment: [0, fixed_step, 2*fixed_step, ..., fixed_upper]
-    n_fixed = int(round(fixed_upper / fixed_step))
-    fixed_bounds = np.linspace(0.0, fixed_upper, n_fixed + 1)
-
-    if hand_valid.size == 0:
-        # Degenerate: no positive HAND. Fall back to linear above fixed_upper.
-        log_tail = np.linspace(fixed_upper, fixed_upper + 10 * n_log, n_log + 1)
-        return np.concatenate([fixed_bounds, log_tail[1:], [1e6]])
-
-    q_upper = float(np.percentile(hand_valid, upper_percentile))
-    if q_upper <= fixed_upper:
-        # Upper percentile lies inside the fixed zone (flat/degenerate terrain).
-        # Fall back to linear tail.
-        log_tail = np.linspace(fixed_upper, fixed_upper + 10 * n_log, n_log + 1)
-        return np.concatenate([fixed_bounds, log_tail[1:], [1e6]])
-
-    # Log-spaced tail: n_log+1 boundary points from fixed_upper to q_upper,
-    # drop the first (duplicate of fixed_upper), keep the remaining n_log.
-    log_tail = np.geomspace(fixed_upper, q_upper, n_log + 1)
-    return np.concatenate([fixed_bounds, log_tail[1:], [1e6]])
+    # Hand-tuned internal edges (m). Bin breakdown:
+    #   Bin 1:           [raw_hand_min, -4.0]   deep tail sentinel
+    #   Bin 2:           [-4.0, -3.0]           deeper FZ
+    #   Bins 3-4:        [-3.0, -2.0]           deep FZ TAI (0.5 m)
+    #   Bins 5-14:       [-2.0, +0.5]           TAI core (10 x 0.25 m)
+    #   Bins 15-17:      [+0.5, +2.0]           inner upland TAI (0.5 m)
+    #   Bins 18-21:      [+2.0, +6.0]           mid upland (1.0 m)
+    #   Bins 22-23:      [+6.0, +10.0]          mid-to-ridge (2.0 m)
+    #   Bin 24:          [+10.0, raw_hand_max]  ridge sentinel (~7 m)
+    return np.array(
+        [
+            raw_hand_min,
+            -4.0,
+            -3.0,
+            -2.5,
+            -2.0,
+            -1.75,
+            -1.5,
+            -1.25,
+            -1.0,
+            -0.75,
+            -0.5,
+            -0.25,
+            0.0,
+            0.25,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            3.0,
+            4.0,
+            5.0,
+            6.0,
+            8.0,
+            10.0,
+            raw_hand_max,
+        ]
+    )
 
 
 def fit_trapezoidal_width(
