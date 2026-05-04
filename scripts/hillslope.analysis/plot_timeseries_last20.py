@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-plot_timeseries_last20.py - Recent period time series by hillslope groups
+plot_timeseries_last20.py - Recent period time series by HAND zone
 
 PURPOSE:
-    Plot last N years of column-level data, binned by direction (aspect) and
-    elevation position. Shows how different hillslope components contribute
-    to the gridcell average.
+    Plot last N years of column-level data, grouped by HAND elevation zone
+    (TAI / Transition / Upland). Shows how different parts of the hillslope
+    contribute to the gridcell average.
+
+    Supports any single-aspect hillslope layout (1xN columns).
 
 USAGE:
     python3 plot_timeseries_last20.py <input_file> <output_file> <variable> [--years=N]
@@ -23,14 +25,13 @@ EXAMPLE:
 
 OUTPUT:
     2-panel figure:
-    - Top: Variable binned by direction (North/East/South/West)
-    - Bottom: Variable binned by elevation (Outlet/Lower/Upper/Ridge)
+    - Top: Variable by HAND zone (TAI / Transition / Upland)
+    - Bottom: Individual column traces colored by HAND elevation
 
 NOTES:
     - Uses weighted averaging based on column area fractions (cols1d_wtgcell)
-    - Hillslope binning uses columns 0-15 (excludes stream column 16)
-    - Gridcell average includes all 17 columns (including stream)
-    - Weights are renormalized within each group for proper averaging
+    - HAND zones: TAI (<0.5m), Transition (0.5-5m), Upland (>=5m)
+    - Bareground column excluded from zone grouping, included in gridcell avg
 """
 
 # =============================================================================
@@ -41,29 +42,58 @@ import argparse
 import xarray as xr
 import matplotlib
 
-matplotlib.use("Agg")  # Non-interactive backend for headless systems
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import numpy as np
 
 # =============================================================================
 # Constants
 # =============================================================================
 
-# Column groupings for hillslope analysis
-# Each hillslope has 4 columns: Outlet (0), Lower (1), Upper (2), Ridge (3)
-DIRECTION_COLS = {
-    "North": [0, 1, 2, 3],
-    "East": [4, 5, 6, 7],
-    "South": [8, 9, 10, 11],
-    "West": [12, 13, 14, 15],
+# HAND elevation zone boundaries (meters)
+TAI_THRESHOLD = 0.5
+TRANSITION_THRESHOLD = 5.0
+
+ZONE_STYLES = {
+    "TAI (<0.5m)": {"color": "#2166ac"},
+    "Transition (0.5-5m)": {"color": "#b2182b"},
+    "Upland (>=5m)": {"color": "#4daf4a"},
 }
 
-ELEVATION_COLS = {
-    "Outlet": [0, 4, 8, 12],
-    "Lower": [1, 5, 9, 13],
-    "Upper": [2, 6, 10, 14],
-    "Ridge": [3, 7, 11, 15],
-}
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+def detect_hillslope_columns(ds):
+    """Return indices of hillslope columns, sorted by elevation."""
+    h_idx = ds["hillslope_index"].values
+    mask = (h_idx > 0) & (h_idx < 9000)
+    cols = np.where(mask)[0]
+    elevs = ds["hillslope_elev"].values[cols]
+    order = np.argsort(elevs)
+    return cols[order]
+
+
+def classify_zones(elevations):
+    """Classify columns into TAI / Transition / Upland by HAND elevation."""
+    zones = {}
+    tai = np.where(elevations < TAI_THRESHOLD)[0]
+    trans = np.where(
+        (elevations >= TAI_THRESHOLD) & (elevations < TRANSITION_THRESHOLD)
+    )[0]
+    upland = np.where(elevations >= TRANSITION_THRESHOLD)[0]
+
+    if len(tai) > 0:
+        zones["TAI (<0.5m)"] = tai
+    if len(trans) > 0:
+        zones["Transition (0.5-5m)"] = trans
+    if len(upland) > 0:
+        zones["Upland (>=5m)"] = upland
+    return zones
+
 
 # =============================================================================
 # Main plotting function
@@ -74,7 +104,7 @@ def plot_timeseries_last20(
     input_file: str, output_file: str, variable: str, n_years: int = 20
 ) -> None:
     """
-    Plot last N years of column data binned by direction and elevation.
+    Plot last N years of column data by HAND zone and individual columns.
 
     Parameters
     ----------
@@ -86,11 +116,6 @@ def plot_timeseries_last20(
         Name of variable to plot
     n_years : int
         Number of recent years to plot (default: 20)
-
-    Returns
-    -------
-    None
-        Saves plot to output_file
     """
 
     # -------------------------------------------------------------------------
@@ -98,68 +123,67 @@ def plot_timeseries_last20(
     # -------------------------------------------------------------------------
     ds = xr.open_dataset(input_file, decode_times=False)
 
-    # Validate variable exists
     if variable not in ds:
         print(f"ERROR: Variable '{variable}' not found in {input_file}")
         print(f"Available variables: {list(ds.data_vars)}")
         ds.close()
         sys.exit(1)
 
-    # -------------------------------------------------------------------------
-    # Extract variable data
-    # -------------------------------------------------------------------------
     var_data = ds[variable].values
-
-    # Validate dimensions (should be time x column)
     if var_data.ndim != 2:
-        print(f"ERROR: Expected 2D variable (time, column), got shape {var_data.shape}")
+        print(f"ERROR: Expected 2D (time, column), got shape {var_data.shape}")
         ds.close()
         sys.exit(1)
 
-    # Get metadata
     units = ds[variable].attrs.get("units", "")
+
+    # -------------------------------------------------------------------------
+    # Detect columns
+    # -------------------------------------------------------------------------
+    h_cols = detect_hillslope_columns(ds)
+    n_hillslope = len(h_cols)
+    n_total = var_data.shape[1]
+
+    elevations = ds["hillslope_elev"].values[h_cols]
+    weights_all = ds["cols1d_wtgcell"].values[:n_total]
+
+    ds.close()
 
     # -------------------------------------------------------------------------
     # Extract last N years
     # -------------------------------------------------------------------------
     total_years = var_data.shape[0]
     start_idx = max(0, total_years - n_years)
-    var_data = var_data[start_idx:total_years, :]
+    var_data = var_data[start_idx:]
     actual_years = var_data.shape[0]
 
     # -------------------------------------------------------------------------
-    # Get column weights for area-weighted averaging
+    # Gridcell average (all columns including bareground)
     # -------------------------------------------------------------------------
-    # All 17 columns (including stream) for gridcell average
-    weights_all = ds["cols1d_wtgcell"].values[0:17]
-    # Hillslope columns only (exclude stream) for grouped averages
-    weights = weights_all[0:16]
-
-    ds.close()
+    gridcell_avg = (var_data * weights_all).sum(axis=1)
 
     # -------------------------------------------------------------------------
-    # Calculate gridcell average (all 17 columns including stream)
+    # Zone-grouped weighted averages
     # -------------------------------------------------------------------------
-    gridcell_avg = (var_data[:, 0:17] * weights_all).sum(axis=1)
+    zones = classify_zones(elevations)
+    zone_data = {}
+    for zone_name, zone_indices in zones.items():
+        # zone_indices are relative to h_cols; convert to absolute
+        abs_cols = h_cols[zone_indices]
+        zone_weights = weights_all[abs_cols]
+        w_sum = zone_weights.sum()
+        if w_sum > 0:
+            renorm = zone_weights / w_sum
+            zone_data[zone_name] = (var_data[:, abs_cols] * renorm).sum(axis=1)
 
     # -------------------------------------------------------------------------
-    # Calculate weighted averages for each direction group
+    # Select representative columns for bottom panel
     # -------------------------------------------------------------------------
-    direction_data = {}
-    for name, cols in DIRECTION_COLS.items():
-        group_weights = weights[cols]
-        # Renormalize weights so they sum to 1 within the group
-        renorm_weights = group_weights / group_weights.sum()
-        direction_data[name] = (var_data[:, cols] * renorm_weights).sum(axis=1)
-
-    # -------------------------------------------------------------------------
-    # Calculate weighted averages for each elevation group
-    # -------------------------------------------------------------------------
-    elevation_data = {}
-    for name, cols in ELEVATION_COLS.items():
-        group_weights = weights[cols]
-        renorm_weights = group_weights / group_weights.sum()
-        elevation_data[name] = (var_data[:, cols] * renorm_weights).sum(axis=1)
+    if n_hillslope <= 8:
+        rep_indices = np.arange(n_hillslope)
+    else:
+        rep_indices = np.linspace(0, n_hillslope - 1, 6, dtype=int)
+        rep_indices = np.unique(rep_indices)
 
     # -------------------------------------------------------------------------
     # Create 2-panel figure
@@ -168,12 +192,10 @@ def plot_timeseries_last20(
 
     time = np.arange(actual_years)
     ylabel = f"{variable} ({units})" if units else variable
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
     # -------------------------------------------------------------------------
-    # Top panel: By direction (aspect)
+    # Top panel: By HAND zone
     # -------------------------------------------------------------------------
-    # Plot gridcell average first (underneath colored lines)
     ax1.plot(
         time,
         gridcell_avg,
@@ -185,15 +207,21 @@ def plot_timeseries_last20(
         zorder=1,
     )
 
-    # Plot each direction
-    for i, (name, data) in enumerate(direction_data.items()):
+    for zone_name, data in zone_data.items():
+        style = ZONE_STYLES[zone_name]
         ax1.plot(
-            time, data, linewidth=2, color=colors[i], alpha=0.85, label=name, zorder=2
+            time,
+            data,
+            linewidth=2,
+            color=style["color"],
+            alpha=0.85,
+            label=zone_name,
+            zorder=2,
         )
 
     ax1.set_ylabel(ylabel, fontsize=12)
     ax1.set_title(
-        f"{variable} (Annual) - Last {actual_years} Years\nBy Direction",
+        f"{variable} (Annual) - Last {actual_years} Years\nBy HAND Zone",
         fontsize=13,
         fontweight="bold",
     )
@@ -201,7 +229,7 @@ def plot_timeseries_last20(
     ax1.legend(loc="best", fontsize=10)
 
     # -------------------------------------------------------------------------
-    # Bottom panel: By elevation position
+    # Bottom panel: Individual column traces
     # -------------------------------------------------------------------------
     ax2.plot(
         time,
@@ -214,25 +242,44 @@ def plot_timeseries_last20(
         zorder=1,
     )
 
-    for i, (name, data) in enumerate(elevation_data.items()):
+    cmap = cm.viridis
+    elev_min, elev_max = elevations[0], elevations[-1]
+    elev_range = elev_max - elev_min if elev_max > elev_min else 1.0
+
+    for i in rep_indices:
+        abs_col = h_cols[i]
+        elev = elevations[i]
+        norm_elev = (elev - elev_min) / elev_range
+        color = cmap(norm_elev)
         ax2.plot(
-            time, data, linewidth=2, color=colors[i], alpha=0.85, label=name, zorder=2
+            time,
+            var_data[:, abs_col],
+            linewidth=1.5,
+            color=color,
+            alpha=0.8,
+            label=f"HAND {elev:.1f}m",
+            zorder=2,
         )
 
     ax2.set_xlabel(f"Year (Last {actual_years})", fontsize=12)
     ax2.set_ylabel(ylabel, fontsize=12)
-    ax2.set_title("By Elevation Position", fontsize=13, fontweight="bold")
+    ax2.set_title(
+        "Individual Columns (by HAND elevation)", fontsize=13, fontweight="bold"
+    )
     ax2.grid(True, alpha=0.3, linestyle="--")
-    ax2.legend(loc="best", fontsize=10)
+    ax2.legend(loc="best", fontsize=9, ncol=2)
 
-    # -------------------------------------------------------------------------
-    # Save figure
-    # -------------------------------------------------------------------------
     plt.tight_layout()
     plt.savefig(output_file, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     print(f"Saved: {output_file}")
+    print(
+        f"\n  Columns: {n_hillslope} hillslope + "
+        f"{n_total - n_hillslope} other = {n_total} total"
+    )
+    for zone_name, zone_indices in zones.items():
+        print(f"  {zone_name}: {len(zone_indices)} columns")
 
 
 # =============================================================================
@@ -243,7 +290,7 @@ def plot_timeseries_last20(
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Plot recent time series binned by hillslope groups",
+        description="Plot recent time series by HAND zone",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

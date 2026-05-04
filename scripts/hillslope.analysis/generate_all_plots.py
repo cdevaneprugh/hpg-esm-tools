@@ -13,23 +13,11 @@ USAGE:
 PREREQUISITES:
     Data files in data/ directory:
     - combined_h0_20yr.nc  (gridcell-level, 20-year bins)
-    - combined_h1.nc       (column-level, full resolution)
     - combined_h1_1yr.nc   (column-level, annual bins)
     - combined_h1_20yr.nc  (column-level, 20-year bins)
 
 OUTPUT:
-    All plots saved to plots/ directory:
-    - {VAR}_full.png           Full simulation timeseries (h0, 20yr bins)
-    - {VAR}_last20.png         Last 20 years by hillslope group (h1, 1yr bins)
-    - ZWT_hillslope_profile.png  Water table vs elevation profile
-    - elevation_width_overlay.png  Hillslope geometry
-    - column_areas.png         Column area distribution
-    - pft_distribution.png     PFT pie chart
-
-NOTES:
-    - Modify VARIABLES list to change which variables are plotted
-    - Requires all input files to exist before running
-    - Creates plots/ directory if it doesn't exist
+    All plots saved to plots/ directory.
 """
 
 # =============================================================================
@@ -40,20 +28,18 @@ import os
 from plot_timeseries_full import plot_timeseries_full
 from plot_timeseries_last20 import plot_timeseries_last20
 from plot_zwt_hillslope_profile import plot_zwt_profile
-from plot_elevation_width_overlay import plot_overlay_profiles
-from plot_col_areas import plot_column_areas
-from plot_pft_distribution import plot_pft_distribution
+from plot_hillslope_cross_section import plot_cross_section
+from plot_tai_heatmap import plot_tai_heatmap
+from plot_carbon_water_coupling import plot_carbon_water
 
 # =============================================================================
 # Configuration
 # =============================================================================
 
-# Data file paths (relative to script directory)
 DATA_DIR = "data"
 PLOT_DIR = "plots"
 
 H0_20YR = os.path.join(DATA_DIR, "combined_h0_20yr.nc")
-H1_RAW = os.path.join(DATA_DIR, "combined_h1.nc")
 H1_1YR = os.path.join(DATA_DIR, "combined_h1_1yr.nc")
 H1_20YR = os.path.join(DATA_DIR, "combined_h1_20yr.nc")
 
@@ -68,14 +54,13 @@ VARIABLES = ["GPP", "TOTECOSYSC", "ZWT"]
 def main():
     """Generate all standard hillslope analysis plots."""
 
-    # Ensure plot directory exists
     os.makedirs(PLOT_DIR, exist_ok=True)
 
     # -------------------------------------------------------------------------
     # Full simulation timeseries (gridcell-level, 20-year bins)
     # -------------------------------------------------------------------------
     print("=" * 60)
-    print("Generating full simulation timeseries plots...")
+    print("Full simulation timeseries (h0, 20yr bins)...")
     print("=" * 60)
     for var in VARIABLES:
         output = os.path.join(PLOT_DIR, f"{var}_full.png")
@@ -83,10 +68,10 @@ def main():
         print()
 
     # -------------------------------------------------------------------------
-    # Recent period timeseries (column-level, annual bins)
+    # Recent period timeseries by HAND zone (column-level, annual bins)
     # -------------------------------------------------------------------------
     print("=" * 60)
-    print("Generating last 20 years timeseries plots...")
+    print("Recent timeseries by HAND zone (h1, 1yr bins)...")
     print("=" * 60)
     for var in VARIABLES:
         output = os.path.join(PLOT_DIR, f"{var}_last20.png")
@@ -97,35 +82,41 @@ def main():
     # Water table profile (column-level, 20-year bins)
     # -------------------------------------------------------------------------
     print("=" * 60)
-    print("Generating water table profile plot...")
+    print("Water table profile (h1, 20yr bins)...")
     print("=" * 60)
     output = os.path.join(PLOT_DIR, "ZWT_hillslope_profile.png")
-    plot_zwt_profile(H1_20YR, output, "North")
+    plot_zwt_profile(H1_20YR, output)
     print()
 
     # -------------------------------------------------------------------------
-    # Hillslope geometry plots (column-level, raw)
+    # Hillslope cross-section (column-level, 20-year bins)
     # -------------------------------------------------------------------------
     print("=" * 60)
-    print("Generating geometry plots...")
+    print("Hillslope cross-section (h1, 20yr bins)...")
     print("=" * 60)
-
-    output = os.path.join(PLOT_DIR, "elevation_width_overlay.png")
-    plot_overlay_profiles(H1_RAW, output)
-    print()
-
-    output = os.path.join(PLOT_DIR, "column_areas.png")
-    plot_column_areas(H1_RAW, output)
+    output = os.path.join(PLOT_DIR, "cross_section.png")
+    plot_cross_section(H1_20YR, output)
     print()
 
     # -------------------------------------------------------------------------
-    # PFT distribution (column-level, raw)
+    # TAI heatmaps (column-level, annual bins)
     # -------------------------------------------------------------------------
     print("=" * 60)
-    print("Generating PFT distribution plot...")
+    print("TAI heatmaps (h1, 1yr bins)...")
     print("=" * 60)
-    output = os.path.join(PLOT_DIR, "pft_distribution.png")
-    plot_pft_distribution(H1_RAW, output)
+    for var in ["ZWT", "GPP"]:
+        output = os.path.join(PLOT_DIR, f"{var}_heatmap.png")
+        plot_tai_heatmap(H1_1YR, output, var)
+        print()
+
+    # -------------------------------------------------------------------------
+    # Carbon-water coupling (column-level, annual bins)
+    # -------------------------------------------------------------------------
+    print("=" * 60)
+    print("Carbon-water coupling (h1, 1yr bins)...")
+    print("=" * 60)
+    output = os.path.join(PLOT_DIR, "carbon_water_coupling.png")
+    plot_carbon_water(H1_1YR, output, "TOTSOMC")
     print()
 
     # -------------------------------------------------------------------------

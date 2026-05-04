@@ -4,10 +4,10 @@ Analysis scripts for CTSM (Community Terrestrial Systems Model) hillslope hydrol
 
 ## Overview
 
-This analysis examines hillslope hydrological processes in a ~867-year CTSM simulation with explicit hillslope representation. The model divides the gridcell into:
-- **4 hillslopes** representing cardinal directions (North, East, South, West)
-- **4 elevation positions per hillslope** (Outlet, Lower, Upper, Ridge)
-- **16 total hillslope columns** + 1 stream column (column 16)
+This analysis examines hillslope hydrological processes in CTSM simulations with explicit hillslope representation. The OSBS cases use a single-aspect layout with variable bin count:
+- **1 aspect** (OSBS is too flat for meaningful aspect differentiation)
+- **N HAND elevation bins** (8 or 16 depending on the case) + 1 bareground column
+- Scripts auto-detect column count and layout from the NetCDF data
 
 ## Data Files
 
@@ -32,37 +32,24 @@ This analysis examines hillslope hydrological processes in a ~867-year CTSM simu
 
 ## Column Organization
 
-### Column-to-Hillslope Mapping
-```
-Columns 0-3:   North hillslope  (hillslope_index = 1, aspect ~0°)
-Columns 4-7:   East hillslope   (hillslope_index = 2, aspect ~90°)
-Columns 8-11:  South hillslope  (hillslope_index = 3, aspect ~180°)
-Columns 12-15: West hillslope   (hillslope_index = 4, aspect ~270°)
-Column 16:     Stream/river     (hillslope_index = -9999)
-```
+### Column Detection
+Scripts auto-detect hillslope columns using: `hillslope_index > 0 & < 9000`. The remaining column(s) are bareground (`hillslope_index == -9999`, `cols1d_itype_lunit == 2`). Hillslope columns are sorted by `hillslope_elev` ascending (stream-to-ridge).
 
-### Column-to-Elevation Mapping
-Each hillslope has 4 positions sorted by elevation:
-```
-Position  North  East   South  West   Elevation (m)
-Outlet    0      4      8      12     ~0.17-0.19
-Lower     1      5      9      13     ~1.24
-Upper     2      6      10     14     ~2.79-2.82
-Ridge     3      7      11     15     ~8.07-8.14
-```
+### OSBS Cases
+| Case | Columns | Layout |
+|------|---------|--------|
+| osbs2.branch.v4 | 9 | 1x8 HAND bins + bareground (Swenson reference) |
+| osbs4.branch.v1 | 9 | 1x8 HAND bins + bareground (PI spillheight) |
+| osbs4.branch.v2 | 17 | 1x16 HAND bins + bareground (16-bin hybrid + spillheight) |
+
+### HAND Zone Grouping
+For analysis, columns are grouped by HAND elevation:
+- **TAI zone**: HAND elevation < 0.5m (near-stream, wetland)
+- **Transition zone**: 0.5m <= HAND < 5.0m
+- **Upland zone**: HAND >= 5.0m
 
 ### Column Weights (Area Fractions)
-The variable `cols1d_wtgcell` provides area fractions for each column relative to the total gridcell:
-
-```
-Hillslope  Total Weight  % of Gridcell
-North      0.2422        24.22%
-East       0.2429        24.29%
-South      0.2495        24.95%
-West       0.2531        25.31%
-Stream     0.0124        1.24%
-TOTAL      1.0000        100.00%
-```
+The variable `cols1d_wtgcell` provides area fractions for each column relative to the total gridcell. Weights are renormalized within each zone for proper averaging.
 
 ## Weighted Averaging Methodology
 
@@ -83,53 +70,29 @@ renorm_weights = weights / weights.sum()
 weighted_avg = (VAR[:, cols] * renorm_weights).sum(axis=1)
 ```
 
-### Example: North Hillslope Average
+### Example: TAI Zone Average
 ```python
-# North hillslope columns
-north_cols = [0, 1, 2, 3]
+# Auto-detect hillslope columns
+h_idx = ds["hillslope_index"].values
+h_cols = np.where((h_idx > 0) & (h_idx < 9000))[0]
+elevations = ds["hillslope_elev"].values[h_cols]
 
-# Original weights (sum = 0.2422)
-weights = [0.0760, 0.0529, 0.0560, 0.0574]
-
-# Renormalized weights (sum = 1.0)
-renorm_weights = [0.3136, 0.2183, 0.2311, 0.2370]
-
-# Weighted average
-north_avg = sum(VAR[:, col] * w for col, w in zip(north_cols, renorm_weights))
-```
-
-### Binning Strategies
-
-#### By Cardinal Direction (4 bins)
-Group all 4 elevation positions within each hillslope:
-```python
-direction_cols = {
-    'North': [0, 1, 2, 3],
-    'East':  [4, 5, 6, 7],
-    'South': [8, 9, 10, 11],
-    'West':  [12, 13, 14, 15]
-}
-```
-
-#### By Elevation Position (4 bins)
-Group same elevation positions across all hillslopes:
-```python
-elevation_cols = {
-    'Outlet': [0, 4, 8, 12],
-    'Lower':  [1, 5, 9, 13],
-    'Upper':  [2, 6, 10, 14],
-    'Ridge':  [3, 7, 11, 15]
-}
+# TAI zone: HAND < 0.5m
+tai_mask = elevations < 0.5
+tai_cols = h_cols[tai_mask]
+tai_weights = cols1d_wtgcell[tai_cols]
+renorm = tai_weights / tai_weights.sum()
+tai_avg = (VAR[:, tai_cols] * renorm).sum(axis=1)
 ```
 
 #### Gridcell Average
-Include all 17 columns (hillslopes + stream):
+Include all columns (hillslope + bareground):
 ```python
-# Use original weights (already sum to 1.0)
-gridcell_avg = (VAR[:, 0:17] * cols1d_wtgcell[0:17]).sum(axis=1)
+n_total = VAR.shape[1]
+gridcell_avg = (VAR * cols1d_wtgcell[:n_total]).sum(axis=1)
 ```
 
-**Important**: Stream column is **excluded** from hillslope binning but **included** in gridcell averages.
+**Important**: Bareground column is **excluded** from zone grouping but **included** in gridcell averages.
 
 ### Validation
 Gridcell averages calculated from h1 column data match h0 gridcell values to numerical precision (< 1e-6 relative error).
@@ -196,11 +159,11 @@ python3 plot_timeseries_full.py data/combined_h0_20yr.nc plots/GPP_full.png GPP
 ---
 
 ### 2. `plot_timeseries_last20.py`
-Plots last 20 years with direction/elevation breakdown using annual binned h1 data.
+Plots last N years with HAND-zone breakdown using annual binned h1 data.
 
 **Usage:**
 ```bash
-python3 plot_timeseries_last20.py <input_file> <output_file> <variable>
+python3 plot_timeseries_last20.py <input_file> <output_file> <variable> [--years=N]
 ```
 
 **Example:**
@@ -209,18 +172,12 @@ python3 plot_timeseries_last20.py data/combined_h1_1yr.nc plots/GPP_last20.png G
 ```
 
 **Features:**
-- **Top panel**: By cardinal direction (North, East, South, West)
-- **Bottom panel**: By elevation position (Outlet, Lower, Upper, Ridge)
-- **Black dashed line**: Gridcell average (includes stream column)
-- Uses area-weighted averaging (see methodology above)
-- Line plots (no markers)
+- **Top panel**: By HAND zone (TAI / Transition / Upland)
+- **Bottom panel**: Individual column traces colored by HAND elevation
+- **Black dashed line**: Gridcell average (includes bareground)
+- Auto-detects column count and layout
 
 **Input:** h1 annual binned file (column-level data)
-
-**Calculation Details:**
-- Hillslope bins: Weighted average of columns 0-15 (excludes stream)
-- Gridcell average: Weighted average of all 17 columns (includes stream)
-- Extracts last 20 years: `data[-20:, :]`
 
 ---
 
@@ -229,100 +186,70 @@ Plots water table depth (ZWT) against hillslope elevation profile for early and 
 
 **Usage:**
 ```bash
-python3 plot_zwt_hillslope_profile.py [input_file] [output_file] [hillslope]
-```
-
-**Example:**
-```bash
-python3 plot_zwt_hillslope_profile.py data/combined_h1_20yr.nc plots/zwt_profile.png North
+python3 plot_zwt_hillslope_profile.py <input_file> <output_file>
 ```
 
 **Features:**
-- **2 panels**: Early period (years 1-20) and Recent period (last 20 years)
-- Shows hillslope surface elevation and water table elevation
-- Colored zones:
-  - Tan shading: Unsaturated zone (surface to water table)
-  - Light blue shading: Saturated zone (below water table)
-  - Dashed blue line: Stream level reference (elevation = 0)
-- Position labels: Outlet, Lower, Upper, Ridge
-- ZWT values annotated at each position
+- **2 panels**: Early and recent periods
+- Surface elevation and water table lines with zone fills
+- Auto-detects N columns, labels by HAND elevation
+- Dynamic y-axis
 
-**Input:** h1 20-year binned file (column-level 20-year averages)
-
-**Calculation:**
-```
-Water table elevation = hillslope_elev - ZWT
-```
-where ZWT is depth below surface (positive downward).
+**Input:** h1 binned file
 
 ---
 
-### 4. `plot_elevation_width_overlay.py`
-Plots hillslope elevation and width profiles with all 4 aspects overlaid.
+### 4. `plot_hillslope_cross_section.py` (NEW)
+Filled cross-section through the hillslope showing surface, water table, and ponding.
 
 **Usage:**
 ```bash
-python3 plot_elevation_width_overlay.py [input_file] [output_file]
-```
-
-**Example:**
-```bash
-python3 plot_elevation_width_overlay.py data/combined_h1.nc plots/elevation_width_overlay.png
+python3 plot_hillslope_cross_section.py <input_file> <output_file>
 ```
 
 **Features:**
-- **Left panel**: Elevation profiles (all 4 hillslopes overlaid)
-- **Right panel**: Width profiles (all 4 hillslopes overlaid)
-- Shows geometric similarity across aspects
-- 4 positions per hillslope (ridge to outlet)
+- Brown surface line, blue water table line
+- Tan/blue fills for unsaturated/saturated zones
+- Surface ponding shown if H2OSFC present in data
+- Smooth interpolated profiles
+- **2 panels**: Early and recent periods
 
-**Input:** h1 file (any time resolution - only uses spatial metadata)
+**Input:** h1 binned file
 
 ---
 
-### 5. `plot_col_areas.py`
-Bar chart of hillslope column areas.
+### 5. `plot_tai_heatmap.py` (NEW)
+Space-time heatmap showing variable evolution across the hillslope.
 
 **Usage:**
 ```bash
-python3 plot_col_areas.py [input_file] [output_file]
-```
-
-**Example:**
-```bash
-python3 plot_col_areas.py data/combined_h1.nc plots/column_areas.png
+python3 plot_tai_heatmap.py <input_file> <output_file> [variable]
 ```
 
 **Features:**
-- Bar chart showing `hillslope_area` for each column
-- Color-coded by hillslope
-- Percentage labels on bars
-- Vertical lines separate hillslopes
-- Excludes stream column (column 16)
+- X = time, Y = HAND elevation, color = variable value
+- Diverging colormap for ZWT; variable-specific colormaps for GPP, H2OSFC
+- TAI/Transition zone boundary lines
+- Default variable: ZWT
 
-**Input:** h1 file (uses `hillslope_area` variable)
+**Input:** h1 annual binned file
 
 ---
 
-### 6. `plot_pft_distribution.py`
-Pie chart of Plant Functional Type (PFT) distribution.
+### 6. `plot_carbon_water_coupling.py` (NEW)
+Multi-panel showing water-carbon coupling at three hillslope positions.
 
 **Usage:**
 ```bash
-python3 plot_pft_distribution.py [input_file] [output_file]
-```
-
-**Example:**
-```bash
-python3 plot_pft_distribution.py data/combined_h1.nc plots/pft_distribution.png
+python3 plot_carbon_water_coupling.py <input_file> <output_file> [--carbon-var=TOTSOMC]
 ```
 
 **Features:**
-- Shows PFT distribution for hillslope columns
-- All hillslope columns have identical PFT distribution
-- PFT names from CTSM parameter file
+- 3 rows: TAI (lowest), Transition (median), Upland (highest)
+- Twin axes: ZWT (left, inverted) and carbon variable (right)
+- Default carbon variable: TOTSOMC
 
-**Input:** h1 file (uses `pfts1d_itype_veg` and `pfts1d_wtcol`)
+**Input:** h1 annual binned file
 
 ---
 
@@ -331,36 +258,31 @@ Depth profiles of vertically resolved variables (soil temperature, moisture, car
 
 **Usage:**
 ```bash
-python3 plot_vr_profile.py <input_file> <output_file> <variable> [--hillslope=NAME]
-python3 plot_vr_profile.py -h
-```
-
-**Arguments:**
-- `input_file` - 20-year binned h1 NetCDF file
-- `output_file` - Output PNG filename
-- `variable` - Vertically resolved variable name (e.g., TSOI, H2OSOI_LIQ)
-- `--hillslope` - Hillslope aspect: North, East, South, West (default: North)
-
-**Examples:**
-```bash
-python3 plot_vr_profile.py data/combined_h1_20yr.nc plots/TSOI_profile.png TSOI
-python3 plot_vr_profile.py data/combined_h1_20yr.nc plots/SOILC_south.png SOILLIQ --hillslope=South
+python3 plot_vr_profile.py <input_file> <output_file> <variable>
 ```
 
 **Features:**
-- 4 vertical profiles (one per hillslope position: Outlet, Lower, Upper, Ridge)
-- Uses most recent time step from input file
-- Log scale x-axis for better visualization of soil profiles
-- Depth increases downward (inverted y-axis)
+- ~5 representative columns from stream to ridge
+- Labels by HAND elevation
+- Auto-detects column count
+- Note: current h1a data has no VR variables; ready for future cases
 
-**Input:** h1 20-year binned file (variable must have `levsoi`, `levgrnd`, or `levdcmp` dimension)
+**Input:** h1 binned file (variable must have `levsoi`, `levgrnd`, or `levdcmp` dimension)
+
+---
+
+### Archived Scripts
+Moved to `archive/` (redundant with pipeline geometry plots):
+- `plot_elevation_width_overlay.py`
+- `plot_col_areas.py`
+- `plot_pft_distribution.py`
 
 ---
 
 ## Key Variables
 
 ### Spatial Variables (in h1 files)
-- `hillslope_index(column)` - Hillslope ID (1=N, 2=E, 3=S, 4=W, -9999=stream)
+- `hillslope_index(column)` - Hillslope ID (1=hillslope, -9999=bareground)
 - `hillslope_elev(column)` - Elevation above stream (m)
 - `hillslope_distance(column)` - Distance from stream (m)
 - `hillslope_width(column)` - Column width (m)
