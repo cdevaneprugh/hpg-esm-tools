@@ -117,12 +117,18 @@ ASPECT_BINS = [(0, 360)]
 ASPECT_NAMES = ["All"]
 
 # Lake column parameters (locked 2026-05-04 — see audit Sections 5.1-5.5).
-# Inert under current osbs2 config (use_hillslope_routing=.false. and
-# tdepth=0 clamp the lake-to-stream subsurface gradient to zero), so
-# distance/width/slope/aspect/bedrock are mathematically inconsequential
-# but must be present and finite. Lake column is at chain index 1.
+# The lake-to-stream subsurface path is clamped to zero gradient under
+# the current osbs2 config (use_hillslope_routing=.false. + tdepth=0).
+# But the col-col Darcy gradient between the lowest land bin and the
+# lake (audit Section 1.1, Path A) is NOT clamped — its denominator is
+# d(Bin1) - d(Lake) and must stay positive to keep the gradient sign
+# correct. Under raw-HAND binning, Bin 1's DTND is small (~3 m on the
+# production domain), so we compute the lake's hill_distance dynamically
+# at the lake-construction step (LAKE_HILL_DISTANCE_FRACTION * Bin 1's
+# distance) rather than hardcoding it. See lake-column construction
+# block in main() and audit Sections 4.4 + 1.1.
 LAKE_HILL_ELEV_M = -6.0  # PI direction; deeper than deepest land bin mean (-5.13 m)
-LAKE_HILL_DISTANCE_M = 5.0  # PI direction; ~stream width
+LAKE_HILL_DISTANCE_FRACTION = 0.5  # fraction of Bin 1's hill_distance used for lake
 LAKE_HILL_SLOPE = 0.0  # PI direction; "lake bottom" framing (water surface horizontal)
 LAKE_HILL_ASPECT_DEG = 0.0  # inconsequential for flat lake column
 LAKE_HILL_BEDROCK_DEPTH_M = 0.0  # inert under Uniform soil profile method
@@ -1492,6 +1498,18 @@ def main():
     lake_perimeter_m = compute_lake_perimeter(water_mask, PIXEL_SIZE)
     lake_hill_width_m = lake_perimeter_m / 2.0
 
+    # Compute lake hill_distance dynamically (Phase E.5 fix, 2026-05-04).
+    # The lowest land bin (params["elements"][0] at this point — lake hasn't
+    # been prepended yet) drains directly into the lake. CTSM's col-col
+    # Darcy gradient (audit Section 1.1, Path A) divides by
+    # `d(Bin1) - d(Lake)` and is NOT clamped — the denominator must stay
+    # positive to preserve gradient sign. Setting lake distance to half of
+    # Bin 1's distance guarantees the constraint by construction, robustly
+    # handling whatever Bin 1's trap-fit distance turns out to be (varies
+    # with domain and bin scheme; was ~3 m on the 90-tile production run).
+    lowest_land_distance_m = float(params["elements"][0]["distance"])
+    lake_hill_distance_m = LAKE_HILL_DISTANCE_FRACTION * lowest_land_distance_m
+
     print_progress(f"  NWI water pixels: {lake_n_pixels:,}")
     print_progress(f"  Lake area: {lake_area_m2 / 1e6:.3f} km^2")
     print_progress(
@@ -1499,6 +1517,10 @@ def main():
     )
     print_progress(f"  Lake hill_width (1/2 perimeter): {lake_hill_width_m:,.0f} m")
     print_progress(f"  Lake hill_elev (locked 2026-05-04): {LAKE_HILL_ELEV_M} m")
+    print_progress(
+        f"  Lake hill_distance: {lake_hill_distance_m:.3f} m  "
+        f"({LAKE_HILL_DISTANCE_FRACTION} x Bin 1's {lowest_land_distance_m:.3f} m)"
+    )
 
     lake_element = {
         "aspect_name": "Lake",
@@ -1506,7 +1528,7 @@ def main():
         "hand_bin": -1,  # sentinel: lake is not a HAND bin
         "is_lake": True,
         "height": LAKE_HILL_ELEV_M,
-        "distance": LAKE_HILL_DISTANCE_M,
+        "distance": lake_hill_distance_m,
         "area": lake_area_m2,
         "slope": LAKE_HILL_SLOPE,
         "aspect": LAKE_HILL_ASPECT_DEG,
@@ -1520,7 +1542,8 @@ def main():
     params["metadata"]["lake_area_m2"] = lake_area_m2
     params["metadata"]["lake_perimeter_m"] = lake_perimeter_m
     params["metadata"]["lake_hill_elev_m"] = LAKE_HILL_ELEV_M
-    params["metadata"]["lake_hill_distance_m"] = LAKE_HILL_DISTANCE_M
+    params["metadata"]["lake_hill_distance_m"] = lake_hill_distance_m
+    params["metadata"]["lake_hill_distance_fraction"] = LAKE_HILL_DISTANCE_FRACTION
     params["metadata"]["lake_hill_width_m"] = lake_hill_width_m
 
     # =========================================================================
@@ -1626,7 +1649,9 @@ def main():
         f.write("-" * 60 + "\n")
         f.write(f"  hill_elev:     {LAKE_HILL_ELEV_M} m  (chain-bookkeeping value)\n")
         f.write(
-            f"  hill_distance: {LAKE_HILL_DISTANCE_M} m  (PI direction; ~stream width)\n"
+            f"  hill_distance: {lake_hill_distance_m:.3f} m  "
+            f"({LAKE_HILL_DISTANCE_FRACTION} x Bin 1's {lowest_land_distance_m:.3f} m; "
+            f"keeps Darcy denominator positive)\n"
         )
         f.write(
             f"  hill_area:     {lake_area_m2 / 1e6:.3f} km^2  ({lake_n_pixels:,} NWI water px)\n"

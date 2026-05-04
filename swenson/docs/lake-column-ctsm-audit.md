@@ -386,40 +386,60 @@ All inter-column gradients are unchanged. This is exact.
 no-op for inter-column gradients. The only thing that matters is the lake's
 absolute distance, which is irrelevant when the lake-to-stream path is clamped.
 
-### 4.4 Approach C: Small Fixed DTND (Recommended)
+### 4.4 Approach C: Dynamic small DTND (Recommended; revised 2026-05-04)
 
-**PI direction (2026-04-25):** Set `hill_distance(lake) ≈ stream width` (a few
-meters). The exact value is mathematically inert under the current
-configuration (routing off, `tdepth=0` → empty-stream guard fires → lake-to-
-stream gradient clamped to zero). Picking ~5m vs 15m vs 1m gives identical
-model behavior. Choose stream width as a defensible small nonzero value.
+**Updated 2026-05-04 — superseding the static "~stream width / ~5 m"
+framing.** The first production rerun under raw-HAND binning revealed
+that this section's earlier assumption — "lowest-land-bin DTND ≈ 30 m,
+so any value below that is fine" — does not hold under raw-HAND
+binning. Bin 1 contains basin-floor pixels which sit close to wide-mask
+boundaries; its trap-fit-derived DTND came out at 2.59 m on the
+production domain. A static lake hill_distance of 5 m would invert the
+col-col Darcy gradient sign for Bin 1 → Lake (denominator 2.59 − 5 =
+−2.41 m). See Phase E.5 phase doc 2026-05-04 log entry for the
+discovery and fix.
 
-The earlier `hill_distance(lowest_land) / 2` recommendation gave ~15m and is
-still defensible, but stream width is what the PI prefers and the choice is
-inconsequential.
+**Pipeline implementation (run_pipeline.py).** Compute lake hill_distance
+dynamically as a fraction of Bin 1's distance, after the bin loop
+finishes:
 
-**Why ANY small nonzero value works:**
+```python
+LAKE_HILL_DISTANCE_FRACTION = 0.5  # module constant
+...
+# Step 5d (lake column construction):
+lowest_land_distance_m = float(params["elements"][0]["distance"])
+lake_hill_distance_m = LAKE_HILL_DISTANCE_FRACTION * lowest_land_distance_m
+```
 
-1. **Monotonicity guaranteed by construction:** Any value smaller than
-   `hill_distance(lowest_land)` (~30m) keeps the col-to-col denominator
-   positive. 5m, 15m, anything in this range — all fine.
+**Why this works robustly:**
 
-2. **Land-to-lake gradient denominator:** With lake DTND = 5m and lowest land
-   DTND = 30m, denominator = 25m (vs 15m at the earlier recommendation).
-   Both are physically reasonable.
+1. **Monotonicity guaranteed by construction.** `d(Bin1) − d(Lake) =
+   d(Bin1) − 0.5 × d(Bin1) = 0.5 × d(Bin1) > 0` for any positive Bin 1
+   DTND. The Darcy denominator stays positive regardless of bin scheme
+   or domain — no manual tuning needed when the bin layout changes.
 
-3. **Lake-to-stream gradient = 0:** With routing off and `tdepth(g) = 0`,
-   the gradient is `(-0.4 - zwt) / X` regardless of X. This is negative,
-   clamped to 0. **The absolute value of the lake's distance is irrelevant
-   for this path.**
+2. **Land-to-lake gradient denominator is half of Bin 1's DTND.** On
+   the 2026-05-04 production run that's 1.30 m (half of 2.59 m).
+   Physically reasonable for a lake that occupies a sizable fraction of
+   the basin.
 
-4. **No second-order effects:** If `soil_profile_set_lowland_upland` is used
-   (topology-based), soil depth is unaffected. Met downscaling uses `hill_elev`,
-   not distance. PFT assignment uses topology. Weights use area, not distance.
+3. **Lake-to-stream gradient is still zero.** Under current osbs2 config
+   (routing off, `tdepth(g) = 0`), the lake-to-stream subsurface gradient
+   is clamped to zero by the empty-stream guard regardless of lake
+   distance — this part of the original analysis stands.
 
-**Concrete value:** look up the production NetCDF's stream width
-(`hillslope_stream_width` or computed from network) and use that. Likely
-~5m at OSBS.
+4. **No second-order effects** (soil profile is Uniform, met downscaling
+   uses `hill_elev`, PFT assignment uses topology, weights use area).
+   Same as before.
+
+**Why the 2026-04-25 PI direction "~stream width" needed revising.**
+The PI's static recommendation was based on this audit's earlier
+assumption. The assumption was correct under conditioned-HAND binning
+(Bin 1 sits at small positive HAND well above stream level, so its
+DTND ~30 m). Under raw-HAND binning the deepest FZ bin sits inside
+filled depressions — close to lake/stream boundaries by design —
+making its DTND correspondingly small. The dynamic computation makes
+the constraint robust to whatever bin scheme is used.
 
 ---
 
@@ -453,7 +473,7 @@ NetCDF, easier for manual inspection.
 | `column_index` | 1 | First column; lake at bottom of chain (Section 5.1) |
 | `downhill_column_index` | -9999 | Terminal column, drains to stream |
 | `hillslope_index` | 1 | Same hillslope as all others |
-| `hill_distance` | ~stream width (~5m) | PI direction (2026-04-25); inert under current config (Section 4.4) |
+| `hill_distance` | **0.5 × Bin 1's distance** (computed dynamically) | Locked 2026-05-04, supersedes the earlier static "~stream width / ~5 m" recommendation. The col-col Darcy denominator `d(Bin1) - d(Lake)` must stay positive (audit Section 1.1); under raw-HAND binning Bin 1's trap-fit DTND can be small (~3 m on production), making a static 5 m unsafe. Dynamic computation guarantees the constraint by construction. See Section 4.4 (revised 2026-05-04). |
 | `hill_elev` | **-6.0 m** | Locked 2026-05-04. Set deeper than the deepest land bin's mean (-5.13 m, bin 1 of 24-bin scheme covering -6.35 to -4.0 m raw HAND) by ~0.87 m to ensure chain monotonicity. Conceptually a chain-bookkeeping value, not a physical lake-bottom elevation. Empirical context: mean NWI lake-surface raw HAND in the production domain is -2.53 m; mean basin-bottom-to-rim spill depth is 2.64-3.33 m (Lee 2023 / our pipeline). Supersedes earlier `-SPILLHEIGHT` convention (now retired with SPILLHEIGHT=0 per Phase E.5 PI reframe 2026-04-30). See Section 5.2.1 below for derivation. |
 | `hill_area` | Sum(water_mask * pixel_area) | ~10.68 km² |
 | `hill_width` | 1/2 NWI total perimeter | PI direction (2026-04-25); see Section 5.3 |
@@ -1207,10 +1227,15 @@ Updated order of operations:
    handled by the bin restructure rather than absorbed into the lake.
 9. **Phase F validation run** with the corrected NetCDF.
 
-If the binning scheme is later modified, the lake column parameters per
-Section 5.2 are mostly insensitive (`hill_distance ≈ stream width` is inert,
-`hill_width = 1/2 NWI perimeter` is independent of bins). So the lake
-column can be appended after binning is finalized without rework.
+If the binning scheme is later modified, most lake column parameters in
+Section 5.2 stay insensitive — `hill_elev = -6.0 m` is set 0.87 m below
+the deepest land bin's mean (revisit if the new scheme moves that anchor),
+`hill_area` and `hill_width` come from the NWI mask (independent of bins).
+The exception is `hill_distance`: it must be < Bin 1's distance to keep
+the col-col Darcy denominator positive, and Bin 1's trap-fit DTND varies
+with the bin scheme. The pipeline computes lake `hill_distance` dynamically
+as 0.5 × Bin 1's distance after the bin loop runs, so it tracks any future
+bin change without rework. See Section 4.4 (revised 2026-05-04).
 
 ### 6.9 Pixel Categories and Binning Filter (raw-HAND scheme)
 
@@ -1519,7 +1544,7 @@ Open question for follow-up:
 | 5 | "Always submerged" definition (5.4) | **Don't enforce parametrically.** PI direction (2026-04-25): real lakes dry cyclically (decadal/centennial). Forcing permanent submersion would be wrong. Run with reasonable parameters; if vegetation patterns are clearly wrong (e.g., pine trees colonizing the lake permanently) revisit. |
 | 6 | `hill_bedrock_depth` for lake (5.4) | **Moot.** Field is ignored under Uniform soil profile. Set to 0, consistent with all land columns. Saturation enforcement, if needed, must come from elsewhere (infiltration likely handles it). |
 | 7 | Spill depth tuning (5.5) | **Deferred to model output.** PI direction (2026-04-25): keep current SPILLHEIGHT = 0.2m default. Don't tune to Lee 2023's 2.64m parametrically; let CTSM model output guide whether tuning is needed. Empirical references retained for the future tuning conversation: Lee 2023 (2.64 m, n=14, field-surveyed bottoms) and our own pipeline (3.33 m, n=107 non-NWI basins ≥ 1 ha; 4.70 m for NWI-overlapping basins ≥ 1 ha — different physical quantity, see Section 6.7.3). Both lines of evidence put the empirically supported range at 1–3 m, vs. the current 0.2 m default. |
-| Lake hill_distance | DTND ≈ stream width (~5m) | PI direction (2026-04-25). Mathematically inert under current config (Section 4.4). Earlier "col2/2" recommendation (~15m) was also defensible; PI prefers stream width as the simpler choice. |
+| Lake hill_distance | **0.5 × Bin 1's distance** (computed dynamically; revised 2026-05-04) | The static "~stream width / ~5 m" framing from 2026-04-25 PI direction was unsafe under raw-HAND binning: Bin 1's trap-fit DTND came out at 2.59 m on the 2026-05-04 production run, so a static 5 m would have inverted the col-col Darcy gradient sign (Section 1.1, Path A). Dynamic computation guarantees `d(Bin1) - d(Lake) = 0.5 × d(Bin1) > 0` regardless of bin-scheme choices. See Section 4.4 (revised). |
 | Lake hill_slope | 0 | PI direction (2026-04-25). "Lake bottom" framing — water surface is horizontal. Earlier bathymetric value (0.015) reverted. See Section 5.5. |
 | Lake hill_width | 1/2 NWI total perimeter | PI direction (2026-04-25). Inert under current config. Sanity-check via P:A ratio. See Section 5.3. |
 

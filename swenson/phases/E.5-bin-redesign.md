@@ -1227,7 +1227,7 @@ from earlier PI direction):
 | column_index | 1 | Locked |
 | downhill_column_index | -9999 | Locked |
 | hillslope_index | 1 | Locked |
-| hill_distance | ~5 m | Working (PI direction, inert under current config) |
+| hill_distance | 0.5 × Bin 1's distance (computed dynamically) | Locked 2026-05-04 as a dynamic value. Static ~5 m would invert the col-col Darcy gradient sign (audit Section 1.1) because Bin 1's trap-fit DTND is small (~3 m on production). |
 | **hill_elev** | **-6.0 m** | **Locked 2026-05-04** |
 | hill_area | sum(water_mask × pixel_area) ≈ 10.68 km² | Locked |
 | hill_width | 1/2 NWI total perimeter ≈ 51,405 m | Working |
@@ -1248,3 +1248,39 @@ Full canonical reference for the lake column parameters lives in
 - SPILLHEIGHT: locked at 0
 - All design decisions complete; remaining work is implementation
   and PI review.
+
+### 2026-05-04 — Lake hill_distance: switch to dynamic computation
+
+**Discovery.** First production rerun (job 31861082) wrote
+`hillslopes_osbs_production_c260504.nc` with a chain-monotonicity
+violation in `hill_distance`. Lake at 5 m, Bin 1 at 2.59 m → denominator
+in CTSM's col-col Darcy gradient (audit Section 1.1, Path A) is
+**−2.41 m**, inverting the gradient sign. Water that should flow Bin 1
+→ Lake would be reported as Lake → Bin 1.
+
+**Why the audit's static-5 m framing failed.** Audit Section 4.4
+analyzed the constraint assuming `lowest-land-bin DTND ≈ 30 m` (true
+under the prior conditioned-HAND scheme). Under raw-HAND binning the
+deepest FZ bin contains basin-floor pixels — close to wide-mask
+boundaries — so its trap-fit DTND came out at 2.59 m, ~10× smaller
+than the audit assumed. The static "~stream width" recommendation
+violated monotonicity by construction.
+
+**Fix.** Replaced `LAKE_HILL_DISTANCE_M = 5.0` constant with dynamic
+computation in `run_pipeline.py`:
+
+```python
+LAKE_HILL_DISTANCE_FRACTION = 0.5  # module constant
+...
+# In Step 5d (lake column construction), AFTER the bin loop:
+lowest_land_distance_m = float(params["elements"][0]["distance"])
+lake_hill_distance_m = LAKE_HILL_DISTANCE_FRACTION * lowest_land_distance_m
+```
+
+This guarantees `d(Bin1) - d(Lake) = 0.5 × d(Bin1) > 0` by construction
+regardless of how small Bin 1's DTND turns out to be in any future run.
+On the 2026-05-04 production data: lake distance becomes 1.30 m.
+
+**Doc updates.** Audit Section 4.4 and 5.2, Phase G doc lake table,
+STATUS.md lake table, this phase doc lake table — all updated to
+reflect the dynamic value and the audit-assumption failure mode.

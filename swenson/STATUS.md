@@ -186,7 +186,7 @@ Add one column to the hillslope NetCDF representing the aggregate of all NWI-map
 | `column_index` | 1 | Design decision (avoid wetlandisfull behavior change) |
 | `downhill_column_index` | -9999 | Terminal |
 | `hill_elev` | **-6.0 m** | Locked 2026-05-04. Chain-bookkeeping value below deepest land bin mean (-5.13 m). SPILLHEIGHT=0, no SourceMod shift. See audit doc Section 5.2.1 for full derivation. |
-| `hill_distance` | ≈ stream width (~5m) | PI direction; mathematically inert under current config |
+| `hill_distance` | 0.5 × deepest land bin's distance (computed dynamically) | Keeps col-col Darcy denominator positive (audit Section 1.1, Path A). With raw-HAND binning, Bin 1's DTND is small (~3 m on production); a static ~5 m would invert the gradient sign. |
 | `hill_area` | Sum(water_mask × pixel_area) ≈ 10.68 km² | NWI mask |
 | `hill_width` | 1/2 NWI total perimeter | PI direction; inert under current config |
 | `hill_slope` | 0 | PI direction; "lake bottom" framing |
