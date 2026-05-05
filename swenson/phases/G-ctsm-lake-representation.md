@@ -224,3 +224,122 @@ Pipeline-generated hillslope NetCDF with 17 columns (16 HAND bins + 1 submerged 
 - `phases/F-validate-deploy.md` — baseline for Phase G comparison
 
 ## Log
+
+### 2026-05-05 — Gridcell area in single-point mode and the per-rep rescale
+
+Surfaced while drafting the Phase E.5 per-representative-hillslope rescale
+(`E.5-bin-redesign.md` 2026-05-05). The 2026-05-04 production NetCDF had a
+unit-convention mismatch: lake `hill_area` in total NWI water (11.082 km²),
+land `hill_area` in Swenson trap-fit per-rep (sum 0.148 km²). 822x
+asymmetry. Initial framing: "this breaks `nhill_per_landunit` and CTSM's
+stream channel logic." Truer story below.
+
+**What CTSM actually does for osbs2 single-point cases.** osbs2 (and
+osbs4) cases run in CTSM's single-point / single-column mode. Trigger:
+`PTS_LAT` and `PTS_LON` set in `env_run.xml`, `LND_DOMAIN_FILE = UNSET`,
+`mesh_lnd = UNSET` in `nuopc.runconfig`. The case-side path:
+
+`lnd_set_decomp_and_domain.F90:309-345` (`lnd_set_decomp_and_domain_for_single_column`):
+
+```fortran
+ldomain%lonc(1) = scol_lon
+ldomain%latc(1) = scol_lat
+ldomain%area(1) = spval        ! special value, ~1e36
+ldomain%mask(1) = scol_mask
+ldomain%frac(1) = scol_frac
+```
+
+`grc%area(g)` is set from `ldomain%area(gdc)` at `initGridCellsMod.F90:179`
+— so `grc%area = spval` for our cases. Confirmed in v4 model output:
+
+```
+$ ncdump -v area osbs2.branch.v4.clm2.h0a.1110-12.nc
+area = 9.999999616903162e+35 ;   # = spval
+```
+
+There is no 0.5° × 0.5° (2,684 km²) gridcell, no 0.9° × 1.25°
+(12,654 km²) gridcell, no 90 km² gridcell. CTSM in this mode operates
+on **fractional column weights** with no absolute physical area at the
+gridcell level. The 0.5° × 0.5° `domain.lnd.360x720_cruncep_OSBS_*.nc`
+file in `$CLM_USRDAT_DIR/datmdata/` is for CRUNCEP atmospheric forcing
+subsetting only; it never propagates into `grc%area`.
+
+**Where `grc%area` would matter (and doesn't, currently).**
+
+1. `HillslopeHydrologyMod.F90:486` —
+   `nhill_per_landunit = grc%area * 1e6 * wtgcell * pct_hillslope * 0.01 / hillslope_area`.
+   Computes "how many copies of the rep hillslope tile the gridcell."
+   Gated behind `if (use_hillslope_routing)` at line 475. **osbs2 has
+   `use_hillslope_routing = .false.`. This block never executes.**
+2. `HillslopeHydrologyMod.F90:502` — stream channel length =
+   `Σ hill_width × 0.5 × nhill_per_landunit`. Same gating. Never runs.
+3. `HillslopeHydrologyMod.F90:1117-1121` — column physical area
+   conversions in some lateral-flow routines. Same routing gate.
+
+What CTSM **does** use even with routing off (line 520):
+
+```fortran
+col%wtlunit(c) = (col%hill_area(c) / hillslope_area(nh)) * pct_hillslope * 0.01
+```
+
+Pure ratio of `hill_area` values within the landunit. Independent of
+absolute `hill_area` magnitude, independent of `grc%area`. Then
+`wtgcell = wtlunit × pct_landunit / 100`. All physics that matters for
+Phase F (column-level state, per-area fluxes, gridcell aggregates
+formed by area-weighted column sums) runs off these fractional weights.
+
+**Implication for the lake column rescale.** The Phase E.5 rescale
+(lake from 11.082 km² → 0.0208 km² per-rep) still matters, but the
+real reason is column weight, not stamping math:
+
+| Lake `hill_area` | Lake `wtlunit` | Gridcell aggregate signal |
+|---|---|---|
+| 11.082 km² (raw NWI total) | 11.082 / 11.230 = **98.7%** | ~99% lake-driven |
+| 0.0208 km² (per-rep) | 0.0208 / 0.169 = **12.3%** | matches NWI water fraction in 90 km² OSBS domain |
+
+The rescale gets the lake-to-land ratio right at the value we measured
+from the LIDAR domain (12.3% NWI water by area). Without the rescale,
+the lake column dominates every column-weighted quantity — soil
+moisture, GPP, NEE, latent heat. The lake-to-land fraction in the
+hillslope file IS what CTSM uses as the gridcell-level lake-vs-land
+mix. So the rescale is essential for Phase F validity.
+
+**Implication for Phase G (this phase).** Two scenarios depending on
+how routing is enabled:
+
+1. **Phase G with `use_hillslope_routing = .false.`** (current osbs2
+   config, just adding the lake column without enabling routing). Same
+   regime as Phase F. Column weights drive the comparison; `grc%area`
+   irrelevant. The rescale guarantees the right lake/land mix. No
+   gridcell-area concern.
+
+2. **Phase G with `use_hillslope_routing = .true.`**. Lateral
+   col-col flow turns on. `nhill_per_landunit` is computed at line
+   486-487 using `grc%area`. With `grc%area = spval`,
+   `nhill_per_landunit ≈ 1e36` — nonsense; stream channel length
+   blows up. CTSM probably runs to completion (the multiplier may
+   only feed informational outputs in non-pathological code paths)
+   but produces nonsense for any quantity scaled by it. To enable
+   routing meaningfully, we'd need to provide a real `grc%area` via
+   a domain mesh file (LND_DOMAIN_MESH set explicitly). At that
+   point the Swenson-style stamping kicks in: our 0.169 km² rep
+   hillslope tiles N times to fill whatever gridcell area the mesh
+   provides. N becomes "number of OSBS-like representative
+   hillslopes assumed in the gridcell" — a modeling choice, not a
+   pipeline output.
+
+**Practical decision for now.** Do the per-rep rescale (Phase E.5).
+For Phase F and Phase G as currently scoped (routing off), this is
+sufficient. If/when routing is ever enabled, revisit gridcell-mesh
+configuration as a separate (not pipeline-side) task.
+
+**Reference paths for future debugging.**
+- `ctsm5.3/src/cpl/share_esmf/lnd_set_decomp_and_domain.F90:309-345`:
+  `lnd_set_decomp_and_domain_for_single_column` — sets `area = spval`.
+- `ctsm5.3/src/main/initGridCellsMod.F90:179`: `grc%area = ldomain%area`.
+- `ctsm5.3/src/biogeophys/HillslopeHydrologyMod.F90:475-505`: routing
+  block where `grc%area` is used; gated by `use_hillslope_routing`.
+- `cases/osbs2.branch.v4/CaseDocs/nuopc.runconfig`: confirm
+  `mesh_lnd = UNSET`, `mesh_atm = UNSET`.
+- v4 history file `area = 9.999...e+35`: smoking gun for spval at
+  runtime.

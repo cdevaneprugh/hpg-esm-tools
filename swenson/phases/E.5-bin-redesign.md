@@ -1284,3 +1284,131 @@ On the 2026-05-04 production data: lake distance becomes 1.30 m.
 **Doc updates.** Audit Section 4.4 and 5.2, Phase G doc lake table,
 STATUS.md lake table, this phase doc lake table — all updated to
 reflect the dynamic value and the audit-assumption failure mode.
+
+### 2026-05-05 — Open question: lake vs land area unit mismatch
+
+Surfaced during inspection of the 2026-05-04 production NetCDF. Worth
+flagging before Phase F runs. **Note:** the framing below describes
+the Swenson convention rationale; the actual CTSM-runtime story for
+osbs2 single-point cases is simpler and is documented in
+`phases/G-ctsm-lake-representation.md` 2026-05-05 log entry. Short
+version: `grc%area = spval` in single-point mode, so
+`nhill_per_landunit` is moot. The rescale still matters — but for
+column weights (`wtlunit`), not stamping. Read the Phase G entry for
+the complete picture.
+
+**Observation.** Lake `hill_area` = 11,082,394 m² (11.08 km²) is the
+total NWI water surface summed across the 90 km² gridcell. Land bin
+`hill_area` is the trapezoidal-fitted area `Aw = ∫w(d)dd` for *one
+representative hillslope element* (Swenson Eq. 4 plan-form model). The
+24 land bins together sum to 147,867 m² (0.148 km²) — the area of one
+representative hillslope, not the total per-bin pixel sum across the
+domain. Lake-to-largest-land-bin ratio is ~822x.
+
+**CTSM consequence.** `HillslopeHydrologyMod.F90:520` weights columns
+within the landunit by:
+
+```
+col%wtlunit(c) = (col%hill_area(c) / hillslope_area(nh)) * pct_hillslope * 0.01
+```
+
+With our values, the lake column gets 11.082e6 / (11.082e6 + 0.148e6) ≈
+**98.7%** of the landunit weight. All 24 land bins together get ~1.3%
+(largest individual land bin = 0.12%). Any column-area-weighted
+gridcell aggregate (soil moisture, GPP, NEE, water table, latent heat,
+etc.) will be ~99% lake-driven and only ~1% landscape-driven.
+
+For Phase F (routing off, lake column behavior dominating) this
+matters scientifically — the test branch comparison against the
+unmodified osbs2 baseline will look like a lake-dominated gridcell, not
+a wetlandscape with embedded lakes. For Phase G (routing on), the
+col-col Darcy volumetric exchange is column-area dependent, so the
+asymmetry will likely break the lake's water budget under lateral flow.
+
+`nhill_per_landunit` (line 487, only fires under routing) divides total
+landunit area by `hillslope_area`. With our `hillslope_area` summing to
+11.23 km² and the gridcell sized at ~90 km² in the surfdata, CTSM will
+think there are ~8 copies of this representative hillslope tiled across
+the gridcell. Stream channel length is then `hill_width × 0.5 ×
+nhill_per_landunit` (line 502), so a wrong `nhill_per_landunit` cascades
+into wrong stream geometry.
+
+**Chosen solution: rescale lake to per-representative-hillslope basis
+(dynamic, keyed off the implicit nhill multiplier).**
+
+Land bin areas are already in Swenson rep-hillslope units by
+construction (trap-fit `Aw` per representative hillslope). The lake
+just needs to be put on the same scale. Rather than hard-code a
+correction for OSBS, derive it dynamically from quantities the
+pipeline already computes — works for other sites, other gridcell
+sizes, other bin schemes without code changes.
+
+**Implicit rep-hillslope multiplier:**
+
+```
+nhill_implicit = total_land_area_m² / sum(land_bin_trap_fit_areas)
+```
+
+For the 5/4 production run: `nhill_implicit = 78.92 km² / 0.148 km² ≈
+533`. Translation: "this hillslope file represents one of ~533
+representative hillslopes that tile the domain." Matches the framework
+CTSM applies at runtime via `HillslopeHydrologyMod.F90:487`.
+
+**Lake column rescaling:**
+
+```
+lake_area_per_rep  = sum(land_bin_areas) × (total_lake_area / total_land_area)
+lake_width_per_rep = (NWI_perimeter / 2) × sum(land_bin_areas) / total_land_area
+```
+
+For the 5/4 production run:
+- `lake_area_per_rep` = 0.148 km² × (11.082 / 78.92) ≈ **0.0208 km² = 20,800 m²**
+- `lake_width_per_rep` = (48,270 m) × (0.148 / 78.92) ≈ **90 m**
+
+Why this form is cleaner: per-rep lake-to-land ratio matches the
+domain-wide lake-to-land ratio by construction. Stamping
+`nhill_implicit` copies recovers ~78.9 km² of land + ~11.1 km² of
+lake = 90 km² gridcell — self-consistent. The lake `hill_width` (90 m)
+also lands in the same scale as the deepest land bin's width (~556 m)
+instead of the 87x asymmetry under the old convention.
+
+After the rescale, lake `wtlunit` ≈ 12.5% (matches NWI water fraction
+in the domain) and the 24 land bins together get ~87.5%, properly
+distributed by their individual trap-fit areas. Phase F gridcell
+aggregates will reflect a wetlandscape with embedded lakes, not a
+lake-dominated gridcell.
+
+**Implementation site.** `scripts/osbs/run_pipeline.py` Step 5d (lake
+column construction). All inputs already exist at that point in the
+script (`lake_n_pixels`, `lake_area_m2`, `lake_perimeter_m`,
+`params["elements"]` with all 24 land trap-fit areas, `region_shape`
+and `PIXEL_SIZE` for total domain). Add ~5 lines computing
+`nhill_implicit` and the per-rep lake area/width before the lake
+element is appended. Other lake fields (`hill_elev = -6.0`,
+`hill_distance = 0.5 × Bin1`, `hill_slope = 0`, `hill_aspect = 0`,
+`hill_bedrock = 0`) unchanged.
+
+**Open implementation choices to settle before coding:**
+
+1. **Denominator for `total_land_area`:** total domain land
+   (`90 - 11.082 = 78.92 km²`) or post-Q01/Q99-trim valid land
+   (`74.45 km²`)? Differ by ~5% (`nhill ≈ 533` vs `503`). Total domain
+   is the cleaner story (matches what CTSM thinks the gridcell area
+   is); post-trim is what's actually represented in the bins. Current
+   lean: total domain.
+2. **Whether to write `nhill_implicit` to the NetCDF as a global
+   attribute** for downstream traceability. Current lean: yes —
+   meaningful number, costs nothing.
+3. **PI sign-off** before pipeline rerun. This is a meaningful change
+   to the lake column area (11.082 km² → 0.0208 km²) and width
+   (48,270 m → 90 m); should be flagged before Phase F.
+
+**Alternative considered and rejected: Option T (total-area basis —
+bring land up).** Replace land bin trap-fit area with raw per-bin pixel
+count × pixel_size² summed over all catchments. Then `sum(hill_area) ≈
+90 km²` and `nhill_per_landunit ≈ 1`. Matches what the global Swenson
+file looks like for global gridcells. Rejected because it abandons
+Swenson's trap-fit `Aw` for land bins, breaking internal consistency
+between `hill_area` and `hill_width × hill_distance`. The chosen
+solution preserves the Swenson convention for land and brings the lake
+into it.

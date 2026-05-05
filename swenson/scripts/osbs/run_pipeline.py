@@ -381,77 +381,92 @@ def create_hand_map_plot(
 def create_hillslope_params_plot(params: dict, output_path: Path) -> None:
     """Create hillslope parameters summary plot.
 
-    Phase E.5: elements[0] is the lake column; elements[1..N] are the land
-    columns. Bars show the 24 land bins. The lake's hill_elev and DTND sit
-    at the lower edge of their respective panels and are useful as a visual
-    reference line — those panels get a navy axhline for the lake value.
-    The lake's hill_area (~11 km^2) and hill_width (~48 km) are far off-
-    scale relative to land bins, so an axhline on those panels would crush
-    the land detail; the Area and Width panels intentionally omit the lake
-    line. Lake values are still reported in the summary text and NetCDF
-    metadata for cross-reference.
+    Single-aspect plot (Phase E.5). Each column is a bar; color encodes
+    column type:
+
+      - **Lake** (`lightskyblue`, #87CEFA): the prepended lake column at
+        chain index 1 (params["elements"][0]).
+      - **Flood zone** (`darkred`, #8B0000): land bins with mean raw HAND
+        < 0 — the negative-HAND bins between Q01 and 0 m.
+      - **Upland** (Set2 palette index 0, seafoam green #66C2A5): land
+        bins with mean raw HAND >= 0.
+
+    All four panels (height, distance, area, width) share the same
+    column-by-column layout. Lake bar appears at x=0; land bins at
+    x=1..n_land_bins (1-indexed chain position).
     """
+    from matplotlib.patches import Patch
+
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     elements = params["elements"]
     n_land_bins = params["metadata"]["n_land_bins"]
-    n_aspects = params["metadata"]["n_aspect_bins"]
-    colors = plt.cm.Set2(np.linspace(0, 1, max(n_aspects, 2)))
 
-    aspect_names = params["metadata"]["aspect_names"]
-    bin_labels = range(1, n_land_bins + 1)
-    bar_width = 0.7 / n_aspects
-
-    # Skip lake column (element[0]) — bars are land bins only.
+    # Split lake from land
     land_elements = [e for e in elements if not e.get("is_lake")]
     lake_elements = [e for e in elements if e.get("is_lake")]
 
-    # Per-panel config: (ax, key, ylabel, title, show_lake_line).
-    # show_lake_line=False on Area and Width panels because the lake's
-    # values are wildly off-scale and would crush the bar detail.
+    # Per-bar colors. FZ vs upland classification by mean raw HAND sign:
+    # height < 0 -> FZ (this run's bin 1-12); height >= 0 -> upland (13-24).
+    # Robust to bin scheme changes that may shift the count of each class.
+    color_lake = "lightskyblue"
+    color_fz = "darkred"
+    color_upland = plt.cm.Set2(0)  # seafoam green
+
+    bar_colors = [color_fz if e["height"] < 0 else color_upland for e in land_elements]
+
+    # X-positions: lake at 0, land bins at 1..n_land_bins
+    x_lake = [0]
+    x_land = list(range(1, n_land_bins + 1))
+    x_all = x_lake + x_land
+    xtick_labels = ["Lake"] + [str(i) for i in range(1, n_land_bins + 1)]
+
     panel_configs = [
-        (
-            axes[0, 0],
-            "height",
-            "Mean raw HAND (m)",
-            "Height Above Nearest Drainage",
-            True,
-        ),
-        (axes[0, 1], "distance", "Mean DTND (m)", "Distance to Nearest Drainage", True),
-        (axes[1, 0], "area", "Area (km^2)", "Hillslope Element Area", False),
-        (axes[1, 1], "width", "Width (m)", "Lower Edge Width", False),
+        (axes[0, 0], "height", "Mean raw HAND (m)", "Height Above Nearest Drainage"),
+        (axes[0, 1], "distance", "Mean DTND (m)", "Distance to Nearest Drainage"),
+        (axes[1, 0], "area", "Area (km^2)", "Hillslope Element Area"),
+        (axes[1, 1], "width", "Width (m)", "Lower Edge Width"),
     ]
 
-    for ax, key, ylabel, title, show_lake_line in panel_configs:
-        for i, asp in enumerate(aspect_names):
-            start = i * n_land_bins
-            values = [land_elements[j][key] for j in range(start, start + n_land_bins)]
-            if key == "area":
-                values = [v / 1e6 for v in values]
-            ax.bar(
-                [b + i * bar_width for b in bin_labels],
-                values,
-                width=bar_width * 0.9,
-                label=asp,
-                color=colors[i],
-            )
+    legend_handles = [
+        Patch(facecolor=color_lake, label="Lake"),
+        Patch(facecolor=color_fz, label="Flood zone (raw HAND < 0)"),
+        Patch(facecolor=color_upland, label="Upland (raw HAND ≥ 0)"),
+    ]
 
-        if show_lake_line and lake_elements:
-            lake = lake_elements[0]  # single-aspect: at most one lake column
-            v = lake[key] / 1e6 if key == "area" else lake[key]
-            ax.axhline(
-                v,
-                color="navy",
-                linestyle="--",
-                linewidth=1.2,
-                alpha=0.8,
-                label=f"Lake: {v:.2f}",
-            )
+    for ax, key, ylabel, title in panel_configs:
+        # Lake value (single-aspect: at most one lake column)
+        v_lake = (
+            (lake_elements[0][key] / 1e6 if key == "area" else lake_elements[0][key])
+            if lake_elements
+            else 0.0
+        )
 
-        ax.set_xlabel("Land bin (chain order, deepest -> ridge)")
+        # Land values
+        if key == "area":
+            v_land = [e[key] / 1e6 for e in land_elements]
+        else:
+            v_land = [e[key] for e in land_elements]
+
+        v_all = [v_lake] + v_land
+        bar_colors_full = [color_lake] + bar_colors
+
+        ax.bar(
+            x_all,
+            v_all,
+            color=bar_colors_full,
+            width=0.85,
+            edgecolor="black",
+            linewidth=0.4,
+        )
+
+        ax.set_xlabel("Column (chain order, lake -> deepest land -> ridge)")
         ax.set_ylabel(ylabel)
         ax.set_title(title)
-        ax.legend(loc="best", fontsize=8)
+        ax.set_xticks(x_all)
+        ax.set_xticklabels(xtick_labels, rotation=0, fontsize=7)
+        ax.legend(handles=legend_handles, loc="best", fontsize=8)
+        ax.axhline(0, color="black", linewidth=0.5, alpha=0.5)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -479,6 +494,9 @@ def write_hillslope_netcdf(
     q99: float | None = None,
     n_pre_trim: int | None = None,
     n_post_trim: int | None = None,
+    nhill_implicit: float | None = None,
+    lake_area_total_m2: float | None = None,
+    lake_width_total_m: float | None = None,
 ) -> None:
     """
     Write hillslope parameters to CTSM-compatible NetCDF file.
@@ -525,6 +543,16 @@ def write_hillslope_netcdf(
         Phase E.5 outlier cutoffs in raw HAND (m). Stored as global attrs.
     n_pre_trim, n_post_trim : int, optional
         Pixel counts before/after the Q01/Q99 trim, for verifiability.
+    nhill_implicit : float, optional
+        Per-rep-hillslope multiplier (Phase F prep, 2026-05-05). Stored as
+        a global attribute. See phases/E.5-bin-redesign.md 2026-05-05 log
+        entry for derivation.
+    lake_area_total_m2 : float, optional
+        Raw NWI total lake area in m^2, before per-rep rescale. Stored as
+        a global attribute for traceability.
+    lake_width_total_m : float, optional
+        Raw 1/2 NWI perimeter (lake width) in m, before per-rep rescale.
+        Stored as a global attribute for traceability.
     """
     import netCDF4 as nc
 
@@ -626,6 +654,17 @@ def write_hillslope_netcdf(
             ds.n_pixels_post_trim = int(n_post_trim)
         ds.lake_column_at_index = 1
         ds.lake_hill_elev_m = float(LAKE_HILL_ELEV_M)
+
+        # Per-rep rescale traceability (Phase F prep, 2026-05-05). The lake
+        # column's CTSM-facing hill_area and hill_width are per-representative-
+        # hillslope (rescaled by nhill_implicit); the *_total values record
+        # the raw NWI sums so downstream tools can recover either form.
+        if nhill_implicit is not None:
+            ds.nhill_implicit = float(nhill_implicit)
+        if lake_area_total_m2 is not None:
+            ds.lake_area_total_m2 = float(lake_area_total_m2)
+        if lake_width_total_m is not None:
+            ds.lake_width_total_m = float(lake_width_total_m)
 
         # Dimensions
         ds.createDimension("lsmlat", 1)
@@ -1494,9 +1533,7 @@ def main():
     print_section("Step 5d: Lake Column (Phase E.5)")
 
     lake_n_pixels = int(np.sum(water_mask > 0))
-    lake_area_m2 = float(lake_n_pixels) * (PIXEL_SIZE**2)
     lake_perimeter_m = compute_lake_perimeter(water_mask, PIXEL_SIZE)
-    lake_hill_width_m = lake_perimeter_m / 2.0
 
     # Compute lake hill_distance dynamically (Phase E.5 fix, 2026-05-04).
     # The lowest land bin (params["elements"][0] at this point — lake hasn't
@@ -1510,12 +1547,54 @@ def main():
     lowest_land_distance_m = float(params["elements"][0]["distance"])
     lake_hill_distance_m = LAKE_HILL_DISTANCE_FRACTION * lowest_land_distance_m
 
+    # Per-representative-hillslope rescale (Phase F prep, 2026-05-05).
+    #
+    # Fixes lake column landunit weight: without rescale, the lake's raw
+    # NWI total area (~822x larger than the largest land bin) gives it
+    # ~98.7% of the landunit weight at HillslopeHydrologyMod.F90:520
+    # (col%wtlunit = hill_area / sum(hill_area) * pct_hillslope * 0.01),
+    # making gridcell aggregates ~99% lake-driven. Land columns are
+    # already in Swenson per-rep-hillslope units (trap-fit Aw); rescale
+    # the lake to per-rep so both columns play by the same rule. After
+    # rescale, lake wtlunit ~= 12.3%, matching the NWI water fraction
+    # in the production domain.
+    #
+    # nhill_implicit is the implicit number of representative hillslopes
+    # that tile the gridcell. Single-point mode (mesh_lnd UNSET, area =
+    # spval) makes this internal to the pipeline only; with an explicit
+    # mesh + use_hillslope_routing=.true., CTSM would recompute the same
+    # number at runtime via nhill_per_landunit = grc%area / sum(hill_area).
+    #
+    # See phases/E.5-bin-redesign.md 2026-05-05 (decision rationale) and
+    # phases/G-ctsm-lake-representation.md 2026-05-05 (CTSM single-point-
+    # mode behavior, why this is the right fix).
+    total_land_area_m2 = float(np.prod(dem.shape) - lake_n_pixels) * (PIXEL_SIZE**2)
+    sum_land_bin_areas_m2 = float(sum(e["area"] for e in params["elements"]))
+    nhill_implicit = total_land_area_m2 / sum_land_bin_areas_m2
+
+    # Raw NWI totals (kept for traceability)
+    lake_area_total_m2 = float(lake_n_pixels) * (PIXEL_SIZE**2)
+    lake_width_total_m = lake_perimeter_m / 2.0
+
+    # Per-rep values (the lake's CTSM-facing parameters)
+    lake_area_m2 = lake_area_total_m2 / nhill_implicit
+    lake_hill_width_m = lake_width_total_m / nhill_implicit
+
     print_progress(f"  NWI water pixels: {lake_n_pixels:,}")
-    print_progress(f"  Lake area: {lake_area_m2 / 1e6:.3f} km^2")
+    print_progress(f"  Total land area:  {total_land_area_m2 / 1e6:.2f} km^2")
     print_progress(
-        f"  Lake perimeter (boundary-pixel approx): {lake_perimeter_m:,.0f} m"
+        f"  Sum of land bin areas (per rep): {sum_land_bin_areas_m2 / 1e6:.4f} km^2"
     )
-    print_progress(f"  Lake hill_width (1/2 perimeter): {lake_hill_width_m:,.0f} m")
+    print_progress(
+        f"  nhill_implicit (Swenson rep-hillslope multiplier): {nhill_implicit:.1f}"
+    )
+    print_progress(f"  Lake area total (NWI):     {lake_area_total_m2 / 1e6:.3f} km^2")
+    print_progress(
+        f"  Lake area per-rep:         {lake_area_m2:.1f} m^2 "
+        f"({lake_area_m2 / 1e6:.4f} km^2)"
+    )
+    print_progress(f"  Lake width total (1/2 perim): {lake_width_total_m:,.0f} m")
+    print_progress(f"  Lake width per-rep:           {lake_hill_width_m:,.1f} m")
     print_progress(f"  Lake hill_elev (locked 2026-05-04): {LAKE_HILL_ELEV_M} m")
     print_progress(
         f"  Lake hill_distance: {lake_hill_distance_m:.3f} m  "
@@ -1539,20 +1618,29 @@ def main():
     # shift to indices 2..25.
     params["elements"] = [lake_element] + params["elements"]
     params["metadata"]["lake_pixels"] = lake_n_pixels
-    params["metadata"]["lake_area_m2"] = lake_area_m2
+    params["metadata"]["lake_area_m2"] = lake_area_m2  # per-rep (CTSM-facing)
+    params["metadata"]["lake_area_total_m2"] = lake_area_total_m2  # raw NWI total
     params["metadata"]["lake_perimeter_m"] = lake_perimeter_m
     params["metadata"]["lake_hill_elev_m"] = LAKE_HILL_ELEV_M
     params["metadata"]["lake_hill_distance_m"] = lake_hill_distance_m
     params["metadata"]["lake_hill_distance_fraction"] = LAKE_HILL_DISTANCE_FRACTION
-    params["metadata"]["lake_hill_width_m"] = lake_hill_width_m
+    params["metadata"]["lake_hill_width_m"] = lake_hill_width_m  # per-rep
+    params["metadata"]["lake_width_total_m"] = lake_width_total_m  # raw 1/2 perim
+    params["metadata"]["nhill_implicit"] = nhill_implicit
+    params["metadata"]["total_land_area_m2"] = total_land_area_m2
+    params["metadata"]["sum_land_bin_areas_m2"] = sum_land_bin_areas_m2
 
     # =========================================================================
     # Step 6: Save Results
     # =========================================================================
     print_section("Step 6: Saving Results")
 
-    # Stream parameters
-    total_area_m2 = sum(elem["area"] for elem in params["elements"])
+    # Gridcell total area (used for NetCDF AREA scalar and Swenson stream
+    # power laws). NOT sum(elem["area"]) — after the per-rep rescale in
+    # Step 5d, that sum is the per-rep-hillslope total (~0.169 km^2),
+    # nonsensical for these uses. AREA scalar is informational; stream
+    # depth/width formulas expect gridcell-scale catchment area.
+    total_area_m2 = float(np.prod(dem.shape)) * (PIXEL_SIZE**2)
 
     # Stream slope from network (validated approach)
     stream_slope_val = net_stats["slope"]
@@ -1602,6 +1690,9 @@ def main():
         q99=q99,
         n_pre_trim=n_pre_trim,
         n_post_trim=n_post_trim,
+        nhill_implicit=nhill_implicit,
+        lake_area_total_m2=lake_area_total_m2,
+        lake_width_total_m=lake_width_total_m,
     )
 
     # Summary text
@@ -1645,19 +1736,32 @@ def main():
         f.write(f"  Pixels post-trim: {n_post_trim:,}\n")
         f.write(f"  Land bin edges (24 bins): {hand_bounds.tolist()}\n\n")
 
-        f.write("Lake Column (Phase E.5, chain index 1; locked 2026-05-04):\n")
-        f.write("-" * 60 + "\n")
-        f.write(f"  hill_elev:     {LAKE_HILL_ELEV_M} m  (chain-bookkeeping value)\n")
         f.write(
-            f"  hill_distance: {lake_hill_distance_m:.3f} m  "
+            "Lake Column (Phase E.5, chain index 1; per-rep rescaled 2026-05-05):\n"
+        )
+        f.write("-" * 60 + "\n")
+        f.write(
+            f"  nhill_implicit:     {nhill_implicit:.1f}  (rep-hillslope multiplier)\n"
+        )
+        f.write(
+            f"  hill_elev:          {LAKE_HILL_ELEV_M} m  (chain-bookkeeping value)\n"
+        )
+        f.write(
+            f"  hill_distance:      {lake_hill_distance_m:.3f} m  "
             f"({LAKE_HILL_DISTANCE_FRACTION} x Bin 1's {lowest_land_distance_m:.3f} m; "
             f"keeps Darcy denominator positive)\n"
         )
         f.write(
-            f"  hill_area:     {lake_area_m2 / 1e6:.3f} km^2  ({lake_n_pixels:,} NWI water px)\n"
+            f"  hill_area:          {lake_area_m2:.1f} m^2 "
+            f"({lake_area_m2 / 1e6:.4f} km^2) per rep\n"
         )
-        f.write(f"  hill_width:    {lake_hill_width_m:,.0f} m  (1/2 NWI perimeter)\n")
-        f.write(f"  hill_slope:    {LAKE_HILL_SLOPE} (lake-bottom framing)\n\n")
+        f.write(
+            f"    raw NWI total:    {lake_area_total_m2 / 1e6:.3f} km^2  "
+            f"({lake_n_pixels:,} px)\n"
+        )
+        f.write(f"  hill_width:         {lake_hill_width_m:.1f} m per rep\n")
+        f.write(f"    raw 1/2 perim:    {lake_width_total_m:,.0f} m\n")
+        f.write(f"  hill_slope:         {LAKE_HILL_SLOPE} (lake-bottom framing)\n\n")
 
         f.write(
             f"Hillslope Elements ({len(params['elements'])} total: "
