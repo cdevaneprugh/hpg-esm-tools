@@ -92,6 +92,14 @@ def plot_timeseries_full(input_file: str, output_file: str, variable: str) -> No
 
     ds.close()
 
+    # Detect bin width from year diffs (used for title + tick spacing)
+    if len(years) >= 2:
+        bin_yr = int(np.median(np.diff(years)))
+        bin_yr = max(bin_yr, 1)
+    else:
+        bin_yr = 1
+    span = int(years[-1] - years[0]) if len(years) > 1 else 1
+
     # -------------------------------------------------------------------------
     # Create plot
     # -------------------------------------------------------------------------
@@ -103,17 +111,26 @@ def plot_timeseries_full(input_file: str, output_file: str, variable: str) -> No
     # Axis labels and formatting
     # -------------------------------------------------------------------------
     ylabel = f"{variable} ({units})" if units else variable
+    bin_label = "annual" if bin_yr == 1 else f"{bin_yr}-year bins"
     ax.set_xlabel("Simulation Year", fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
     ax.set_title(
-        f"{variable} Time Series (20-year bins)", fontsize=14, fontweight="bold"
+        f"{variable} Time Series ({bin_label})", fontsize=14, fontweight="bold"
     )
     ax.grid(True, alpha=0.3, linestyle="--")
 
-    # Set x-axis ticks at 100-year intervals
+    # Choose x-tick spacing based on simulation span (reasonable density).
+    if span <= 50:
+        tick_step = 5
+    elif span <= 150:
+        tick_step = 10
+    elif span <= 500:
+        tick_step = 50
+    else:
+        tick_step = 100
     year_min = 0
-    year_max = int(np.ceil(years[-1] / 100) * 100)
-    ax.set_xticks(np.arange(year_min, year_max + 1, 100))
+    year_max = int(np.ceil(years[-1] / tick_step) * tick_step)
+    ax.set_xticks(np.arange(year_min, year_max + 1, tick_step))
     ax.set_xlim(0, year_max)
 
     # -------------------------------------------------------------------------
