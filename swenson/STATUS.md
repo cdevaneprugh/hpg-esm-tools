@@ -1,6 +1,6 @@
 # State of the Union: Swenson Hillslope Implementation for OSBS
 
-Date: 2026-03-30
+Date: 2026-05-06
 
 ## Executive Summary
 
@@ -8,7 +8,13 @@ We are implementing Swenson & Lawrence (2025) representative hillslope methods t
 
 **The methodology is validated and the pipeline produces scientifically defensible output.** MERIT validation achieved >0.95 correlation with Swenson's published data on 5 of 6 parameters. Phases A-D are complete: pysheds handles UTM CRS, flow routing runs at full 1m resolution, Lc is established (356m for the production domain), and the pipeline has been rebuilt with all known fixes and verified by equation-by-equation audit. Output is CTSM-compatible NetCDF matching the Swenson reference structure.
 
-**Phase E (parameter completion) is complete.** Hillslope structure is 1 aspect x 16 HAND bins (hybrid: 5 fixed 10cm bins in the TAI zone + 10 log-spaced to Q99 + 1 sentinel). NWI water masking is implemented (dual-mask approach: natural streams for catchments, wide mask for HAND). NEON slope/aspect products adopted. All PI questions resolved (2026-03-30). Phase F (CTSM validation) and Phase G (submerged lake column in hillslope file, no CTSM Fortran changes planned) follow.
+**Phase E (parameter completion) is complete.** Pipeline produces 1 aspect × 24 HAND bins + 1 lake column (25 columns total). Bin scheme is TAI-focused (12 FZ + 12 upland, 0.25 m floor in TAI core, smooth 2× width progression). Q01/Q99 outlier trim on raw HAND. NWI water masking via dual-mask approach. NEON slope/aspect products adopted directly.
+
+**Phase E.5 + E.6 + Phase G Stage 1 are complete.** The submerged lake column at chain index 1 with `hill_elev = -6 m` is built into the pipeline and CTSM ingestion is validated. `spillheight = 0.0` retires the elevation-offset SourceMod mechanism per the 2026-04-30 PI reframe. Per-rep rescale (2026-05-05) gives the lake column a sensible 12.3% landunit weight (matching NWI water fraction) instead of a runaway 98.7%.
+
+**Phase F is in progress.** `osbs5.swenson.spinup` (fresh accelerated startup, NOT branched from osbs2) ran 100 years 2026-05-06; 8 spinup-analysis plots show sensible early-spinup behavior of the new hillslope file. Next milestone: extend to ~600 yr accelerated, verify TOTECOSYSC drift < 3% over last 50 yr.
+
+**Phase G Stage 2 (routing-on validation) is deferred.** Requires switching from single-point mode to explicit `LND_DOMAIN_MESH` configuration (single-point `grc%area = spval` breaks `nhill_per_landunit`). Out of scope until lateral-flow physics is the priority.
 
 ---
 
@@ -160,24 +166,83 @@ All parameters finalized. 1 aspect × 16 HAND bins, hybrid fixed+log (5 × 10cm 
 
 ### Phase F: Validate and deploy
 
-**Status: Not started.** Blocked by Phase E.5 (HAND binning fix). Phase E.6 (NWI mask regeneration) is complete (2026-04-30); the corrected `water_mask.tif` will be consumed automatically by the next pipeline rerun.
+**Status: In progress** (osbs5.swenson.spinup, 100-yr accelerated AD
+spinup complete 2026-05-06; longer spinup to convergence pending after
+HiPerGator maintenance window).
 
-**Key context:** osbs2 runs with `use_hillslope_routing = .false.` and `PCT_LAKE = 0` (no lake land unit). Phase F validation matches this configuration — routing off, stream params irrelevant, no lake land unit. The only variable changed is the hillslope file. This establishes a clean baseline comparison before Phase G enables routing with lake-modified parameters.
+**Phase F runs in parallel with Phase G Stage 1.** The 2026-04-25 PI
+direction folded the lake column into the pipeline output (single
+submerged column at chain index 1, not a separate landunit). There is
+no "lake-less" version of the hillslope file to validate as a
+standalone baseline — the file produced by the pipeline always
+includes the lake column. The osbs5 case validates BOTH the long
+spinup behavior of the file (Phase F) AND that CTSM correctly ingests
+the lake-included structure with sensible column weights (Phase G
+Stage 1). The two phases share a single validation case but track
+distinct deliverables:
 
-**Tasks:**
-1. Compare custom hillslope file to Swenson reference (`hillslopes_osbs_c240416.nc`)
-2. Physical plausibility checks (elevation, aspect distribution, stream network vs known hydrology)
-3. Create CTSM test branch from osbs2 at year 861, `use_hillslope_routing = .false.`, `PCT_LAKE = 0`
-4. Run short simulation (1-5 years) with custom hillslope file as the only change
-5. Compare outputs to baseline (water table, soil moisture, carbon fluxes)
+| Phase | Deliverable | osbs5's role |
+|---|---|---|
+| **F** | Long convergent spinup with the new hillslope file; verify drift criterion | Currently 100 yr (early ramp-up); needs ~600 yr accelerated to converge |
+| **G Stage 1** | Lake column construction + CTSM ingestion verified | Confirmed: 25 columns, lake `wtlunit` ≈ 12.3%, monotone chain, no NetCDF read errors |
 
-**Deliverable:** Validated hillslope file ready for production runs.
+**Phase F approach.** Built `osbs5.swenson.spinup` as a **fresh
+startup** (per user direction, not branched from osbs2) with our
+2026-05-05 hillslope file. This isolates the hillslope file's effect
+from sgerber's 600-year initial-condition history. Configuration
+matches osbs4-6 except: hillslope_file repointed, `spillheight = 0.0`
+(SourceMods retained but inert per Phase E.5 reframe), accelerated
+spinup. `use_hillslope_routing = .false.` (matches osbs4-6).
+
+**Key context:** osbs2/osbs4-6 run with `use_hillslope_routing =
+.false.` and `PCT_LAKE = 0`. Phase F matches this exactly. Under this
+config, columns are **hydrologically isolated 1D soil columns** —
+multi-column structure provides aspect-dependent radiation,
+elevation downscaling, independent per-column water balance, but NO
+lateral water exchange. TAI dynamics in the strict sense (lateral
+flow → upland-saturation-driven lake filling) are dormant; that's
+**Phase G Stage 2** territory. See `phases/F-validate-deploy.md`
+"What 'routing off' means for interpretation" for the full framing.
+
+**Done:**
+- ✅ Custom hillslope file built and validated (Phase E.5)
+- ✅ Physical plausibility checks (elevation range, stream network, HAND values)
+- ✅ Apples-to-apples comparison vs Swenson reference (parameter table in `STATUS.md`)
+- ✅ `osbs5.swenson.spinup` case created, built, and run (100 yr)
+- ✅ 8 spinup-analysis plots generated (5 gridcell + 3 column-level)
+- ✅ New plotting tools: `scripts/hillslope.analysis/plot_col_timeseries.py`
+
+**Pending:**
+- Extend spinup to ~600 yr accelerated (matches sgerber's osbs4 length)
+- Optional post-AD continuation (~200 yr, `CLM_ACCELERATED_SPINUP = off`)
+- Re-generate plots over longer span; verify `TOTECOSYSC` drift < 3% over last 50 yr
+- Optional: parallel case with Swenson reference hillslope under same osbs5 setup for direct attribution
+
+**Deliverable:** Validated hillslope file ready for production runs +
+convergent spinup baseline. See `phases/F-validate-deploy.md` 2026-05-06
+log entry for the full milestone summary.
 
 ### Phase G: Submerged lake column in hillslope file
 
-**Status: In design.** Blocked by Phase E.5 (HAND binning fix). **Direction changed 2026-04-09** after PI consultation — weir overflow plan abandoned. **Scope refined 2026-04-25** — lake column stays narrow (NWI water only); unmapped depression pixels go into flood-zone bins from Phase E.5.
+**Status: Stage 1 complete (in parallel with Phase F); Stage 2 deferred.**
 
-Add one column to the hillslope NetCDF representing the aggregate of all NWI-mapped lake area as a single submerged column with negative `hill_elev`. CTSM's existing lateral flow machinery draws water from adjacent upland columns into the lake column automatically. TAI response (rising water table, suppressed aerobic decomposition, CH4) emerges via existing `w_scalar`, `o_scalar`, `finundated` pathways. No CTSM Fortran modifications from our fork planned — the PI's existing spillheight SourceMod handles the model-side behavior.
+The original phase ordering treated G as sequential after F (F
+establishes a "lake-less" baseline; G adds the lake column on top).
+That ordering dissolved when the 2026-04-25 PI direction folded the
+lake column into the pipeline output as a single submerged column
+(not a separate landunit). The pipeline's hillslope NetCDF always
+includes the lake column now — there is no lake-less version to use
+as F's baseline. Phase F and Phase G Stage 1 share the osbs5
+validation case, with each tracking a distinct deliverable.
+
+| Stage | Goal | Status |
+|---|---|---|
+| **1. Lake column construction + CTSM ingestion** | Add submerged column to the hillslope NetCDF; verify CTSM ingests it correctly and column weights are sensible | **Complete** (Phase E.5 + 2026-05-05 per-rep rescale; validated in osbs5 100-yr run alongside Phase F) |
+| **2. Routing-on validation** | Enable `use_hillslope_routing = .true.`; verify lateral flow produces TAI behavior (water table rise near lake → decomposition suppression → CH4) | **Deferred** — requires (a) explicit `LND_DOMAIN_MESH` (single-point `grc%area = spval` breaks `nhill_per_landunit`), (b) hydraulic-conductivity sanity check |
+
+**Direction changed 2026-04-09** after PI consultation — weir overflow plan abandoned. **Scope refined 2026-04-25** — lake column stays narrow (NWI water only); unmapped depression pixels go into flood-zone bins from Phase E.5.
+
+Add one column to the hillslope NetCDF representing the aggregate of all NWI-mapped lake area as a single submerged column with negative `hill_elev`. CTSM's existing lateral flow machinery draws water from adjacent upland columns into the lake column automatically **(under Stage 2 — routing on)**. TAI response (rising water table, suppressed aerobic decomposition, CH4) emerges via existing `w_scalar`, `o_scalar`, `finundated` pathways. No CTSM Fortran modifications from our fork planned — the PI's existing spillheight SourceMod handles the model-side behavior (currently inert: `spillheight = 0.0`).
 
 **Lake column parameters (resolved 2026-04-25 via PI direction):**
 
@@ -193,19 +258,26 @@ Add one column to the hillslope NetCDF representing the aggregate of all NWI-map
 | `hill_aspect` | 0 | Inconsequential |
 | `hill_bedrock_depth` | 0 | Inert under Uniform soil profile |
 
-**Tasks:**
-1. Phase E.5 (HAND binning fix) — landed first; affects bin structure
-2. Compute lake perimeter from NWI shapefile (with polygon dissolve for nested rings)
-3. Pipeline: add lake column at index 1, shift land columns up
-4. Update NetCDF writer for `nmaxhillcol = N_BINS + 1`
-5. Production run, verify NetCDF structure
-6. CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod, compare vs Phase F baseline
+**Stage 1 tasks (complete):**
+1. ✅ Phase E.5 (HAND binning fix) — 24-bin TAI-focused scheme, raw-HAND binning, Q01/Q99 trim
+2. ✅ Compute lake perimeter from NWI shapefile (boundary-pixel approximation; ½ perimeter rescaled to per-rep)
+3. ✅ Pipeline: add lake column at chain index 1, shift land columns up
+4. ✅ NetCDF writer for `nmaxhillcol = N_BINS + 1` = 25
+5. ✅ Production runs (2026-05-04, 2026-05-05) verify NetCDF structure
+6. ✅ Per-rep rescale fixes lake column wtlunit from 98.7% → 12.3% (matches NWI water fraction)
+7. ✅ CTSM ingestion verified via `osbs5.swenson.spinup` 100-yr run
 
-**Outstanding considerations (deferred to model output):**
-- SPILLHEIGHT tuning (default 0.2m for now; Lee 2023 measured 2.64m — revisit if model output suggests issues)
-- "Always submerged" — don't enforce parametrically; lakes dry cyclically per real hydrology
+**Stage 2 tasks (deferred — routing-on validation):**
+1. Switch from single-point mode (`PTS_LAT/PTS_LON`) to explicit `LND_DOMAIN_MESH` so `grc%area` is a real number (not `spval`)
+2. Set `use_hillslope_routing = .true.` in user_nl_clm
+3. Sanity-check col-col Darcy fluxes (hydraulic conductivity, gradient signs)
+4. Run a short test simulation; verify lake column water table responds to upland saturation (not just direct precipitation)
+5. Long-form validation: lateral coupling drives TAI emergence (CH4 increase, finundated rise) in low-HAND columns
+6. SPILLHEIGHT tuning if needed (currently 0.0 per Phase E.5 reframe; Lee 2023 measured 2.64m as alternative — revisit if model output suggests issues)
 
-**Deliverable:** Hillslope NetCDF with submerged lake column + flood-zone bins (per Phase E.5), consumed by CTSM with PI's spillheight SourceMod. Comparison showing effect on water table dynamics and CH4 production in near-lake and flood-zone columns.
+**Deliverable (Stage 1):** Hillslope NetCDF with submerged lake column + flood-zone bins (per Phase E.5), consumed by CTSM with PI's spillheight SourceMod (rendered inert via `spillheight = 0.0`). Validated in `osbs5.swenson.spinup` 100-yr run (column weights correct, per-column water/carbon behavior sensible).
+
+**Deliverable (Stage 2):** Lateral-flow validation showing lake water table coupled to upland saturation, TAI emergence (water table rise → decomposition suppression → CH4 production) in low-HAND columns.
 
 **Reference:** `docs/lake-column-ctsm-audit.md` — full audit including Sections 5 (lake column parameters) and 6.7 (HAND binning fix). `phases/G-ctsm-lake-representation.md` — phase plan and open questions.
 
@@ -217,6 +289,20 @@ Phase A (fix pysheds UTM) ─────── COMPLETE ─┐
 Phase B (resolve resolution) ── COMPLETE ───┤
                                              │
 Phase C (establish Lc) ──────── COMPLETE ───┘
+
+Phase E (params) ──────────────── COMPLETE ─┐
+Phase E.5 (bin redesign +                    │
+            spillheight=0 +                  ├──> osbs5.swenson.spinup ── 100 yr DONE
+            lake column) ───────  COMPLETE ──┤      validates BOTH
+Phase E.6 (NWI mask hole-fill) ── COMPLETE ──┘      ↓               ↓
+                                                Phase F          Phase G Stage 1
+                                                (long spinup     (lake col + CTSM
+                                                 to convergence)  ingestion)
+                                                IN PROGRESS       COMPLETE
+                                                (extend to 600 yr)
+
+                                                Phase G Stage 2 (routing on)
+                                                ── DEFERRED (needs mesh + tuning)
 
 Phase E (complete params) ── COMPLETE ─────┐
                                             ├──> Phase F (validate & deploy) ──> Phase G (lake column)

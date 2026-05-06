@@ -39,6 +39,31 @@ The original Phase G plan (weir overflow, repurposing the stream infrastructure 
 
 ## Approach
 
+Phase G has **two stages** with different deliverables and dependencies:
+
+| Stage | Goal | Status | Notes |
+|---|---|---|---|
+| **1. Lake column construction + CTSM ingestion** | Add a submerged column to the hillslope NetCDF; verify CTSM reads it correctly and column weights are sensible | **Complete** (Phase E.5 + 2026-05-05 per-rep rescale) | Lake at chain index 1, `hill_elev = -6 m`, per-rep area/width via `nhill_implicit ≈ 533`. Validated by `osbs5.swenson.spinup` 100-yr run alongside Phase F. |
+| **2. Routing-on validation** | Turn on `use_hillslope_routing = .true.`, verify lateral flow produces TAI behavior (water table rise near lake, suppressed aerobic decomposition, CH4 increase) | **Deferred** | Requires (a) switch from single-point mode to explicit `LND_DOMAIN_MESH` so `grc%area` is real, (b) hydraulic-conductivity sanity-check between columns. See 2026-05-05 log entry. |
+
+**Phase G Stage 1 ran in parallel with Phase F**, not sequentially
+after it. The 2026-04-25 PI direction folded the lake column into the
+pipeline output (single submerged column, not a separate landunit),
+dissolving the original "F provides lake-less baseline → G adds lake
+column" ordering. The pipeline's hillslope NetCDF always includes the
+lake column. The osbs5 validation case proves both: (a) the file
+behaves sensibly over a long spinup (Phase F), and (b) CTSM ingests
+the lake-included structure correctly with the right column weights
+(Phase G Stage 1).
+
+The rest of this section describes the unified mechanism (lake column +
+PI's SourceMod). The **TAI dynamics narrative** ("water flows from
+upland to lake, water table rises, decomposition suppressed, CH4 emits")
+emerges only when **Stage 2** is enabled. Under Stage 1 alone (current
+osbs5 config), columns are hydrologically isolated and any patterns in
+gridcell aggregates come from independent per-column water balances
+(precipitation distributed by area weight), NOT from lateral flow.
+
 Append one extra column per gridcell to the hillslope NetCDF. The column represents the aggregate of all NWI-masked lake area as a single "submerged" hillslope column with negative `hill_elev`. This pipeline change works **in tandem** with the PI's existing spillheight SourceMod (see below) — the two mechanisms are complementary, not competing.
 
 ### Integration with the PI's spillheight SourceMod
@@ -76,6 +101,19 @@ NetCDF structure change: `nmaxhillcol = N_BINS + 1` where N_BINS depends on the 
 Authoritative reference: `docs/lake-column-ctsm-audit.md` Sections 5.1-5.5 — full rationale for each parameter value with PI direction notes.
 
 ## Why this works
+
+> **Prerequisite:** the lateral-flow pathway described below requires
+> `use_hillslope_routing = .true.`. Our current osbs5 config (and
+> osbs2/osbs4-6) all run with **routing OFF**. Under that configuration
+> the columns exist as independent 1D soil columns — no col-to-col
+> water exchange, no TAI emergence via lateral flow. The lake column
+> only receives water from direct precipitation on its area share.
+> See the 2026-05-05 log entry for the full breakdown of why routing
+> is off (single-point mode + `grc%area = spval`) and what would be
+> required to enable it. This section describes the eventual
+> **Stage 2** behavior; **Stage 1** (lake column construction in the
+> hillslope file) is what the rest of this doc and the Phase E.5 work
+> have delivered.
 
 **Negative `hill_elev` is permitted.** Confirmed in `ColumnType.F90:76` — no guards, sign checks, or absolute value operations on `hill_elev` anywhere in the source. The head gradient equation in `SoilHydrologyMod.F90` (line 2261) works with negative values because it computes differences:
 
