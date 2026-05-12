@@ -1,5 +1,12 @@
 # Hillslope Binning Rationale
 
+**Status (2026-05-12): Partially superseded by Phase E.5.** The 1×16
+hybrid scheme this document describes was replaced on 2026-05-04 by a
+24-bin TAI-focused scheme (12 FZ + 12 upland, 0.25 m floor, raw-HAND
+input with Q01/Q99 trim). For the current bin scheme and its
+rationale see `phases/E.5-bin-redesign.md` and `STATUS.md`. The
+sections below are retained as evolution history.
+
 Date: 2026-03-19 (last updated 2026-04-14)
 
 **Current scheme (2026-04-14):** 1 aspect × 16 HAND bins, hybrid fixed 10cm + log-spaced tail. See "2026-04-14 update" section below for rationale and permutation testing. The sections above that one describe the evolution of the binning decisions up to the prior 1×8 A2 scheme.

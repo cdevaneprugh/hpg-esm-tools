@@ -11,18 +11,23 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 
 The pysheds fork now handles both geographic and UTM CRS (Phase A). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The MERIT validation pipeline has been consolidated into a single regression script (`scripts/merit_validation/merit_regression.py`) that validates the geographic CRS code path after pysheds fork changes. The original 9 stage scripts are archived in `audit/merit_validation_stages/`.
 
-## Phase Workflow
+## Documentation roles
 
-Work is organized into phases A-F, tracked in `phases/`. Each phase file has a `Status:` header, task checkboxes, and a `## Log` section.
+Three docs share the project's recorded knowledge. They have distinct
+purposes and update cadences:
 
-**When working on a phase, update its tracking file:**
+| Where | What lives here | Update cadence |
+|---|---|---|
+| `CLAUDE.md` (this file) | **Index.** Pointers, file lists, directory structure, quick-start commands, key resources. | Rare (structure changes) |
+| `STATUS.md` | **Scientific context.** Project goal, locked decisions, roadmap, open questions, current state. | Every locked decision / phase state change |
+| `phases/*.md` | **Detailed records.** Per-phase problem statement, approach, task checklist, dated log entries. | Every working session on the phase |
 
-- **Starting work:** Set `Status: In progress`, add a dated log entry describing what you're doing.
-- **During work:** Check off tasks as completed. Add dated log entries with results, decisions, and issues encountered.
-- **Finishing:** Set `Status: Complete`, write a summary log entry.
-- **Scope changes:** If work reveals new problems or changes scope, update the phase file AND STATUS.md.
-
-Phase files are the **primary record** of what was done and why. After completing a phase, update STATUS.md to reflect the new project state.
+**Phase file convention.** Each `phases/X-*.md` has a `Status:`
+header, task checkboxes, and a `## Log` section with dated entries.
+Phase files are the **primary record** of what was done and why; when
+a phase reaches a milestone, add a log entry there first, then update
+STATUS.md's scientific-decisions table or change log if a downstream-
+affecting decision was made.
 
 ## Key Resources
 
@@ -50,15 +55,17 @@ swenson/
 ├── CLAUDE.md                  # This file
 ├── STATUS.md                  # Living project status document
 │
-├── phases/                    # Phase tracking files (A-F)
+├── phases/                    # Phase tracking files (A-H)
 │   ├── A-pysheds-utm.md       # Fix pysheds for UTM CRS
 │   ├── B-flow-resolution.md   # Resolve flow routing resolution
 │   ├── C-characteristic-length.md  # Establish trustworthy Lc
 │   ├── C-archive/             # Completed Phase C scripts (4 .py + 4 .sh)
 │   ├── D-rebuild-pipeline.md  # Rebuild pipeline with fixes
-│   ├── E-complete-parameters.md    # Complete the parameter set
-│   ├── F-validate-deploy.md   # Validate and deploy
-│   └── G-ctsm-lake-representation.md  # Submerged lake column in hillslope file
+│   ├── E-complete-parameters.md    # Complete the parameter set (superseded by E.5 for bins + lake)
+│   ├── E.5-bin-redesign.md    # 24-bin TAI-focused scheme + lake column
+│   ├── F-validate-deploy.md   # Long convergent spinup + CTSM ingestion
+│   ├── G-ctsm-lake-representation.md  # Lake column construction (Stage 1 done; Stage 2 → Phase H)
+│   └── H-lateral-flow.md      # Routing-on (mesh-mode workaround for CTSM Issue #1432)
 │
 ├── audit/
 │   ├── 240210-validation_and_initial_implementation/
@@ -76,13 +83,17 @@ swenson/
 │   │   ├── osbs-pipeline-audit-260310.md          # Pipeline equation audit
 │   │   ├── osbs-pipeline-divergence-audit-260316.md  # Line-by-line divergence audit
 │   │   └── docs-update-plan-260317.md             # Documentation update plan
+│   ├── 260512-cleanup/                     # Hygiene cleanup batch (one-off scripts, dem_processing, README)
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
-│   ├── hillslope-binning-rationale.md  # Why 1x8 log-spaced bins
-│   ├── ns-aspect-bug.md      # N/S aspect swap bug analysis
-│   ├── pysheds-utm-walkthrough.md  # UTM CRS support walkthrough
-│   └── synthetic_lake_bottoms.md   # Synthetic lake bottoms brainstorming
+│   ├── lake-column-ctsm-audit.md       # Canonical lake-column params + CTSM source investigation
+│   ├── hillslope-binning-rationale.md  # 1x16 hybrid history (partially superseded by E.5)
+│   ├── water-masking-and-lake-representation.md  # CTSM source investigation (partially superseded)
+│   ├── data-acquisition-dates.md  # NEON LIDAR, NWI, Lee 2023 vintage notes
+│   ├── ns-aspect-bug.md      # N/S aspect swap bug analysis (historical)
+│   ├── pysheds-utm-walkthrough.md  # UTM CRS support walkthrough (historical)
+│   └── synthetic_lake_bottoms.md   # Brainstorming (not implemented)
 │
 ├── data/
 │   ├── neon/
@@ -193,8 +204,9 @@ Reference case for validating custom OSBS hillslope data.
 
 | Case | Path | Description |
 |------|------|-------------|
-| osbs2 (original) | `/blue/gerber/sgerber/earth_model_output/cime_output_root/osbs2/` | 860+ year spinup with hillslopes |
-| osbs2.branch.v2 | `$CASES/osbs2.branch.v2` | Branch case for testing |
+| osbs2 (original) | `/blue/gerber/sgerber/earth_model_output/cime_output_root/osbs2/` | sgerber's reference; 860+ yr spinup with global hillslope file |
+| osbs2.branch.v2 | `$CASES/osbs2.branch.v2` | Earlier branch case for testing (historical) |
+| **osbs.swenson.spinup** | `$CASES/osbs.swenson.spinup` | **Current operative case.** Fresh startup with our 2026-05-05 production NetCDF. 4-stream hist config (h0/h1/h2/h3). 600-yr accelerated AD spinup chain. See `phases/F-validate-deploy.md`. |
 
 ### Input Data
 

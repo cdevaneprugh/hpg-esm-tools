@@ -1,5 +1,17 @@
 # Water Masking and Lake Representation in the OSBS Hillslope Pipeline
 
+**Status (2026-05-12): Partially superseded.** The CTSM source
+investigation (stream water cycle, lateral flow, carbon-water
+coupling, PCT_LAKE interaction, MOSART coupling) remains accurate and
+useful — particularly as background reading for Phase H (routing-on
+work). The Phase G design described here has been superseded twice:
+the 2026-04-09 PI direction abandoned weir overflow for a submerged
+lake column; the 2026-04-30 PI reframe folded the lake column into
+the pipeline output and retired the spillheight SourceMod (now inert
+via `spillheight = 0.0`). For current lake representation see
+`phases/E.5-bin-redesign.md`, `phases/G-ctsm-lake-representation.md`,
+and `docs/lake-column-ctsm-audit.md`.
+
 Date: 2026-03-27
 
 ## Status (2026-04-09)
