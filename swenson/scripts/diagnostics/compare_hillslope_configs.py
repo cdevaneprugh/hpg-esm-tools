@@ -9,13 +9,13 @@ For multi-aspect configurations (4x4), computes an area-weighted average across
 aspects to produce a single comparable profile line alongside per-aspect lines.
 
 Usage:
-    python scripts/osbs/compare_hillslope_configs.py <old.json> <new.json> <output.png>
+    python scripts/diagnostics/compare_hillslope_configs.py <old.json> <new.json> <output.png>
 
 Example:
-    python scripts/osbs/compare_hillslope_configs.py \
-        output/osbs/2026-03-17_tier3_contiguous/hillslope_params.json \
-        output/osbs/2026-03-19_tier3_contiguous_1x8/hillslope_params.json \
-        output/plots/4x4_vs_1x8_tier3.png
+    python scripts/diagnostics/compare_hillslope_configs.py \
+        output/osbs/<DATE_A>_production/hillslope_params.json \
+        output/osbs/<DATE_B>_production/hillslope_params.json \
+        output/plots/config_comparison.png
 """
 
 import argparse

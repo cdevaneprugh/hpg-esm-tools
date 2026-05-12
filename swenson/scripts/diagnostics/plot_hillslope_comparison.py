@@ -7,7 +7,7 @@ Swenson's 4-aspect data is pre-averaged into a single profile (4 bins).
 Our 1x8 data plotted directly (8 bins).
 
 Usage:
-    python scripts/osbs/plot_hillslope_comparison.py [input_nc] [output_png]
+    python scripts/diagnostics/plot_hillslope_comparison.py [input_nc] [output_png]
 """
 
 import argparse

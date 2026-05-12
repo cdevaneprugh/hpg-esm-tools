@@ -83,7 +83,7 @@ swenson/
 │   │   ├── osbs-pipeline-audit-260310.md          # Pipeline equation audit
 │   │   ├── osbs-pipeline-divergence-audit-260316.md  # Line-by-line divergence audit
 │   │   └── docs-update-plan-260317.md             # Documentation update plan
-│   ├── 260512-cleanup/                     # Hygiene cleanup batch (one-off scripts, dem_processing, README)
+│   ├── 260512-cleanup/                     # Hygiene cleanup batch (one-off scripts, dem_processing, smoke_tests, README)
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
@@ -131,9 +131,6 @@ swenson/
     │   ├── compare_hillslope_configs.py  # Generic profile comparison utility
     │   ├── plot_hillslope_comparison.py  # OSBS vs Swenson reference plotter
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay
-    ├── smoke_tests/              # UTM smoke tests (R6C10 single-tile)
-    │   ├── run_r6c10_utm.py      # Single-tile UTM pipeline test
-    │   └── run_r6c10_utm.sh      # SLURM wrapper
     └── visualization/            # KML generation scripts
         └── export_nwi_water_kml.py  # NWI water features KML for Google Earth
 ```

@@ -49,6 +49,23 @@ Phase B is Complete. Test scripts retained for the validation record.
 - **`export_perimeter_kml.py`** — Production-domain perimeter overlay
   KML.
 
+### `smoke_tests/` — Phase A UTM validation smoke test
+
+Single-tile (R6C10) smoke test for the pysheds fork's UTM CRS code path.
+Served its purpose during Phase A development (28 synthetic tests +
+this real-tile smoke check confirmed the UTM code paths work). With
+Phase A locked and the MERIT regression test as the ongoing validation
+mechanism, this script is no longer routinely run.
+
+- **`run_r6c10_utm.py`** — Single-tile UTM pipeline test
+- **`run_r6c10_utm.sh`** — SLURM wrapper
+
+Note: the original script imports `merit_validation.stage3_hillslope_params`,
+which referred to the now-archived `audit/merit_validation_stages/`
+location. Path is broken; reviving would require fixing the import to
+the current `hillslope_params.py` (in `scripts/osbs/` or
+`scripts/merit_validation/`).
+
 ## What's not archived here
 
 Still in `scripts/`:
@@ -61,7 +78,6 @@ Still in `scripts/`:
 - `scripts/merit_validation/*` — pysheds regression test (active);
   `spatial_scale.py` and `hillslope_params.py` now also live here as
   frozen copies
-- `scripts/smoke_tests/run_r6c10_utm.{py,sh}` — Phase A smoke test
 
 ## Note on broken imports in archived scripts
 

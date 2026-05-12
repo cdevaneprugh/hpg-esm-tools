@@ -10,9 +10,11 @@
 #SBATCH --account=gerber
 #SBATCH --qos=gerber-b
 
-# Smoke test: single tile R6C10 (lake, swamp, upland)
-# Before running: change MOSAIC_PATH in run_pipeline.py to point at the R6C10 tile:
-#   MOSAIC_PATH = DATA_DIR / "neon" / "dtm" / "NEON_D03_OSBS_DP3_404000_3286000_DTM.tif"
+# Smoke test wrapper for run_pipeline.py.
+# Same pipeline as production; OUTPUT_DESCRIPTOR distinguishes the output dir.
+# To actually run on a single tile (R6C10 — lake, swamp, upland), MOSAIC_PATH
+# in run_pipeline.py must be repointed manually before submitting — the script
+# has no built-in smoke-vs-production mosaic switch.
 
 set -euo pipefail
 
