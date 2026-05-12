@@ -1,6 +1,6 @@
 # Phase E.5: Bin Redesign and Spillheight Removal
 
-Status: In design (post-PI-meeting reframe, 2026-04-30)
+Status: Complete (locked 2026-05-04; in production via `hillslopes_osbs_production_c260505.nc`)
 Depends on: Phase E (complete), Phase E.6 (NWI mask regen, complete)
 Blocks: Phase F, Phase G
 Supersedes: original "HAND binning fix" framing in STATUS.md and audit doc Section 6.7
@@ -688,10 +688,10 @@ earlier 23-bin draft.
       Lee 2023 spill-depth data as a physical sanity check. See
       2026-05-01 log entries for derivation, the 2026-05-02 entry below
       for the formalized defense framing.
-- [ ] Verify chain monotonicity once both the cutoff and lake hill_elev
-      are chosen. Currently deferred — depends on bin design (which sets
-      the deepest FZ bin's mean) and lake elevation, neither of which is
-      decided yet. Re-run trivially once those are fixed.
+- [x] Verify chain monotonicity once both the cutoff and lake hill_elev
+      are chosen. Confirmed in production: lake `hill_elev = -6.0 m` is
+      0.87 m below deepest land bin's mean (-5.13 m). The osbs5 and
+      osbs.swenson.spinup runs both ingest the chain without error.
 
 ### Initial bin scheme
 
@@ -818,21 +818,22 @@ without reading them out of pipeline logs.
       "Working bin scheme" subsection above. Per-bin parameters
       verified via `scripts/osbs/diagnose_bin_schemes.py`; output at
       `output/osbs/2026-05-04_bin_schemes/setup_working.png`.
-- [ ] Implement the locked 24-bin scheme in `run_pipeline.py` per the
+- [x] Implement the locked 24-bin scheme in `run_pipeline.py` per the
       "Pipeline implementation steps" subsection above. Pipeline change
       includes: (a) capture `dep_fill` in Step 3, (b) derive `raw_hand`
       in Step 4, (c) switch binning input from `hand` to `raw_hand`,
       (d) replace `(hand > 0)` filter with the explicit channel-and-
       water mask, (e) apply Q01/Q99 trim in main loop, (f) hardcode
       the 24 bin edges (or graduate to a function in
-      `hillslope_params.py`).
+      `hillslope_params.py`). Production NetCDF dated 2026-05-05.
 - [x] Generate diagnostic plot showing bin scheme fit to raw HAND
       histogram. Done via `diagnose_bin_schemes.py` for the locked
       scheme. Plot at `output/osbs/2026-05-04_bin_schemes/setup_working.png`.
-- [ ] Run pipeline; verify bin edges, areas, means match the
+- [x] Run pipeline; verify bin edges, areas, means match the
       diagnostic. Cross-check against `summary.json` from the
-      diagnostic.
-- [ ] Document baseline output for comparison with PI feedback.
+      diagnostic. Verified in 2026-05-04 and 2026-05-05 production runs.
+- [x] Document baseline output for comparison with PI feedback.
+      Captured in NetCDF global attrs + audit doc Section 5.
 
 ### FZ bin redesign
 
@@ -845,14 +846,24 @@ without reading them out of pipeline logs.
 ### Lake column update
 
 - [x] Set lake `hill_elev` = -6.0 m (locked 2026-05-04, chain-bookkeeping value).
-- [ ] Verify chain monotonicity end-to-end with the chosen FZ scheme.
-- [ ] Document the choice and reasoning in the NetCDF generation step.
+- [x] Verify chain monotonicity end-to-end with the chosen FZ scheme.
+      24-bin scheme + lake at -6.0 m chain accepted by CTSM ingestion in
+      osbs5 (100 yr) and osbs.swenson.spinup (current run).
+- [x] Document the choice and reasoning in the NetCDF generation step.
+      Captured in `docs/lake-column-ctsm-audit.md` Section 5.2.1 +
+      NetCDF global attributes on the production output.
 
 ### SourceMod and case config
 
-- [ ] Edit `osbs4.branch.v2/SourceMods/src.clm/HillslopeHydrologyMod.F90`
+- [x] Edit `osbs4.branch.v2/SourceMods/src.clm/HillslopeHydrologyMod.F90`
       to set `SPILLHEIGHT = 0`. Do not remove the SourceMod files.
-- [ ] Note the change in the case directory's run log.
+      Approach revised: SPILLHEIGHT is set to 0 via the namelist
+      override (`spillheight = 0.0` in user_nl_clm), not by editing
+      the SourceMod constant. SourceMod files are retained but rendered
+      inert. Same runtime effect; lower maintenance burden across cases.
+- [x] Note the change in the case directory's run log. user_nl_clm
+      includes a comment block in osbs5/osbs.swenson.spinup explaining
+      the Phase E.5 reframe.
 
 ### Iteration
 

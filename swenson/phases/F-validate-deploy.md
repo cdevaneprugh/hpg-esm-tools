@@ -1,11 +1,11 @@
 # Phase F: Validate and Deploy
 
-Status: In progress (osbs5.swenson.spinup, 100-yr accelerated AD spinup
-complete 2026-05-06; 8 spinup-analysis plots generated; longer spinup
-to convergence pending after HiPerGator maintenance window)
+Status: In progress (osbs.swenson.spinup, 600-yr accelerated AD spinup
+in flight as of 2026-05-11; 4-stream hist config; osbs5 superseded after
+ntapes restriction at restart prevented adding h2/h3 streams mid-spinup)
 Depends on: Phase E (parameter pipeline), Phase E.5 (bin scheme + lake column)
-Blocks: Phase G Stage 2 (routing-on validation)
-Runs in parallel with: Phase G Stage 1 (lake column construction + CTSM ingestion)
+Blocks: Phase H (routing-on validation)
+Runs in parallel with: Phase G Stage 1 (lake column construction + CTSM ingestion, complete)
 
 ## Scope (refined 2026-05-06)
 

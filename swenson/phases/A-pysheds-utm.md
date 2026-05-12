@@ -190,8 +190,8 @@ Branch: `feature/utm-crs-support` (from `uf-development`)
 
 **Remaining follow-up tasks (not in this scope):**
 - [ ] Create multi-basin synthetic DEM to validate flow-path DTND vs EDT
-- [ ] MERIT validation regression (stages 1-9 reproduce existing correlations)
-- [ ] OSBS smoke test on tile R6C10
+- [x] MERIT validation regression (stages 1-9 reproduce existing correlations)
+- [x] OSBS smoke test on tile R6C10
 
 ### 2026-02-12: Audit and hardening of UTM CRS support
 
