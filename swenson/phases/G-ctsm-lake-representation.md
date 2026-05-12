@@ -1,6 +1,6 @@
 # Phase G: Submerged Lake Column in Hillslope File
 
-Status: **Folded into Phase E.5** (reframed 2026-04-30)
+Status: **Complete** (Stage 1 done 2026-05-05; Stage 2 moved to Phase H)
 Depends on: —
 Blocks: —
 
@@ -44,7 +44,7 @@ Phase G has **two stages** with different deliverables and dependencies:
 | Stage | Goal | Status | Notes |
 |---|---|---|---|
 | **1. Lake column construction + CTSM ingestion** | Add a submerged column to the hillslope NetCDF; verify CTSM reads it correctly and column weights are sensible | **Complete** (Phase E.5 + 2026-05-05 per-rep rescale) | Lake at chain index 1, `hill_elev = -6 m`, per-rep area/width via `nhill_implicit ≈ 533`. Validated by `osbs5.swenson.spinup` 100-yr run alongside Phase F. |
-| **2. Routing-on validation** | Turn on `use_hillslope_routing = .true.`, verify lateral flow produces TAI behavior (water table rise near lake, suppressed aerobic decomposition, CH4 increase) | **Deferred** | Requires (a) switch from single-point mode to explicit `LND_DOMAIN_MESH` so `grc%area` is real, (b) hydraulic-conductivity sanity-check between columns. See 2026-05-05 log entry. |
+| **2. Routing-on validation** | Turn on `use_hillslope_routing = .true.`, verify lateral flow produces TAI behavior (water table rise near lake, suppressed aerobic decomposition, CH4 increase) | **Moved to Phase H** | See `phases/H-lateral-flow.md`. Research 2026-05-11 confirmed the problem is canonical CTSM Issue #1432 (open since 2021); mesh-mode is Swenson's recommended workaround. |
 
 **Phase G Stage 1 ran in parallel with Phase F**, not sequentially
 after it. The 2026-04-25 PI direction folded the lake column into the
@@ -381,3 +381,24 @@ configuration as a separate (not pipeline-side) task.
   `mesh_lnd = UNSET`, `mesh_atm = UNSET`.
 - v4 history file `area = 9.999...e+35`: smoking gun for spval at
   runtime.
+
+### 2026-05-11 — Phase G marked Complete; Stage 2 split to Phase H
+
+Stage 1 (lake column construction + CTSM ingestion) verified by
+`osbs5.swenson.spinup` 100-yr run and re-validated in
+`osbs.swenson.spinup` long spinup currently running. Stage 2
+(routing-on validation) split out to **Phase H** after a research pass
+(see `phases/H-lateral-flow.md`) established that the
+`grc%area = spval` problem is canonical **CTSM Issue #1432** (open
+since 2021-07-20). Mesh-mode is Swenson's personal recommended
+workaround per a Feb 2025 DiscussCESM thread.
+
+Two additional findings beyond what the 2026-05-05 log entry covered:
+(a) a secondary `grc%area` exposure in `HillslopeUpdateStreamWater`
+(`HillslopeHydrologyMod.F90:1117-1121`), gated by `active_stream` not
+`use_hillslope_routing` directly, but indirectly safe under
+routing-off; (b) no defensive guards anywhere in CTSM `src/` for
+`grc%area == spval`.
+
+This phase is now historical-reference only. Active routing-on work
+lives in Phase H.
