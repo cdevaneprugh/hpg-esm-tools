@@ -61,12 +61,17 @@ consultation.
 These block meaningful routing-on validation. See
 `phases/H-lateral-flow.md` Section 6 for full context.
 
-- **B1. Gridcell area choice** for mesh-mode case. Options: ~90 km² LIDAR
-  domain, ~0.17 km² single-rep, ~2,700 km² (0.5° × 0.5° Swenson
-  convention), ~12,654 km² (0.9° × 1.25° paper resolution), or other.
-  Central scientific decision; affects what gridcell aggregates
-  physically represent and the magnitude of stream channel length and
-  lateral flow rates.
+- **B1. Gridcell area choice** for mesh-mode case. Three options worth
+  presenting (per 2026-05-13 research notes in `phases/H-lateral-flow.md`):
+  (a) 90 km² LIDAR domain — no rework; (c′) 36.81 km² NEON
+  terrestrial-sampling boundary with `nhill_implicit` rescaled and
+  hillslope statistics inherited from the 90 km² LIDAR mosaic —
+  ~1 hour rework; (c) 36.81 km² NEON boundary with statistics
+  re-derived from polygon-clipped LIDAR — ~1–2 days rework. Options
+  ~2,700 km² and ~12,654 km² (Swenson conventions) recommended
+  against. Central scientific decision; affects what gridcell
+  aggregates physically represent and the magnitude of stream
+  channel length and lateral flow rates.
 - **B2. Hydraulic conductivity reasonableness.** Bin elevation
   differences in the 0–50cm TAI zone are small (~10 cm). Is the
   resulting Darcy gradient (Δh/L) physically meaningful for OSBS sandy
@@ -171,6 +176,8 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-05-13** — Phase H gridcell-area decision space updated: added rescale-only option (c′ ≈ 1 hr) and revised pipeline-rerun estimate (rectangular subset ≈ half-day; polygon-clip ≈ 1–2 days). Added mesh-mechanics primer to Phase H Section 5.
+- **2026-05-12** — Phase H deep research pass: input data inventory, NEON product survey, scale analysis, mesh tooling, community precedent — 332 lines added to `phases/H-lateral-flow.md`.
 - **2026-05-12** — STATUS.md restructured (30 KB → ~7 KB); CLAUDE.md updated to explicit index role; partially-superseded docs/* annotated.
 - **2026-05-12** — `scripts/` hygiene cleanup + shared-module de-coupling (merit_validation and osbs each own a copy of `spatial_scale.py` + `hillslope_params.py`).
 - **2026-05-11** — Phase H created (lateral subsurface flow); Phase G marked Complete (Stage 2 split to Phase H).
