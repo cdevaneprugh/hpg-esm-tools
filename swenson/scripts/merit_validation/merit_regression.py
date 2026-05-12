@@ -24,8 +24,6 @@ from pyproj import Proj as PyprojProj
 from pysheds.pgrid import Grid
 from rasterio.windows import from_bounds
 
-# Add parent directory for local imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from spatial_scale import identify_spatial_scale_laplacian_dem
 from hillslope_params import (
     RE,

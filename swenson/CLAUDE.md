@@ -100,38 +100,39 @@ swenson/
 │   ├── osbs/                  # Pipeline runs (YYYY-MM-DD_<desc>/)
 │   └── plots/                 # Comparison plots
 │
-├── scripts/
-│   ├── spatial_scale.py       # Shared FFT module (dual-CRS: geographic + UTM)
-│   ├── hillslope_params.py    # Shared hillslope computation module
-│   ├── dem_processing.py      # Basin detection (identify_open_water unused — replaced by NWI mask)
-│   ├── merit_validation/      # MERIT geographic regression test
-│   │   ├── merit_regression.py  # Single-file regression (Lc + 6 params vs published)
-│   │   ├── merit_regression.sh  # SLURM wrapper
-│   │   ├── README.md            # Script purpose and flowchart
-│   │   └── output/              # results.json, summary.txt, SLURM logs
-│   ├── osbs/                  # Pipeline scripts
-│   │   ├── run_pipeline.py    # Main hillslope pipeline (1x16 HAND bins, hybrid 5 fixed 10cm + 10 log Q99, water-masked)
-│   │   ├── run_pipeline_production.sh    # Production SLURM wrapper
-│   │   ├── run_pipeline_smoke.sh         # Smoke test SLURM wrapper (R6C10)
-│   │   ├── compare_hillslope_configs.py  # Compare 4x4 vs 1x8 profiles
-│   │   ├── compare_lc_water_masking.py   # Lc comparison: raw vs lake-masked (3 methods)
-│   │   ├── compare_lc_water_masking.sh   # SLURM wrapper for Lc water masking comparison
-│   │   ├── compare_slope_aspect.py       # pgrid vs NEON slope/aspect comparison
-│   │   ├── compare_slope_aspect.sh       # SLURM wrapper for slope/aspect comparison
-│   │   ├── generate_water_mask.py        # One-time NWI water mask rasterization
-│   │   ├── overlay_nwi_water.py          # Hillshade + water mask overlay visualization
-│   │   ├── stitch_mosaic.py   # Create mosaic from tiles
-│   │   └── extract_subset.py  # Extract subset regions
-│   ├── smoke_tests/           # UTM smoke tests (R6C10 single-tile)
-│   │   ├── run_r6c10_utm.py   # Single-tile UTM pipeline test
-│   │   └── run_r6c10_utm.sh   # SLURM wrapper
-│   └── visualization/         # KML generation scripts
-│       ├── export_kml.py      # Tile grid KML
-│       ├── export_nwi_water_kml.py  # NWI water features KML for Google Earth
-│       └── export_perimeter_kml.py  # Selection perimeter KML
-│
-└── logs/                      # SLURM output (per-script output/ dirs preferred)
+└── scripts/
+    ├── osbs/                     # OSBS production pipeline (self-contained)
+    │   ├── run_pipeline.py       # Main hillslope pipeline (24-bin TAI-focused, raw-HAND Q01/Q99 trim, lake column, water-masked)
+    │   ├── run_pipeline.sh       # Default SLURM wrapper
+    │   ├── run_pipeline_production.sh    # Production SLURM wrapper
+    │   ├── run_pipeline_smoke.sh         # Smoke test SLURM wrapper (R6C10)
+    │   ├── spatial_scale.py      # FFT Lc module (was at scripts/ root pre-2026-05-12)
+    │   └── hillslope_params.py   # Hillslope computation module (same provenance)
+    ├── merit_validation/         # MERIT regression test (self-contained, frozen)
+    │   ├── merit_regression.py   # Single-file regression (Lc + 6 params vs published)
+    │   ├── merit_regression.sh   # SLURM wrapper
+    │   ├── README.md             # Script purpose and flowchart
+    │   ├── spatial_scale.py      # Frozen copy (same as osbs/ on 2026-05-12)
+    │   ├── hillslope_params.py   # Frozen copy (same as osbs/ on 2026-05-12)
+    │   └── output/               # results.json, summary.txt, SLURM logs
+    ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
+    │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
+    │   ├── compare_hillslope_configs.py  # Generic profile comparison utility
+    │   ├── plot_hillslope_comparison.py  # OSBS vs Swenson reference plotter
+    │   └── overlay_nwi_water.py          # Hillshade + water mask overlay
+    ├── smoke_tests/              # UTM smoke tests (R6C10 single-tile)
+    │   ├── run_r6c10_utm.py      # Single-tile UTM pipeline test
+    │   └── run_r6c10_utm.sh      # SLURM wrapper
+    └── visualization/            # KML generation scripts
+        └── export_nwi_water_kml.py  # NWI water features KML for Google Earth
 ```
+
+**Module ownership (de-coupled 2026-05-12):** `spatial_scale.py` and
+`hillslope_params.py` live inside each pipeline directory rather than
+at `scripts/` root. The OSBS copy is the active version; the MERIT
+copy is frozen alongside its regression test. `dem_processing.py` was
+dead code; archived to `audit/260512-cleanup/`. See STATUS.md
+"Shared modules" subsection for the rationale.
 
 ## Running the Pipeline
 

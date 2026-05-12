@@ -62,11 +62,13 @@ This gives confidence that the *approach* is correct — we understand Swenson's
 - Tile reference system documented (R#C# format, KML for Google Earth)
 - osbs2 baseline case identified for future comparison (860+ year spinup)
 
-### Shared modules extracted (Phase D)
+### Shared modules — extracted (Phase D), de-coupled (2026-05-12)
 
-- **`hillslope_params.py`**: Binning, trapezoidal fit, width computation — used by both MERIT validation and OSBS pipeline (resolves former code duplication)
-- **`spatial_scale.py`**: FFT-based Lc computation, dual-CRS (geographic + UTM)
-- **`dem_processing.py`**: Basin detection, open water identification
+- **`hillslope_params.py`**: Binning, trapezoidal fit, width computation. Phase D extracted as shared module; **de-coupled 2026-05-12** — now lives separately in `scripts/osbs/` (active) and `scripts/merit_validation/` (frozen copy).
+- **`spatial_scale.py`**: FFT-based Lc computation, dual-CRS (geographic + UTM). Same de-coupling history.
+- **`dem_processing.py`**: Basin detection, open water identification. Dead code — never invoked by either production script after extraction; `identify_open_water` superseded by NWI mask (Phase E). Archived 2026-05-12 to `audit/260512-cleanup/`.
+
+**De-coupling rationale (2026-05-12):** Phase D's "single source of truth" sharing made sense while MERIT validation was actively driving the OSBS implementation. With MERIT frozen as a regression test against published Swenson data and OSBS under active development (Phase H pending), sharing created cross-pipeline ownership ambiguity. Each pipeline now owns its own copy. MERIT's copy can stay frozen alongside the regression test; OSBS's copy is free to evolve.
 
 ### NEON slope/aspect products adopted (Phase E)
 

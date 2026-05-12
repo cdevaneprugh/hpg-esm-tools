@@ -64,9 +64,6 @@ sys.path.insert(0, pysheds_fork)
 
 from pysheds.pgrid import Grid  # noqa: E402
 
-# Add parent directory for shared module imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from hillslope_params import (  # noqa: E402
     catchment_mean_aspect,
     circular_mean_aspect,
