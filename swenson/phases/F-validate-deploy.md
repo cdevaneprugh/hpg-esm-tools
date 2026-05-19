@@ -1,10 +1,13 @@
 # Phase F: Validate and Deploy
 
-Status: In progress (osbs.swenson.spinup, 600-yr accelerated AD spinup
-in flight as of 2026-05-11; 4-stream hist config; osbs5 superseded after
-ntapes restriction at restart prevented adding h2/h3 streams mid-spinup)
+Status: **Routing-off AD-spinup track complete 2026-05-19.** osbs.swenson.spinup
+600-yr accelerated AD spinup converged (drift_50yr = 0.48%) and was analyzed;
+see `output/2026-05-19_phase_F_analysis/REPORT.md`. Post-AD continuation blocked
+by N-state error in `SoilBiogeochemNitrogenStateType.F90:874` (separate
+diagnostic effort).
 Depends on: Phase E (parameter pipeline), Phase E.5 (bin scheme + lake column)
-Blocks: Phase H (routing-on validation)
+Blocks: nothing — Phase H Tracks B/C are on hold and may not be pursued (see
+`phases/H-lateral-flow.md`)
 Runs in parallel with: Phase G Stage 1 (lake column construction + CTSM ingestion, complete)
 
 ## Scope (refined 2026-05-06)
@@ -115,20 +118,73 @@ mechanism.
 - [x] Build CTSM case with custom hillslope file as a fresh startup (NOT branched per user direction): `osbs5.swenson.spinup` — `use_hillslope_routing = .false.`, `PCT_LAKE = 0`, SourceMods retained with `spillheight = 0.0`, accelerated AD spinup (`CLM_ACCELERATED_SPINUP = on`).
 - [x] Run 100-year accelerated AD spinup (job 31936055, completed 2026-05-06)
 - [x] Generate 8 spinup-analysis plots (5 gridcell, 3 column-level) at `$SWENSON/output/2026-05-06_osbs5_spinup_timeseries/`
-- [ ] **Extend spinup to convergence** (post-maintenance): continue from year 101 → 601, target < 3% drift in `TOTECOSYSC` over last 50 years. Standard CTSM spinup criterion.
-- [ ] **Optional apples-to-apples comparison:** parallel case with Swenson reference hillslope file (`hillslopes_osbs_c240416.nc`) under same osbs5 setup; side-by-side plots attribute differences specifically to hillslope file
-- [ ] Compare to osbs2 / osbs4-6 outputs (qualitative, since they used different hillslope files entirely):
-  - Water table depth (ZWT) seasonal cycle
-  - Soil moisture profiles
-  - Carbon fluxes (GPP, NEE)
-  - Energy balance (latent/sensible heat)
-  - Column-level differences (h1 stream)
+- [x] **Extend spinup to convergence** — DONE 2026-05-19. 600-yr accelerated
+  AD spinup completed 2026-05-14; analyzed in
+  `output/2026-05-19_phase_F_analysis/REPORT.md`. drift_50yr = 0.48% (well
+  under 3% threshold). PASS.
+- [~] ~~Optional apples-to-apples comparison: parallel case with Swenson
+  reference hillslope file~~ — **STRUCK 2026-05-19 per user.** Framing
+  dissolved by 2026-05-19 routing-gate audit; comparison would be confounded
+  by setup-era differences (forcing, surfdata vintage) that can't be cleanly
+  attributed to the hillslope file alone.
+- [~] ~~Compare to osbs2 / osbs4-6 outputs (qualitative)~~ — **STRUCK
+  2026-05-19 per user.** Confounded by hillslope-file and setup-era differences
+  between those cases and this one.
 
 ## Deliverable
 
 Validated hillslope file ready for production runs. Comparison document showing custom vs. global hillslope parameter differences and their impact on simulated fluxes. **Stage 1 deliverable** (column weights and per-column water/carbon behavior under independent 1D balances) is in hand from the 100-yr osbs5 run; convergent spinup completes the picture for routing-off use.
 
 ## Log
+
+### 2026-05-19 — Phase F analysis pass complete
+
+600-yr accelerated AD spinup analyzed; deliverable doc at
+`output/2026-05-19_phase_F_analysis/REPORT.md` (8 plots,
+diagnostics.json, ~21 KB report).
+
+Three verdicts:
+
+- **Convergence: PASS.** drift_50yr = 0.0048 (0.48%) on TOTECOSYSC, well
+  under the 3% threshold. TOTECOSYSC reached its plateau by ~year 50
+  and oscillates around 4150 gC/m² thereafter.
+- **TAI signal: ABSENT.** 0/3 diagnostic tests passed (T1 water-table
+  gradient, T2 surface-water differentiation, T3 O_SCALAR anoxia ratio).
+  The expected "FZ wet, Upland dry" gradient does not emerge; instead
+  the hillslope shows a non-monotonic structure with an unexpectedly
+  dry "bridge zone" (chain indices 3-6, HAND -3 to -1.5 m) where
+  steep Darcy gradients (Δh/L ≈ 0.4-0.6 m/m) over short distances
+  efficiently drain those columns toward the lake. Headline issue:
+  **O_SCALAR is essentially 1.0 (no anoxia) across the full
+  25-column × 600-yr array** — the TAI carbon-side signature is not
+  visible.
+- **Lake column: stable.** L1 passes, L2 fails with downward trend.
+  Max H2OSFC was 5.78 m at year 107 (just under the 6 m Mechanism-A
+  overflow threshold); has since drained to 2.5 m and trends mildly
+  downward (-6.5 mm/yr last century). **Darcy drain (Phase H
+  Option 5): NOT NEEDED.**
+
+Two struck Phase F tasks per user 2026-05-19:
+- Apples-to-apples comparison with Swenson reference hillslope file
+  (struck — framing dissolved by routing-gate audit; confounded
+  attribution).
+- osbs2 / osbs4-6 qualitative comparison (struck — confounded by
+  setup-era differences).
+
+Phase F routing-off track is closed out. Post-AD continuation
+(`osbs.swenson.post-ad`) is blocked by N-state error in
+`SoilBiogeochemNitrogenStateType.F90:874` and is a separate
+diagnostic effort.
+
+Two real open scientific questions surfaced by the analysis (for
+PI conversation):
+1. O_SCALAR not triggering despite saturated soil columns — is the
+   TAI carbon signature really missing, or is it a top-layer
+   diagnostic artifact?
+2. The bridge-zone dry pattern (cols 3-6) — feature, artifact, or
+   bug? Connects to B2 (hydraulic conductivity / bin spacing) which
+   is now de facto a Phase F follow-up rather than a Phase H
+   prerequisite.
 
 ### 2026-05-19 — Reframe: lateral flow is active in Phase F (routing-off does NOT gate it)
 

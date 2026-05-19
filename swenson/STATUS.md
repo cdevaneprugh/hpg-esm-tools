@@ -89,6 +89,32 @@ Logged as Section 7.7 Option 5 in `phases/H-lateral-flow.md`.
   Affects the framing of field-survey comparison in Phase E.5
   documentation. Non-blocking.
 
+### Known blockers
+
+- **Post-AD continuation (`osbs.swenson.post-ad`) failed 2026-05-19**
+  with nitrogen-state error in `SoilBiogeochemNitrogenStateType.F90:874`
+  ("Error in entering/exiting spinup - should occur only when nstep = 1").
+  Separate diagnostic effort; out of Phase F scope.
+
+### Open scientific questions surfaced by Phase F analysis (2026-05-19)
+
+These emerged from the Phase F analysis report and warrant PI
+discussion. They are not Phase H prerequisites; they are independent
+follow-ups from the routing-off results.
+
+- **O_SCALAR (anoxia) is essentially 1.0 across the full 25-column ×
+  600-year array.** The TAI carbon-side signature (suppressed aerobic
+  decomposition in saturated columns) is not visible in this output.
+  Headline issue for the project's central scientific question.
+- **Bridge-zone anomaly** at chain indices 3-6 (HAND -3 to -1.5 m).
+  These columns have the deepest water tables (1.3-1.4 m) of any
+  lower-hillslope column, despite being closest to the lake. Caused
+  by steep Darcy gradients (Δh/L ≈ 0.4-0.6 m/m) over short distances.
+  Connects to B2 (hydraulic conductivity / bin spacing) — now de facto
+  a Phase F follow-up rather than a Phase H prerequisite.
+
+Full analysis: `output/2026-05-19_phase_F_analysis/REPORT.md`
+
 ## Current state at a glance
 
 | Phase | Topic | Status | One-line note |
@@ -100,7 +126,7 @@ Logged as Section 7.7 Option 5 in `phases/H-lateral-flow.md`.
 | E | Parameter set | Complete | 16-bin hybrid (superseded by E.5) |
 | E.5 | Bin redesign + lake column | Complete | 24-bin TAI scheme + lake at chain index 1 |
 | E.6 | NWI mask hole-fill | Complete | binary_fill_holes; 400K hole pixels fixed |
-| F | Validate and deploy | **In progress** | osbs.swenson.spinup 600-yr accelerated AD spinup running |
+| F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19 — see `output/2026-05-19_phase_F_analysis/REPORT.md`. Convergence PASS; TAI signal ABSENT; lake stable |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
 | H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
 
@@ -128,12 +154,11 @@ depends on what Phase F shows.
 
 ## What's running now
 
-`osbs.swenson.spinup`: SLURM job 32206376 (chunk 2 of 6) running yr
-101 → yr 200 on c0700a-s2. ETA ~2026-05-12 21:50.
-
-Full chain: 6 chunks × 100 yr each = 600 yr accelerated AD spinup,
-expected to finish ~2026-05-15 evening at current throughput
-(~6.4 yr/wall hr with 4 history streams).
+Nothing actively running. `osbs.swenson.spinup` 600-yr accelerated
+AD spinup completed 2026-05-14 and was analyzed 2026-05-19
+(`output/2026-05-19_phase_F_analysis/REPORT.md`). `osbs.swenson.post-ad`
+crashed on first attempt 2026-05-19 with N-state error; diagnosis
+deferred.
 
 ## Methodology validation summary
 
@@ -203,6 +228,7 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-05-19** — Phase F routing-off track complete. 600-yr accelerated AD spinup converged cleanly (drift_50yr = 0.48%, well under 3%); analyzed in `output/2026-05-19_phase_F_analysis/REPORT.md`. Three verdicts: (1) **convergence PASS**, (2) **TAI signal ABSENT** — the expected "FZ wet, Upland dry, anoxia depression" pattern does not emerge; O_SCALAR is essentially 1.0 everywhere all years, (3) **lake column stable** — max 5.78 m at yr 107 (just under 6 m overflow), drained to 2.5 m by yr 600, no runaway. **Darcy drain (Phase H Option 5) NOT NEEDED**. Two open scientific questions for PI conversation: O_SCALAR not triggering despite saturated columns (TAI carbon signature missing); bridge-zone anomaly at chain indices 3-6 (HAND -3 to -1.5 m show deepest water tables — consequence of steep Darcy gradients over short distances). Phase F current-state row, Open questions section, and Phase F doc all updated. Apples-to-apples and osbs2/4-6 comparisons struck per user. Post-AD continuation blocked by N-state error; out of scope.
 - **2026-05-19** — Phase H reframed as contingent. **We are not assuming a routing-on CTSM configuration will be pursued.** Track A (mesh-mode workaround) is complete and verified, but Tracks B/C are on hold and may never run — the original scientific motivation (activating inter-column lateral flow) collapsed when the routing-gate audit showed that flow is already active under `use_hillslope=.true.` Routing-on's remaining value is narrow (stream-coupling BC at chain bottom, internal stream-water ledger, `VOLUMETRIC_STREAMFLOW` diagnostic); whether that's worth the B1–B4 + C1–C4 cost depends on what Phase F shows. PI floated a vague idea of a regional Darcy drain on the lake column to address possible unbounded accumulation — no design exists; also contingent on Phase F. STATUS.md project context, Open questions, current-state table, roadmap, and Phase H doc all updated to reflect this framing.
 - **2026-05-19** — Routing-gate source audit. CTSM source trace (`src/biogeophys/SoilHydrologyMod.F90`, `HillslopeHydrologyMod.F90`, `HydrologyDrainageMod.F90`) plus empirical check of the spinup case's h1a output corrects a load-bearing project-wide assumption: **column-to-column lateral subsurface flow runs under `use_hillslope=.true.`, not under `use_hillslope_routing=.true.`.** Routing toggles the stream-side state (channel geometry, internal `stream_water_volume`, Manning streamflow, lnd→rof export) and swaps the terminal-column boundary depth from MOSART's `tdepth_grc` to CTSM-internal stream state. Corrections applied to STATUS.md (this bullet + the cross-cutting concerns row), `phases/H-lateral-flow.md` Problem section + Section 7.5 table + new Section 8 + smoke-test reinterpretation, `phases/F-validate-deploy.md` Key Context corrective callout, `phases/G-ctsm-lake-representation.md` Stage-1 framing fix. Implication: Phase F is delivering more TAI physics than its doc claimed; Phase H's value is narrower (stream-side coupling, not the lateral-flow mechanism).
 - **2026-05-12** — Phase H A3/A4 smoke test: paired test/control 5-yr cold-start cases built and run. **`grc%area = 90.006 km²` confirmed (not spval) — mesh-mode workaround verified.** Gridcell aggregates bit-identical between test and control; H2OSFC stays 0 everywhere (cold-start + Florida ET); but Year-5 deep-soil H2OSOI shows correct-signed TAI emergence (lake +7×10⁻⁴, bridge −1×10⁻⁴). Phase H Track A complete. [Note 2026-05-19: see routing audit above — the test-vs-control delta isolates the stream-coupling boundary condition, not "lateral flow on vs off."]
