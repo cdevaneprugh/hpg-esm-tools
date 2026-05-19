@@ -1,6 +1,6 @@
 # STATUS — Swenson Hillslope for OSBS
 
-**Updated:** 2026-05-12
+**Updated:** 2026-05-19
 
 ## Project context
 
@@ -23,8 +23,12 @@ capture the fine-scale drainage structure needed for TAI dynamics.
 The output is a CTSM-compatible hillslope NetCDF replacing the global
 `hillslopes_osbs_c240416.nc`. Validation runs with the new file should
 show TAI emergence (water table rise near lake → suppressed aerobic
-decomposition → CH4 production) once lateral subsurface flow is
-activated.
+decomposition → CH4 production). Inter-column lateral subsurface flow
+is already active under `use_hillslope=.true.` (see the 2026-05-19
+routing-gate audit in Cross-cutting concerns) — the operative
+`osbs.swenson.spinup` case is delivering this physics now. **We are
+not assuming we will pursue a routing-on configuration for CTSM.**
+That decision is contingent on what Phase F shows.
 
 ## Scientific decisions (locked)
 
@@ -56,36 +60,28 @@ consultation.
 
 ## Open questions
 
-### Awaiting PI consultation (Phase H)
+### Phase H (routing-on) — contingent, may not be pursued
 
-These block meaningful routing-on validation. See
-`phases/H-lateral-flow.md` Section 6 for full context.
+The 2026-05-19 routing-gate audit removed the original motivation
+for routing-on. Inter-column lateral flow already runs under
+`use_hillslope=.true.` (Phase F is delivering it). Routing-on's
+remaining value is narrow: stream-coupling boundary condition at
+the chain bottom, internal `stream_water_volume` ledger, and the
+`VOLUMETRIC_STREAMFLOW` diagnostic. Whether that's worth the PI
+consultation cost and 600-yr respin depends on what Phase F shows.
 
-- **B1. Gridcell area choice** for mesh-mode case. Three options worth
-  presenting (per 2026-05-13 research notes in `phases/H-lateral-flow.md`):
-  (a) 90 km² LIDAR domain — no rework; (c′) 36.81 km² NEON
-  terrestrial-sampling boundary with `nhill_implicit` rescaled and
-  hillslope statistics inherited from the 90 km² LIDAR mosaic —
-  ~1 hour rework; (c) 36.81 km² NEON boundary with statistics
-  re-derived from polygon-clipped LIDAR — ~1–2 days rework. Options
-  ~2,700 km² and ~12,654 km² (Swenson conventions) recommended
-  against. Central scientific decision; affects what gridcell
-  aggregates physically represent and the magnitude of stream
-  channel length and lateral flow rates.
-- **B2. Hydraulic conductivity reasonableness.** Bin elevation
-  differences in the 0–50cm TAI zone are small (~10 cm). Is the
-  resulting Darcy gradient (Δh/L) physically meaningful for OSBS sandy
-  soils?
-- **B3. Validation framing.** No published single-point routing-on
-  case exists. How do we judge whether observed behavior is "correct"
-  without precedent?
-- **B4. Stream-channel geometry and lake column overflow threshold.**
-  Stream depth/width come from Swenson's MERIT-global power laws and
-  are ~5–10× too generous for OSBS coastal-plain reality (~5 m × 0.5 m
-  vs power-law 59 m × 1.52 m). Lake column overflow threshold is 6 m
-  (from `lake_hill_elev = −6 m`), several times wider than real OSBS
-  lake seasonal range (~1–2 m). Two pipeline tuning levers, ~1 hr each.
-  Full analysis in `phases/H-lateral-flow.md` Section 7.
+The four PI-consultation items previously listed here (B1
+gridcell area, B2 Darcy gradient sanity, B3 validation framing,
+B4 stream geometry + lake overflow) are frozen pending Phase F
+evidence. Full task descriptions live in
+`phases/H-lateral-flow.md` Section "Scientific decisions — PI
+consultation required" but are flagged as a frozen record there,
+not an active to-do list.
+
+A separate, vague idea — the PI floated a regional Darcy drain
+on the lake column via SourceMod to prevent unbounded
+accumulation — is also contingent on Phase F. No design exists.
+Logged as Section 7.7 Option 5 in `phases/H-lateral-flow.md`.
 
 ### Awaiting external clarification
 
@@ -106,7 +102,7 @@ These block meaningful routing-on validation. See
 | E.6 | NWI mask hole-fill | Complete | binary_fill_holes; 400K hole pixels fixed |
 | F | Validate and deploy | **In progress** | osbs.swenson.spinup 600-yr accelerated AD spinup running |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
-| H | Lateral subsurface flow | **Track A complete** | Smoke test passed; awaiting PI decisions (B1–B4) before production spinup |
+| H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
 
 ## Roadmap
 
@@ -114,8 +110,8 @@ These block meaningful routing-on validation. See
 1. Methodology validation        MERIT regression  ─ frozen (proven on published data)
 2. Pipeline foundations          A, B, C, D        ─ Complete
 3. Parameter set                 E, E.5, E.6       ─ Complete
-4. Routing-off validation        F + G Stage 1     ─ IN PROGRESS (long spinup running)
-5. Routing-on activation         H                 ─ Pending (PI decisions + mesh-mode)
+4. Long spinup with lateral flow F + G Stage 1     ─ IN PROGRESS (lateral flow active under use_hillslope=.true.)
+5. Stream-coupling (routing-on)  H                 ─ Track A done; Tracks B/C on hold; may not be pursued
 6. Post-AD continuation          (optional)        ─ Future
 ```
 
@@ -123,8 +119,12 @@ Phases run sequentially within each track. F + G Stage 1 share the
 osbs.swenson.spinup case as a single validation vehicle (originally
 sequential per design; the 2026-04-25 PI direction folded the lake
 column into the pipeline output, dissolving the F → G ordering).
-Phase H decisions and engineering happen during F so the routing-on
-case is ready when F completes.
+Phase H Track A (mesh-mode workaround) is complete and ready if
+needed, but Tracks B/C are on hold — the original scientific
+motivation (activate lateral flow) collapsed when the 2026-05-19
+audit showed lateral flow already runs under `use_hillslope=.true.`
+**We are not assuming routing-on will be pursued.** Whether to do so
+depends on what Phase F shows.
 
 ## What's running now
 
@@ -203,6 +203,7 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-05-19** — Phase H reframed as contingent. **We are not assuming a routing-on CTSM configuration will be pursued.** Track A (mesh-mode workaround) is complete and verified, but Tracks B/C are on hold and may never run — the original scientific motivation (activating inter-column lateral flow) collapsed when the routing-gate audit showed that flow is already active under `use_hillslope=.true.` Routing-on's remaining value is narrow (stream-coupling BC at chain bottom, internal stream-water ledger, `VOLUMETRIC_STREAMFLOW` diagnostic); whether that's worth the B1–B4 + C1–C4 cost depends on what Phase F shows. PI floated a vague idea of a regional Darcy drain on the lake column to address possible unbounded accumulation — no design exists; also contingent on Phase F. STATUS.md project context, Open questions, current-state table, roadmap, and Phase H doc all updated to reflect this framing.
 - **2026-05-19** — Routing-gate source audit. CTSM source trace (`src/biogeophys/SoilHydrologyMod.F90`, `HillslopeHydrologyMod.F90`, `HydrologyDrainageMod.F90`) plus empirical check of the spinup case's h1a output corrects a load-bearing project-wide assumption: **column-to-column lateral subsurface flow runs under `use_hillslope=.true.`, not under `use_hillslope_routing=.true.`.** Routing toggles the stream-side state (channel geometry, internal `stream_water_volume`, Manning streamflow, lnd→rof export) and swaps the terminal-column boundary depth from MOSART's `tdepth_grc` to CTSM-internal stream state. Corrections applied to STATUS.md (this bullet + the cross-cutting concerns row), `phases/H-lateral-flow.md` Problem section + Section 7.5 table + new Section 8 + smoke-test reinterpretation, `phases/F-validate-deploy.md` Key Context corrective callout, `phases/G-ctsm-lake-representation.md` Stage-1 framing fix. Implication: Phase F is delivering more TAI physics than its doc claimed; Phase H's value is narrower (stream-side coupling, not the lateral-flow mechanism).
 - **2026-05-12** — Phase H A3/A4 smoke test: paired test/control 5-yr cold-start cases built and run. **`grc%area = 90.006 km²` confirmed (not spval) — mesh-mode workaround verified.** Gridcell aggregates bit-identical between test and control; H2OSFC stays 0 everywhere (cold-start + Florida ET); but Year-5 deep-soil H2OSOI shows correct-signed TAI emergence (lake +7×10⁻⁴, bridge −1×10⁻⁴). Phase H Track A complete. [Note 2026-05-19: see routing audit above — the test-vs-control delta isolates the stream-coupling boundary condition, not "lateral flow on vs off."]
 - **2026-05-12** — Phase H stream/lake routing-on interface analysis: Section 7 added (Swenson power-law stream params 5–10× too generous for OSBS; lake overflow threshold 6 m from `lake_hill_elev=−6m`; SourceMod Mechanism A is the actual release valve and stays active despite `spillheight=0`). B4 added to scientific decisions for PI consultation.

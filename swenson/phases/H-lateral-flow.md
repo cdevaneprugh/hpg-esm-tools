@@ -1,9 +1,14 @@
 # Phase H: Enable Lateral Subsurface Flow
 
-Status: Track A complete. Awaiting PI decisions (B1–B4) before
-production routing-on spinup. Scope reduced after the 2026-05-19
-routing-gate audit (see Section 8).
-Depends on: Phase F (long spinup provides routing-off baseline)
+Status: Track A complete. **Tracks B and C on hold; there is a good
+chance routing-on is not pursued at all** now that the 2026-05-19
+routing-gate audit (Section 8) showed inter-column lateral flow
+already runs under `use_hillslope=.true.` The remaining tasks
+(A5–A6, B1–B4, C1–C4) are all contingent on a decision to run
+routing-on production, which is itself contingent on what Phase F
+shows.
+Depends on: Phase F (long spinup provides the evidence to decide
+whether routing-on is worth pursuing)
 Blocks: nothing within current project scope
 
 ## Problem
@@ -870,6 +875,34 @@ a wetland depression" framing. **Doesn't fit our lake-as-one-column
 model** — we represent the wetland as a single column at the bottom
 of the chain, not as a whole-hillslope feature. Recommend against.
 
+**Option 5: Regional Darcy drain on the lake column (SourceMod).
+PI's idea, raised 2026-05-19. Very vague; contingent on Phase F.**
+The concern: in single-point mode there is no downstream cell to
+receive water leaving the gridcell, so the lake column at the
+bottom of the chain may accumulate lateral inflow faster than
+`QDRAI` + ET removes it. PI floated the idea of adding an
+engineered Darcy sink on the lake column referenced to a distant
+sea-level boundary (drain "to the ocean").
+
+Status: idea only. No design, no parameter values, no
+implementation. Whether to pursue it depends entirely on what
+Phase F's column-level output shows. If `H2OSFC` and `ZWT` at the
+lake column reach stable equilibrium via existing budget terms,
+this mechanism isn't needed. If they trend toward unbounded
+accumulation, this is one of two responses (the other being
+Option 2: lower `lake_hill_elev` to enable overflow via Mechanism
+A). The advantage over Option 2 is that it works under both
+routing-off and routing-on since it doesn't depend on the
+stream-side machinery.
+
+If pursued, the design will need to address: what reference head
+(sea level vs. nearest local stream like St. Johns River, ~30 km
+east), what gradient length, what K value, where in
+`SoilHydrologyMod` to subtract the flux, how to expose parameters
+via namelist, and how to gate the drain on `zwt_lake > h_ref` to
+avoid pulling water from an already-dry column. None of this is
+worked out yet.
+
 #### 7.8 What we'll observe in the sniff test
 
 With current parameters (`hill_elev_lake = −6 m`, stream as-is):
@@ -1151,6 +1184,29 @@ mean physically:
   present; whether it manifests at OSBS scales requires looking
   at the data.
 
+## Contingency note (2026-05-19)
+
+The task lists below (A5–A6, B1–B4, C1–C4) were drafted under the
+pre-audit framing that routing-on was needed to activate
+inter-column lateral flow. After the 2026-05-19 routing-gate
+audit, that motivation is gone — lateral flow is already running
+in Phase F. **There is a good chance we do not pursue routing-on
+at all**, in which case none of the remaining tasks are necessary.
+The decision is contingent on Phase F:
+
+- If Phase F's column-level output shows acceptable TAI emergence
+  and a stable lake column, routing-on is optional polish and the
+  remaining tasks below can be retired.
+- If Phase F shows the lake column accumulating water without
+  bound, the response is either Option 5 below (regional Darcy
+  drain SourceMod, works under both routing settings) or pursuing
+  routing-on with lake-overflow tuning. The Darcy drain idea is
+  currently very vague; details would only be worked out if it's
+  actually needed.
+
+Treat the task lists as a frozen record of what would be done
+under the old framing, not as an active to-do list.
+
 ## Software problems — engineering only
 
 Pure engineering / configuration tasks. Can be planned, prototyped,
@@ -1360,6 +1416,12 @@ meaningful without resolving them.**
   - The decision interacts with B2 (Darcy gradients): if lateral
     inflow is small, lake stays in normal range and tuning is
     less critical. If inflow is large, tuning becomes essential.
+  - **PI floated a vague idea (2026-05-19)** of adding a regional
+    Darcy drain on the lake column via SourceMod to prevent
+    unbounded water accumulation. No design exists yet. Whether
+    to pursue this depends entirely on what Phase F shows — if
+    QDRAI + ET closes the lake column budget on its own, this
+    mechanism isn't needed. See Section 7.7 Option 5.
 
   Smoke test result (2026-05-12): the system stayed too dry for
   any of these levers to matter in 5 years. Production spinup
@@ -1440,6 +1502,31 @@ decision not to pursue further with explicit scientific rationale.
 - `components/cmeps/cime_config/config_component.xml` — LND_DOMAIN_MESH variable definition
 
 ## Log
+
+### 2026-05-19 — Phase H reframed as contingent; PI floated Darcy drain idea
+
+Two updates after talking through the implications of the
+routing-gate audit:
+
+1. **Phase H is now contingent on Phase F.** Track A is complete;
+   Tracks B/C may not be pursued at all. Inter-column lateral
+   flow — the original scientific motivation for routing-on — is
+   already running under `use_hillslope=.true.` in Phase F. The
+   remaining value of routing-on is narrow (stream-coupling BC
+   at chain bottom, internal `stream_water_volume` ledger,
+   `VOLUMETRIC_STREAMFLOW` diagnostic). Whether that's worth the
+   B1–B4 PI consultation cost + 600-yr respin depends on what
+   Phase F shows. Status header and a new "Contingency note"
+   section before the task lists capture this.
+
+2. **PI floated the idea of a regional Darcy drain on the lake
+   column** to prevent unbounded accumulation. The concern: in
+   single-point mode there is no downstream cell to receive water
+   leaving the gridcell. The idea is currently very vague — no
+   design, no parameter values, no implementation. Whether to
+   pursue it is contingent on Phase F's column-level evidence.
+   Logged as Option 5 in Section 7.7 and as a sub-bullet under
+   B4. Works under both routing-off and routing-on if needed.
 
 ### 2026-05-19 — Routing-gate source audit; reframe of project narrative
 
