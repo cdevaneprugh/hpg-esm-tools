@@ -40,41 +40,70 @@ The final hillslope file needs validation at two levels before use in production
 
 ### What "routing off" means for interpretation
 
+> **Corrected 2026-05-19 (see `phases/H-lateral-flow.md` Section 8 for
+> the source-code audit).** The earlier text in this section asserted
+> that under routing-off "columns are hydrologically isolated 1D soil
+> columns that share a gridcell but never exchange water" — that
+> claim was wrong. `use_hillslope_routing` does NOT gate inter-column
+> lateral subsurface flow. The lateral-flow machinery
+> (`PerchedLateralFlow`, `SubsurfaceLateralFlow` in
+> `src/biogeophys/SoilHydrologyMod.F90`) runs whenever
+> `use_hillslope=.true.`, dispatched unconditionally from
+> `HydrologyDrainageMod.F90:139, 143`. The section below is the
+> corrected reading; preserved for context, with the wrong
+> sub-paragraphs annotated.
+
 CTSM has two hillslope namelist switches:
 
-- `use_hillslope = .true.` — multi-column structure: per-aspect /
-  per-elevation columns with their own area, geometry, slope, aspect.
-  Aspect-dependent radiation, elevation-based atmospheric downscaling,
-  per-column water balance. **ON in Phase F.**
-- `use_hillslope_routing = .true.` — col-to-col lateral subsurface
-  flow (Darcy gradient between adjacent columns). This is the
-  mechanism that physically couples upland → flood-zone → lake.
-  **OFF in Phase F (matching osbs2).**
+- `use_hillslope = .true.` — multi-column structure with per-aspect /
+  per-elevation columns AND **inter-column lateral subsurface flow**
+  via Darcy gradient at the water table and perched water table.
+  Aspect-dependent radiation, elevation-based downscaling, per-column
+  water balance, and lateral water redistribution between adjacent
+  columns. **ON in Phase F → lateral flow has been running.**
+- `use_hillslope_routing = .true.` — stream-side state: CTSM-internal
+  `stream_water_volume`, channel geometry, Manning streamflow, and
+  swap of terminal-column boundary depth from MOSART's `tdepth_grc`
+  to internal stream state. **OFF in Phase F → terminal column sees
+  external `tdepth_grc` (likely 0 with our DATM+MOSART setup).**
 
-With routing off, columns are **hydrologically isolated 1D soil
-columns** that share a gridcell but never exchange water. Differences
-between columns at runtime come from:
+Under routing-off, what's actually running is:
 
-- Independent forcing (each column's own precipitation, transpiration,
+- Per-column water and energy balance (forcing, ET, infiltration,
   drainage)
-- Aspect/elevation-dependent radiation and downscaling
-- Independent vertical water balance per column
+- Aspect-dependent radiation and elevation downscaling
+- **Inter-column lateral subsurface flow** — water moves from
+  higher-elevation columns to lower-HAND columns via the Darcy
+  gradient at column-to-column interfaces, applied as drainage to
+  `h2osoi_liq` (see `SoilHydrologyMod.F90:2261-2263, 2386-2388,
+  2433-2509`)
+- Inter-column surface-water chain bookkeeping in
+  `SurfaceWaterMod.F90:547-561` (SourceMod Mechanism D, also
+  not routing-gated)
 
-What does NOT happen with routing off:
+What does NOT happen under routing-off:
 
-- Runoff propagating from upland to lake/wetland
-- Saturation-induced lateral inflow filling the lake column
-- TAI dynamics in the strict sense (lateral wet/dry boundary expansion)
+- Internal CTSM stream-channel state (no `stream_water_volume`
+  ledger, no Manning streamflow, no lnd→rof streamflow export)
+- The lake column's terminal Darcy gradient against an internal
+  stream that builds up from chain drainage — instead the lake
+  sees `tdepth_grc` from the coupler
 
-So when interpreting Phase F plots: lake column "stays wet" because
-its 12% area share receives precipitation; FZ "ponds seasonally"
-because of its own H2OSFC accumulation, not because runoff drained
-in from upland. The columns differentiate but do not communicate.
+So when interpreting Phase F plots: lake column wetness, FZ
+ponding, and ZWT differentiation all reflect both per-column forcing
+AND lateral water redistribution. The columns DO communicate
+hydrologically; what they don't communicate with is a CTSM-internal
+stream channel. Differences between Phase F and a future routing-on
+case (Phase H) will isolate the BC at the bottom of the chain, not
+the lateral-flow mechanism itself.
 
-True TAI validation (lateral coupling, water table rise driven by
-upland saturation, CH4 emergence) is **Phase G Stage 2** —
-`use_hillslope_routing = .true.` — and requires its own configuration
-work (see Phase G doc, 2026-05-05 log entry).
+True TAI validation now means measuring whether the lateral flow
+that *is already running* produces a physically-meaningful TAI
+signal at OSBS — water-table rise in low-HAND bins, suppressed
+o_scalar in saturated columns, CH4 emergence. The 600-yr spinup
+provides the data to answer this without needing routing-on.
+Routing-on (Phase H) refines the BC; it does not enable the
+mechanism.
 
 ## Tasks
 
@@ -100,6 +129,46 @@ work (see Phase G doc, 2026-05-05 log entry).
 Validated hillslope file ready for production runs. Comparison document showing custom vs. global hillslope parameter differences and their impact on simulated fluxes. **Stage 1 deliverable** (column weights and per-column water/carbon behavior under independent 1D balances) is in hand from the 100-yr osbs5 run; convergent spinup completes the picture for routing-off use.
 
 ## Log
+
+### 2026-05-19 — Reframe: lateral flow is active in Phase F (routing-off does NOT gate it)
+
+Routing-gate source audit (full trace in `phases/H-lateral-flow.md`
+Section 8) corrects this phase's "Key Context" interpretation. The
+earlier framing claimed routing-off meant columns are
+"hydrologically isolated 1D soil columns that share a gridcell but
+never exchange water." That was wrong. `PerchedLateralFlow` and
+`SubsurfaceLateralFlow` (CTSM `src/biogeophys/SoilHydrologyMod.F90`)
+run unconditionally under `use_hillslope=.true.`, dispatched from
+`HydrologyDrainageMod.F90:139, 143`. Inter-column Darcy flow,
+qflx_latflow_in/out accumulation, and net-flow application to
+h2osoi_liq all happen without any routing gate.
+
+Empirical confirmation: spinup case h1a shows column-level QRUNOFF
+ranging −1.16×10⁻⁴ to +1.99×10⁻⁴ mm/s; negative values are the
+fingerprint of lateral inflow exceeding outflow at receiving columns
+— only possible if inter-column flow is running.
+
+What this means for Phase F's deliverable:
+- The 600-yr spinup is producing **real TAI physics** — water
+  redistributes laterally from upland columns to low-HAND
+  columns. Analysis of the column-level ZWT/H2OSOI/QDRAI
+  trajectories should reveal whether the OSBS Darcy gradients
+  are large enough to produce visible TAI behavior (water-table
+  rise in flood-zone columns, drier ridges, seasonal cycles of
+  low-HAND saturation).
+- The "Phase F is routing-off validation; Phase H delivers
+  TAI" mental model was wrong. Phase F is already delivering
+  TAI physics. Phase H adds the stream-side coupling.
+- The Deliverable framing was over-modest: "column weights and
+  per-column water/carbon behavior under independent 1D
+  balances" — should read "and inter-column lateral
+  redistribution under the stream-coupling BC from MOSART's
+  tdepth_grc."
+
+"Key Context" section above corrected inline; original text was
+overwritten because the original framing was factually incorrect
+rather than provisional. Source citations in
+`phases/H-lateral-flow.md` Section 8 are the canonical reference.
 
 ### 2026-05-06 — 100-yr accelerated AD spinup complete; first analysis plots generated
 
@@ -156,8 +225,13 @@ Both committed (ed062b8) and pushed.
 - 100 yr is far from BGC equilibrium. Standard CTSM guidance: 600 yr
   accelerated → 200 yr post-AD. Plots show monotone ramp-up, not
   steady state.
-- Routing OFF: column differentiation is from independent per-column
-  forcing, not lateral exchange. TAI mechanism is dormant.
+- Routing OFF in this case. Column differentiation observed in
+  plots is from BOTH independent per-column forcing AND inter-
+  column lateral exchange (the 2026-05-19 routing-gate audit
+  established that lateral flow runs under `use_hillslope=.true.`,
+  not `use_hillslope_routing`; see `phases/H-lateral-flow.md`
+  Section 8). The TAI mechanism is ACTIVE in Phase F output;
+  what's missing is the stream-side coupling at the chain bottom.
 - No baseline comparison case yet — would need a parallel osbs5-style
   case with Swenson's reference `hillslopes_osbs_c240416.nc` to
   attribute observed patterns specifically to our hillslope file.

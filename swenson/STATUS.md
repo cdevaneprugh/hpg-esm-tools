@@ -79,6 +79,13 @@ These block meaningful routing-on validation. See
 - **B3. Validation framing.** No published single-point routing-on
   case exists. How do we judge whether observed behavior is "correct"
   without precedent?
+- **B4. Stream-channel geometry and lake column overflow threshold.**
+  Stream depth/width come from Swenson's MERIT-global power laws and
+  are ~5–10× too generous for OSBS coastal-plain reality (~5 m × 0.5 m
+  vs power-law 59 m × 1.52 m). Lake column overflow threshold is 6 m
+  (from `lake_hill_elev = −6 m`), several times wider than real OSBS
+  lake seasonal range (~1–2 m). Two pipeline tuning levers, ~1 hr each.
+  Full analysis in `phases/H-lateral-flow.md` Section 7.
 
 ### Awaiting external clarification
 
@@ -99,7 +106,7 @@ These block meaningful routing-on validation. See
 | E.6 | NWI mask hole-fill | Complete | binary_fill_holes; 400K hole pixels fixed |
 | F | Validate and deploy | **In progress** | osbs.swenson.spinup 600-yr accelerated AD spinup running |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
-| H | Lateral subsurface flow | Pending | Mesh-mode workaround; CTSM Issue #1432 |
+| H | Lateral subsurface flow | **Track A complete** | Smoke test passed; awaiting PI decisions (B1–B4) before production spinup |
 
 ## Roadmap
 
@@ -156,11 +163,31 @@ through the UTM code path.
   Mesh-mode workaround is the OSBS-side fix (Phase H); not pursuing
   upstream PR. See `phases/H-lateral-flow.md` for the full source
   trace and references.
-- **Routing-off baseline limits TAI science emergence.** Under
-  `use_hillslope_routing = .false.`, columns are hydrologically
-  isolated 1D soil columns — no lateral coupling. Apparent TAI-like
-  patterns in Phase F output come from independent per-column water
-  balance, not lateral flow. True TAI validation requires Phase H.
+- **`use_hillslope_routing` toggles the stream-side machinery, not
+  the inter-column lateral flow.** Audited against CTSM 5.3.085 source
+  on 2026-05-19. `PerchedLateralFlow` and `SubsurfaceLateralFlow`
+  (`src/biogeophys/SoilHydrologyMod.F90:1703, :2086`) are dispatched
+  from `HydrologyDrainageMod.F90:139,143` outside any routing gate,
+  and the inter-column Darcy gradient computation
+  (`SoilHydrologyMod.F90:2260-2263`) plus net-flow application
+  (`:2434, :2449-2509`) run whenever `use_hillslope=.true.`. Routing-on
+  adds: stream-channel geometry init
+  (`HillslopeHydrologyMod.F90:378-507`), CTSM-internal stream-water
+  state (`HillslopeStreamOutflow` + `HillslopeUpdateStreamWater`,
+  called only at `HydrologyDrainageMod.F90:150-158`), a swap of the
+  terminal-column boundary depth from `tdepth_grc` (MOSART) to
+  internal `stream_water_volume / channel geometry`
+  (`SoilHydrologyMod.F90:1822, 2265`), losing-stream outflow capping
+  (`:2362`), `VOLUMETRIC_STREAMFLOW` history registration
+  (`WaterFluxType.F90:525`), and lnd→rof streamflow export
+  (`lnd2atmMod.F90:343`). Empirical confirmation: the spinup case
+  shows negative QRUNOFF values at hillslope columns (signature of
+  lateral inflow exceeding outflow) under routing-off. Phase F
+  column-level differentiation is driven by both inter-column lateral
+  flow AND per-column forcing, not forcing alone. Phase H adds the
+  stream-coupling boundary condition at the chain bottom, not the
+  lateral flow itself. See `phases/H-lateral-flow.md` Section 8
+  for the full audit.
 
 ## References
 
@@ -176,6 +203,9 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-05-19** — Routing-gate source audit. CTSM source trace (`src/biogeophys/SoilHydrologyMod.F90`, `HillslopeHydrologyMod.F90`, `HydrologyDrainageMod.F90`) plus empirical check of the spinup case's h1a output corrects a load-bearing project-wide assumption: **column-to-column lateral subsurface flow runs under `use_hillslope=.true.`, not under `use_hillslope_routing=.true.`.** Routing toggles the stream-side state (channel geometry, internal `stream_water_volume`, Manning streamflow, lnd→rof export) and swaps the terminal-column boundary depth from MOSART's `tdepth_grc` to CTSM-internal stream state. Corrections applied to STATUS.md (this bullet + the cross-cutting concerns row), `phases/H-lateral-flow.md` Problem section + Section 7.5 table + new Section 8 + smoke-test reinterpretation, `phases/F-validate-deploy.md` Key Context corrective callout, `phases/G-ctsm-lake-representation.md` Stage-1 framing fix. Implication: Phase F is delivering more TAI physics than its doc claimed; Phase H's value is narrower (stream-side coupling, not the lateral-flow mechanism).
+- **2026-05-12** — Phase H A3/A4 smoke test: paired test/control 5-yr cold-start cases built and run. **`grc%area = 90.006 km²` confirmed (not spval) — mesh-mode workaround verified.** Gridcell aggregates bit-identical between test and control; H2OSFC stays 0 everywhere (cold-start + Florida ET); but Year-5 deep-soil H2OSOI shows correct-signed TAI emergence (lake +7×10⁻⁴, bridge −1×10⁻⁴). Phase H Track A complete. [Note 2026-05-19: see routing audit above — the test-vs-control delta isolates the stream-coupling boundary condition, not "lateral flow on vs off."]
+- **2026-05-12** — Phase H stream/lake routing-on interface analysis: Section 7 added (Swenson power-law stream params 5–10× too generous for OSBS; lake overflow threshold 6 m from `lake_hill_elev=−6m`; SourceMod Mechanism A is the actual release valve and stays active despite `spillheight=0`). B4 added to scientific decisions for PI consultation.
 - **2026-05-13** — Phase H gridcell-area decision space updated: added rescale-only option (c′ ≈ 1 hr) and revised pipeline-rerun estimate (rectangular subset ≈ half-day; polygon-clip ≈ 1–2 days). Added mesh-mechanics primer to Phase H Section 5.
 - **2026-05-12** — Phase H deep research pass: input data inventory, NEON product survey, scale analysis, mesh tooling, community precedent — 332 lines added to `phases/H-lateral-flow.md`.
 - **2026-05-12** — STATUS.md restructured (30 KB → ~7 KB); CLAUDE.md updated to explicit index role; partially-superseded docs/* annotated.

@@ -57,12 +57,20 @@ the lake-included structure correctly with the right column weights
 (Phase G Stage 1).
 
 The rest of this section describes the unified mechanism (lake column +
-PI's SourceMod). The **TAI dynamics narrative** ("water flows from
-upland to lake, water table rises, decomposition suppressed, CH4 emits")
-emerges only when **Stage 2** is enabled. Under Stage 1 alone (current
-osbs5 config), columns are hydrologically isolated and any patterns in
-gridcell aggregates come from independent per-column water balances
-(precipitation distributed by area weight), NOT from lateral flow.
+PI's SourceMod).
+
+> **Corrected 2026-05-19 (see `phases/H-lateral-flow.md` Section 8).**
+> The earlier text said "columns are hydrologically isolated... NOT
+> from lateral flow." That was wrong: `use_hillslope_routing` toggles
+> stream-side state, not inter-column lateral flow. The inter-column
+> Darcy mechanism described later in this doc (lines 118-125) runs
+> under `use_hillslope=.true.` whether routing is on or off. The TAI
+> dynamics narrative is therefore already operational in Stage 1
+> (Phase F's spinup) — what Stage 2 / Phase H adds is the
+> stream-channel BC at the lake column's downstream face. Under
+> Stage 1, the lake column receives water from BOTH direct
+> precipitation AND inter-column lateral flow from upland → flood
+> zone → lake (the mechanism described in lines 118-138 below).
 
 Append one extra column per gridcell to the hillslope NetCDF. The column represents the aggregate of all NWI-masked lake area as a single "submerged" hillslope column with negative `hill_elev`. This pipeline change works **in tandem** with the PI's existing spillheight SourceMod (see below) — the two mechanisms are complementary, not competing.
 
@@ -102,18 +110,21 @@ Authoritative reference: `docs/lake-column-ctsm-audit.md` Sections 5.1-5.5 — f
 
 ## Why this works
 
-> **Prerequisite:** the lateral-flow pathway described below requires
-> `use_hillslope_routing = .true.`. Our current osbs5 config (and
-> osbs2/osbs4-6) all run with **routing OFF**. Under that configuration
-> the columns exist as independent 1D soil columns — no col-to-col
-> water exchange, no TAI emergence via lateral flow. The lake column
-> only receives water from direct precipitation on its area share.
-> See the 2026-05-05 log entry for the full breakdown of why routing
-> is off (single-point mode + `grc%area = spval`) and what would be
-> required to enable it. This section describes the eventual
-> **Stage 2** behavior; **Stage 1** (lake column construction in the
-> hillslope file) is what the rest of this doc and the Phase E.5 work
-> have delivered.
+> **Corrected 2026-05-19** (the 2026-05-05 framing of this callout
+> was wrong; see `phases/H-lateral-flow.md` Section 8 for the source
+> audit). The lateral-flow pathway described below does NOT require
+> `use_hillslope_routing = .true.` — that switch only controls
+> stream-side state. The inter-column Darcy gradient code at
+> `SoilHydrologyMod.F90:2261-2263` runs under `use_hillslope=.true.`
+> in every osbs case. Our routing-off cases (osbs2/osbs4-6, osbs5,
+> osbs.swenson.spinup) ALL have working inter-column lateral flow.
+> The lake column receives water from BOTH direct precipitation AND
+> inter-column lateral flow under Stage 1. What Stage 2 / Phase H
+> adds is the CTSM-internal stream channel as a boundary condition
+> at the lake column's downstream face. The original "Stage 1 =
+> hillslope file construction; Stage 2 = lateral flow activation"
+> framing was wrong; the actual split is "Stage 1 = lateral flow +
+> external stream BC; Stage 2 = internal stream BC."
 
 **Negative `hill_elev` is permitted.** Confirmed in `ColumnType.F90:76` — no guards, sign checks, or absolute value operations on `hill_elev` anywhere in the source. The head gradient equation in `SoilHydrologyMod.F90` (line 2261) works with negative values because it computes differences:
 
@@ -262,6 +273,33 @@ Pipeline-generated hillslope NetCDF with 17 columns (16 HAND bins + 1 submerged 
 - `phases/F-validate-deploy.md` — baseline for Phase G comparison
 
 ## Log
+
+### 2026-05-19 — Routing-gate reframe (Stage 1 / Stage 2 mental model corrected)
+
+Routing-gate source audit (`phases/H-lateral-flow.md` Section 8)
+corrected a misconception that ran through this doc: the
+Stage 1 / Stage 2 split was framed as "Stage 1 = hillslope file
+construction (no lateral flow); Stage 2 = routing-on (lateral flow
+turns on)." That split was wrong. Inter-column lateral subsurface
+flow runs under `use_hillslope=.true.` regardless of routing
+(`SoilHydrologyMod.F90:1703-1900, 2086-2509`, dispatched
+unconditionally from `HydrologyDrainageMod.F90:139, 143`). Stage 1
+delivers the lake column AND inter-column lateral flow under the
+external stream BC (MOSART `tdepth_grc`); Stage 2 (Phase H) swaps
+the stream BC for a CTSM-internal stream-channel ledger.
+
+The doc was internally inconsistent: the "Why this works" section
+(lines 118-138 of this file) correctly describes the inter-column
+flow pathway as already-operational, but the "Stage 1 vs Stage 2"
+preamble at lines 59-66 contradicted it. Both annotations now point
+to the source audit. Lake column parameter rationale (table at
+lines 86-97) is unchanged — those values were chosen correctly for
+both the inter-column gradient AND the eventual stream coupling.
+
+Empirical confirmation: spinup case h1a shows column-level QRUNOFF
+ranging −1.16×10⁻⁴ to +1.99×10⁻⁴ mm/s under routing-off; negative
+values are the fingerprint of inter-column lateral inflow exceeding
+outflow.
 
 ### 2026-05-05 — Gridcell area in single-point mode and the per-rep rescale
 

@@ -1,6 +1,8 @@
 # Phase H: Enable Lateral Subsurface Flow
 
-Status: Pending (research + PI decisions before implementation)
+Status: Track A complete. Awaiting PI decisions (B1–B4) before
+production routing-on spinup. Scope reduced after the 2026-05-19
+routing-gate audit (see Section 8).
 Depends on: Phase F (long spinup provides routing-off baseline)
 Blocks: nothing within current project scope
 
@@ -19,23 +21,40 @@ upland saturation
   → CH4 production rises (finundated rises)
 ```
 
-**Every link past "lateral subsurface flow" is dormant in our current
-configuration.** CTSM has two hillslope namelist switches:
+CTSM has two hillslope namelist switches. **The 2026-05-19 routing-gate
+audit (Section 8) revised this table — the earlier framing that
+routing toggles inter-column lateral flow was wrong.**
 
-| Switch | Effect | Current state |
+| Switch | What it actually toggles | Current state |
 |---|---|---|
-| `use_hillslope` | Multi-column subgrid structure: per-aspect / per-elevation columns with their own area, geometry, slope, aspect. Aspect-dependent radiation, elevation downscaling, independent per-column vertical water balance. | **ON** |
-| `use_hillslope_routing` | Column-to-column lateral subsurface flow via Darcy gradient. This is the mechanism that physically couples upland → flood zone → lake. | **OFF** |
+| `use_hillslope` | Multi-column subgrid structure with per-column geometry, slope, aspect, AND **inter-column lateral subsurface flow** via Darcy gradient at the water table and perched water table (`SoilHydrologyMod.F90:1703-1987` (`PerchedLateralFlow`) and `:2087-2623` (`SubsurfaceLateralFlow`), dispatched unconditionally from `HydrologyDrainageMod.F90:139-148`). | **ON** |
+| `use_hillslope_routing` | Stream-side state inside CTSM: channel geometry init (`HillslopeHydrologyMod.F90:378-507`), `stream_water_volume` ledger and Manning streamflow (`HillslopeStreamOutflow` + `HillslopeUpdateStreamWater`, called only at `HydrologyDrainageMod.F90:150-158`), swap of the terminal-column boundary depth from MOSART's `tdepth_grc` to CTSM-internal stream state (`SoilHydrologyMod.F90:1822, 2265`), losing-stream outflow cap (`:2362`), `VOLUMETRIC_STREAMFLOW` hist registration (`WaterFluxType.F90:525`), and lnd→rof streamflow export (`lnd2atmMod.F90:343`). **Does NOT gate whether inter-column lateral flow runs.** | **OFF** |
 
-Under routing-off, columns are hydrologically isolated 1D soil columns
-that share a gridcell but never exchange water. Differences between
-columns at runtime come from independent per-column forcing,
-aspect/elevation-dependent radiation, and independent vertical water
-balances — *not* from lateral coupling.
+So the TAI-physics chain has two stages:
+
+- **Inter-column lateral flow is already active under
+  `use_hillslope=.true.`** in every `osbs.*` case on this machine.
+  Phase F column-level water-table and soil-moisture differences are
+  already partly the product of lateral redistribution, not solely
+  independent per-column water balance.
+- **Stream-coupling boundary condition at the bottom of the chain**
+  is what Phase H turns on. Under routing-off the terminal column
+  sees `tdepth_grc` from the coupler (defaults to 0 if MOSART doesn't
+  send `Sr_tdepth`; see `lnd_import_export.F90:619-624`). Under
+  routing-on it sees an internal stream whose volume is built up
+  from column drainage and drained via Manning's equation.
+
+This reframes the 2026-05-12 A4 smoke test result: gridcell aggregates
+bit-identical and column-level offsets tiny at year 5 are expected
+when both cases run lateral flow identically; the offsets isolate the
+terminal-column boundary condition, not "lateral flow on vs off."
 
 All ~22 osbs cases on this machine (sgerber's + ours) have run
-routing-off. The science question hasn't been asked at OSBS yet. Phase
-H is the work to ask it.
+routing-off. The Phase H deliverable is narrower than originally
+framed: validate that adding internal stream state produces a
+physically reasonable BC at the lake/terminal column interface, and
+quantify whether it materially changes the TAI signal already present
+under routing-off.
 
 ## Technical blocker: the spval bug
 
@@ -544,6 +563,594 @@ This affects Phase H planning in two ways:
   becomes the canonical reference for single-point routing-on cases —
   worth recording cleanly even if we don't pursue an upstream PR.
 
+### 7. Stream dimensions and lake-column interface under routing-on
+
+This section is the result of a focused review of the stream-channel
+parameters in the hillslope NetCDF and how they interact with the
+lake column under `use_hillslope_routing = .true.`. Verified by
+reading the SourceMods in `$CASES/osbs.swenson.spinup/SourceMods/
+src.clm/` against the upstream CTSM source.
+
+#### 7.1 The stream values in our file, and where they come from
+
+The production hillslope NetCDF (2026-05-05) carries three
+gridcell-level stream-channel parameters:
+
+| Variable | Value | Provenance |
+|---|---|---|
+| `hillslope_stream_depth` | 1.52 m | Swenson power law: `0.001 × A^0.4` |
+| `hillslope_stream_width` | 59.23 m | Swenson power law: `0.001 × A^0.6` |
+| `hillslope_stream_slope` | 0.0069 m/m | Network mean from LIDAR-derived flow accumulation |
+
+The depth and width formulas live in `scripts/osbs/run_pipeline.py:
+1645-1651` with this explicit comment:
+
+```python
+# Stream depth/width: Swenson power laws (rh:1104-1114). Kept as-is
+# per PI decision (#4, 2026-03-30): osbs2 runs with
+# use_hillslope_routing=.false., so these values are never read by
+# CTSM under the current spinup configuration.
+stream_depth = 0.001 * total_area_m2**0.4
+stream_width = 0.001 * total_area_m2**0.6
+```
+
+With `A = 90 km² = 9e7 m²`:
+- depth = 0.001 × (9e7)^0.4 = **1.52 m** ✓
+- width = 0.001 × (9e7)^0.6 = **59.23 m** ✓
+
+The stream slope comes from real flow-network statistics computed
+during the pipeline, so it's data-grounded for our LIDAR domain.
+The depth and width are formulas applied unmodified.
+
+#### 7.2 Why Swenson's power laws give these values
+
+Swenson & Lawrence (2025) calibrate these power laws against the
+**global MERIT 90 m DEM dataset**. In that calibration:
+
+- The dataset's gridcells are 0.9° × 1.25° (~12,654 km² at OSBS
+  latitude). At that scale, a 90 km² subgrid hillslope catchment
+  is typical for a real tributary in mountain or upland landscapes
+  (Appalachians, Cascades, Rocky Mountains, etc.).
+- For such a 90 km² tributary basin, a stream channel of order
+  ~1 m deep × ~60 m wide IS approximately correct. Think Allegheny
+  tributary, Yakima fork, similar.
+- The formulas are calibrated against the *kind* of landscape that
+  dominates MERIT-resolution gridcells: structured uplands with
+  clear channel networks, where stream geometry scales with
+  drainage area roughly as predicted by hydraulic geometry theory
+  (e.g., Leopold-Maddock 1953).
+
+So the values aren't arbitrary — they're statistically calibrated
+against a global ensemble of real river systems at MERIT scale.
+
+#### 7.3 Why those assumptions don't fit OSBS
+
+OSBS is in the **Florida coastal plain**, a landscape Swenson's
+power-law calibration doesn't represent well:
+
+| Aspect | Swenson's calibration domain | OSBS reality |
+|---|---|---|
+| Topographic relief | Hundreds of meters | <20 m across 90 km² (LIDAR-confirmed) |
+| Channel concentration | Well-defined networks | Diffuse wetland flow, few discrete channels |
+| Real "stream" features | River tributaries (m wide, m deep) | Drainage swales 1–5 m wide, <1 m deep |
+| Lake connectivity | Streams connect lakes to networks | Most OSBS lakes are isolated (Long Pond, Ross Lake) — no inflow/outflow stream |
+| Dominant flow mechanism | Channelized surface flow + subsurface | Groundwater + diffuse wetland sheet flow |
+| Stream density typical | 1–5 km/km² | 0.1–0.5 km/km² in Florida coastal plain |
+
+The 59 m channel width is the most striking mismatch. **OSBS doesn't
+have a 59 m wide stream anywhere in our 90 km² LIDAR domain.** The
+largest channel in our flow network is the outlet of a wetland
+depression, probably <5 m wide. The power law has applied global
+scaling to a landscape that doesn't follow the scaling.
+
+The depth (1.52 m) is on the high side but defensible — real OSBS
+swales can be ~0.5–1 m deep. The slope (0.0069 = 0.69%) is from
+data, so it's the actual mean slope of the steepest accumulation
+paths in our LIDAR (could be biased high by sharp drops into
+wetland depressions).
+
+#### 7.4 What CTSM does with these under routing-on
+
+The stream parameters enter `HillslopeHydrologyMod.F90` in two main
+places:
+
+**A. Manning equation flow velocity** (line ~975 in our SourceMod
+fork):
+
+```fortran
+flow_velocity = (hydraulic_radius)**manning_exponent &
+              * sqrt(stream_channel_slope) / manning_roughness
+volumetric_streamflow = cross_sectional_area * flow_velocity
+```
+
+Where `cross_sectional_area = stream_water_depth × stream_width` and
+`hydraulic_radius = area / wetted_perimeter`. For our params:
+
+- Bankfull area = 1.52 × 59.23 = **90.0 m²** per unit length
+- Bankfull hydraulic radius ≈ 1.34 m (after dividing by wetted
+  perimeter 1.52×2 + 59.23 ≈ 62.3 m)
+- Bankfull velocity ≈ 1.34^0.667 × √0.0069 / 0.03 ≈ **3.36 m/s**
+- Bankfull discharge per unit length × stream length ≈ 90 × 3.36 ≈
+  **302 m³/s**
+
+That's a large stream discharge potential. **The stream has so much
+capacity it will almost never be near bankfull.** Under typical
+flow conditions (inches of water depth, not meters), velocity is
+much lower and flow doesn't fill the channel.
+
+**B. Stream channel length** (line ~501 in HillslopeHydrologyMod):
+
+```fortran
+stream_channel_length += hill_width(c) × 0.5 × nhill_per_landunit
+```
+
+Summed across columns, our setup gives:
+- Σ hill_width × 0.5 × 533.7 ≈ **3,046 km of stream channel** in
+  90 km² = 33.8 km/km² stream density
+
+That's enormous (~10× typical real river-network density). The
+implied stream cross-section × length = 90 m² × 3,046 km =
+**2.74 × 10⁸ m³ of bankfull storage**. The stream can absorb 274
+million cubic meters of upland drainage before it overflows.
+
+#### 7.5 What the SourceMods do that's still active
+
+> **Revised 2026-05-19 after the routing-gate audit.** Section 8 below
+> documents the full review of all 5 SourceMod files. Two changes vs.
+> the earlier four-mechanism table: (B) is **inactive** under
+> routing-off (the surrounding subroutine is routing-gated), and a
+> fifth mechanism (zeroing of saturated-excess surface runoff in
+> `SaturatedExcessRunoffMod.F90:295`) was missed in earlier analysis
+> and is active.
+
+The SourceMods in `$CASES/osbs.swenson.spinup/SourceMods/src.clm/`
+contain five distinct modifications. The 2026-04-30 PI decision to
+set `spillheight = 0.0` disabled exactly ONE of them; routing-off
+gates out a second; the other three are active.
+
+| Mechanism | File:line (SourceMod copy) | Gating | Status with our config (`use_hillslope=.true.`, `use_hillslope_routing=.false.`, `spillheight=0`) |
+|---|---|---|---|
+| A. Pond-build for `hill_elev<0`; instantaneous overflow when water surface > 0 | `SurfaceWaterMod.F90:516-520` | `col%is_hillslope_column(c) .and. col%active(c)` only | **Active** — lake column release valve at the 6 m threshold |
+| B. Terminal-column-only contribution to streamwater | `HillslopeHydrologyMod.F90:1120-1126` | Inside `HillslopeUpdateStreamWater`, which is only called when `use_hillslope_routing=.true.` (`HydrologyDrainageMod.F90:150-158`) | **Inactive** under routing-off — earlier "Active" claim was wrong |
+| C. Global `hill_elev` shift by `−spillheight` | `HillslopeHydrologyMod.F90:363` | Runs every init; effect proportional to spillheight | **Numerical no-op** — `spillheight=0` makes it identity, but the line still executes |
+| D. Inter-column surface chain bookkeeping (subtract `downstream_vol` from each column's `qflx_h2osfc_surf`) | `SurfaceWaterMod.F90:547-561` | `col%is_hillslope_column(c) .and. col%active(c)` only | **Active** — surface-water routing happens for any hillslope chain |
+| E. Zero saturated-excess surface runoff for all columns | `SaturatedExcessRunoffMod.F90:294-295` | None — applies in the `do fc = 1, num_hydrologyc` loop | **Active globally** (not just hillslope columns) — "rolls down the hill until it finds a pond" framing |
+
+The release-valve we get for the lake column is Mechanism A:
+
+```fortran
+if (col%hill_elev(c) + h2osfc(c)*1e-3 < 0)  then
+   qflx_h2osfc_surf(c) = 0._r8       ! build pond
+else if (col%hill_elev(c) < 0 .and. col%hill_elev(c) + h2osfc(c)*1e-3 > 0) then
+   qflx_h2osfc_surf(c) = ...         ! release as overflow
+endif
+```
+
+For a column with `hill_elev = -6 m`: water accumulates as surface
+pond until `h2osfc > 6000 mm` (= 6 m of water above the lake floor),
+at which point excess starts running off. **The 6 m threshold is the
+lake's hill_elev value, not the spillheight.** Spillheight=0 didn't
+remove this mechanism.
+
+Mechanism B will become load-bearing **only under routing-on**: it
+gates `qflx_surf_vol` so that only the terminal column (our lake,
+since it's at chain index 1 with `cold == spval`) contributes surface
+runoff to the stream's water-volume ledger. Upland columns can't dump
+directly into stream state — they have to flow down the chain via
+Mechanism D. Under our current routing-off configuration the
+surrounding subroutine (`HillslopeUpdateStreamWater`) is not called,
+so this code path stays dormant.
+
+#### 7.6 The lake-column interface under routing-on: full picture
+
+Combining everything:
+
+**Geometry:**
+- Stream channel reference at hill_elev = 0
+- Stream water surface ranges 0 to +1.52 m (bankfull)
+- Lake column floor at hill_elev = −6 m
+- Lake water surface ranges −6 m (dry) to 0 (overflow threshold)
+
+**Inflows to the lake column (routing-on):**
+- Direct precipitation (~1300 mm/yr at OSBS)
+- Lateral subsurface flow from bin 2 (lowest land bin, ~0.25 m elev),
+  driven by Darcy gradient Δh ≈ 6.25 m / hill_distance → strong
+  downhill driver
+- Lateral surface flow from bin 2 via chain-routed `qflx_h2osfc_surf`
+  (Mechanism D)
+
+**Outflows from the lake column:**
+- Open-water evaporation (CTSM models this; ~1500 mm/yr potential ET
+  in north Florida — the dominant real-world drainage mechanism for
+  isolated lakes)
+- Subsurface drainage `qflx_drain` to stream: **near zero**, because
+  Darcy gradient is unfavorable (lake water table at −6 m, stream
+  water surface ≥ 0)
+- Surface overflow via Mechanism A: **zero until h2osfc reaches 6 m
+  above lake floor**, then excess QOVER
+
+**Expected dynamics:**
+1. Wet season: precipitation + lateral inflow exceed ET → lake
+   H2OSFC rises
+2. Dry season: ET exceeds inflow → lake H2OSFC falls
+3. Multi-year wet anomaly: lake fills toward 6 m threshold; if it
+   reaches threshold, overflow begins (rare)
+4. Multi-year dry anomaly: lake can fall back toward 0 (dry lake bed)
+
+This is broadly correct for real Florida lake behavior, except for
+two scale issues:
+
+**Issue 1 — Range is too wide.** Real OSBS lakes (Long Pond, Ross
+Lake) fluctuate by 1–2 m seasonally, not 6 m. With our `hill_elev
+= −6 m`, the model's "capacity" before overflow is several times
+larger than real-world capacity. The lake will look like it never
+overflows even in wet years.
+
+**Issue 2 — Stream is too generous a sink.** Even when the lake
+does overflow into the stream, the 59 m × 1.52 m stream channel
+absorbs the discharge with negligible water-depth response. Stream
+acts more like a "magic drain" than a real channel that would
+back up and create floodplain dynamics.
+
+The two issues compound: a too-deep lake threshold combined with
+a too-generous stream sink means the model produces less inundation
+and less stream-mediated TAI signal than reality.
+
+#### 7.7 Tuning options
+
+In order of cost / impact:
+
+**Option 1: Stream cross-section reduction (pipeline, ~1 hour).**
+Override the power-law-derived depth and width in the pipeline. For
+OSBS coastal-plain reality:
+
+```python
+# In run_pipeline.py, replace the Swenson power laws with:
+stream_depth = 0.5    # m  (OSBS swale-scale, see note on sourcing)
+stream_width = 5.0    # m
+# stream_slope = unchanged (data-derived)
+```
+
+Effect: stream fills more readily, stream surface rises, less
+asymmetry between lake water surface (capped at 0) and stream
+water surface. Stream might back up during wet events, creating
+some surface-flow dynamics. Won't fix the 6 m lake capacity
+directly.
+
+**Important: those 0.5 m / 5 m numbers above are placeholders, not
+measurements.** They're back-of-envelope estimates from general
+Florida coastal-plain knowledge, not from our pipeline or any
+OSBS-specific dataset. Before locking these for production, get a
+defensible width from real data via one of:
+
+1. **USGS NHD (National Hydrography Dataset) — recommended.**
+   Pull the high-resolution NHD shapefile for Putnam County, FL,
+   intersect with our 90 km² LIDAR domain (`data/mosaics/production/
+   dtm.tif` bounds), and read channel widths from the
+   `NHDFlowline` and `NHDArea` attributes. URL:
+   https://www.usgs.gov/national-hydrography/national-hydrography-dataset
+   Cost: ~2 hours. Produces published, citable values.
+2. **Extract from our own pipeline (~half day).** The pysheds
+   flow-accumulation raster and stream-network mask are already
+   computed for the 2026-05-05 production run. Re-derive
+   deterministically from the LIDAR mosaic and measure
+   channel widths directly from contiguous channel-pixel
+   counts. Gives an LIDAR-derived width that's self-consistent
+   with our `stream_slope` provenance.
+3. **Manual measurement via Google Earth + LIDAR DTM (~1 hour).**
+   Identify visible drainage features in our DTM, measure widths.
+   Less rigorous than NHD or pipeline extraction.
+
+NHD is the strongest path: published, peer-recognized, and
+specifically intended for hydrology applications. Pipeline
+extraction (option 2) is the cleanest "from our own data"
+alternative if NHD coverage is sparse in coastal-plain wetlands.
+
+**Option 2: Lake floor elevation reduction (pipeline, ~1 hour).**
+Change `lake_hill_elev` from −6 m to −1 or −2 m. The Phase E.5
+documentation calls hill_elev=−6 a "chain bookkeeping value" —
+needs to be lower than Bin 1 (~0.25 m) but exact value doesn't
+matter for chain ordering. Reducing to −2 m would:
+
+- Keep the chain bookkeeping intact (still below all land bins)
+- Reduce overflow threshold from 6 m to 2 m of water accumulation
+- Match real OSBS lake seasonal range
+- Trigger more frequent overflow events into the stream
+
+This is the higher-leverage change.
+
+**Option 3: Both.** Tune both stream and lake. Compounding effects:
+narrower stream + lower overflow threshold = more frequent lake-to-
+stream surface flow events = realistic TAI dynamics emerge.
+
+**Option 4: Revive `spillheight` (namelist, ~1 second).** Set
+`spillheight > 0` to enable Mechanism C (global elevation shift).
+Pushes all column elevations down. This is the "whole hillslope is
+a wetland depression" framing. **Doesn't fit our lake-as-one-column
+model** — we represent the wetland as a single column at the bottom
+of the chain, not as a whole-hillslope feature. Recommend against.
+
+#### 7.8 What we'll observe in the sniff test
+
+With current parameters (`hill_elev_lake = −6 m`, stream as-is):
+
+| Variable | Expected behavior with routing on |
+|---|---|
+| `H2OSFC[lake_column]` | Rises during wet season, falls during dry; equilibrium level depends on actual upland inflow vs ET balance |
+| `H2OSFC[bin 2]` (FZ) | Rises seasonally but drained downhill; should be wettest land column |
+| `H2OSFC[bin 25]` (ridge) | Modest, dries quickly |
+| `QOVER[lake_column]` | Zero almost always (only triggers above 6 m) |
+| `QDRAI[lake_column]` | Near zero (unfavorable Darcy gradient) |
+| `QDRAI[bin 2]` | Positive, drains laterally to lake |
+| `ZWT[lake_column]` | At surface (= 0) — lake is permanently saturated |
+| `ZWT[bin 2]` | Shallow, rises after rain events |
+| `ZWT[bin 25]` | Deep, slow response |
+| `STREAM_WATER_VOLUME` | Small but non-zero (mostly fed by tiny lake-to-stream Darcy plus rare overflows) |
+| `STREAM_WATER_DEPTH` | Centimeters at most (channel oversized) |
+| `VOLUMETRIC_STREAMFLOW` | Small (low water depth → low Manning velocity) |
+
+**Sniff-test diagnostics that flag tuning issues:**
+- Lake `H2OSFC` trends toward 6 m without seasonal reversal →
+  upland inflow >> ET, lake capacity too generous, recommend
+  Option 2 tuning
+- Lake `H2OSFC` saturates at 6 m → overflow active, system finding
+  its own balance; check `QOVER[lake]` is non-zero
+- Stream `WATER_DEPTH` < 1 cm year-round → stream oversized,
+  recommend Option 1 tuning
+- Bin 2 ZWT stays at surface (saturated) while higher bins drain →
+  TAI structure emerging, model is working
+
+#### 7.9 Why this matters for B2 (PI consultation)
+
+B2 asks "is the Darcy gradient (Δh/L) physically meaningful?" This
+section refines what's needed:
+
+- The Darcy gradient from upland to lake is driven by `hill_elev`
+  differences (Bin 2 at +0.25 m, Lake at −6 m → Δh = 6.25 m). With
+  bin distances of 50–500 m, gradient is 0.01 to 0.1 m/m.
+- For OSBS sandy soils with K_sat ≈ 10⁻⁵ to 10⁻⁴ m/s, Darcy flux
+  q ≈ K × Δh / L is on the order of 10⁻⁶ to 10⁻⁵ m/s, or
+  **86 to 864 mm/day per column-width**.
+- That's a substantial lateral flow rate. The lake column will
+  receive water FAST under routing on.
+
+The B2 question now has a concrete framing for the PI: "is OSBS
+upland → lake lateral flow really at the meters-per-day scale, or
+should bin elevation/distance be retuned to give realistic
+gradients?" Whatever the answer, it interacts with the stream and
+lake column choices above.
+
+#### 7.10 Summary for PI conversation
+
+The whole stream-channel + lake-column setup was locked under
+routing-off assumptions where these values didn't matter. With
+routing on:
+
+1. Stream params (depth 1.52 m, width 59.23 m) come from Swenson's
+   global MERIT-calibrated power laws. They're appropriate for the
+   landscapes that calibrated them; they're 5–10× too generous for
+   OSBS Florida coastal plain.
+
+2. The lake column at `hill_elev = −6 m` gets a 6 m overflow
+   threshold via Mechanism A in our SourceMod. That's the actual
+   release valve, and it's still active (spillheight=0 didn't
+   disable it). 6 m is several times larger than real OSBS lake
+   seasonal range.
+
+3. Two tuning levers cost ~1 hour each in pipeline rework:
+   - Stream cross-section (override power laws)
+   - Lake floor elevation (change `lake_hill_elev` from −6 to −2)
+
+4. Recommend running the sniff test first to see which tuning
+   knobs the model actually needs (which is which of the issues
+   above actually surfaces in the routing-on dynamics).
+
+### 8. Routing-gate audit (2026-05-19) — what `use_hillslope_routing` actually controls
+
+Comprehensive review of every `use_hillslope_routing` reference in
+CTSM 5.3.085 source (`git rev dc3aa5ddc`), cross-checked against the
+SourceMods in `$CASES/osbs.swenson.spinup/SourceMods/src.clm/` and
+empirical h1a output from both `osbs.routing.test`/`control` (5-yr
+A4 smoke test) and the operative `osbs.swenson.spinup` (currently
+running). Conclusion: the project's working framing — that
+`use_hillslope_routing` gates inter-column lateral flow — is wrong.
+The corrected understanding feeds the Problem section table above
+and the change-log entry in STATUS.md.
+
+#### 8.1 The dispatch site
+
+`HydrologyDrainageMod.F90:127-160`:
+
+```fortran
+if (use_aquifer_layer()) then
+   call Drainage(...)                          ! aquifer-layer mode (not us)
+else
+   call PerchedLateralFlow(...)                ! ALWAYS, no routing gate
+   call SubsurfaceLateralFlow(...)             ! ALWAYS, no routing gate
+   if (use_hillslope_routing) then
+      call HillslopeStreamOutflow(...)         ! routing-gated
+      call HillslopeUpdateStreamWater(...)     ! routing-gated
+   endif
+endif
+```
+
+Our case takes the `else` branch (`lower_boundary_condition=2` →
+`bc_zero_flux` → `use_aquifer_layer()=.false.`; see
+`bld/namelist_files/namelist_defaults_ctsm.xml:448` and
+`SoilWaterMovementMod.F90:229`). So `PerchedLateralFlow` and
+`SubsurfaceLateralFlow` are called every hydrology step regardless
+of routing.
+
+#### 8.2 What the lateral-flow routines actually do
+
+`SubsurfaceLateralFlow` (`SoilHydrologyMod.F90:2086+`) is the
+canonical inter-column water-table flow routine. Loop at
+`:2249-2402` processes every column; hillslope-column branch at
+`:2254` is gated only by `if (col%is_hillslope_column(c) .and.
+col%active(c))`.
+
+Inside that branch, two paths:
+
+- **Internal column (has a downhill neighbor, `col%cold(c) /= ispval`):**
+  Darcy head gradient computed at `:2261-2263` between this column's
+  surface elevation minus water-table depth and the downhill
+  neighbor's. `qflx_latflow_out_vol = transmis × hill_width ×
+  head_gradient` at `:2358`. The downhill column accumulates the
+  inflow at `:2386-2388`:
+
+  ```fortran
+  qflx_latflow_in(col%cold(c)) = qflx_latflow_in(col%cold(c)) + &
+       1.e3_r8*qflx_latflow_out_vol(c)/col%hill_area(col%cold(c))
+  ```
+
+  No routing gate anywhere in this path.
+
+- **Terminal column (`col%cold(c) == ispval`):** Same Darcy machinery,
+  but the "downhill neighbor" is the stream channel. Here routing
+  matters — `:2265-2272` selects the stream-depth source:
+
+  ```fortran
+  if (use_hillslope_routing) then
+     stream_water_depth = stream_water_volume(l) / &
+                          lun%stream_channel_length(l) / &
+                          lun%stream_channel_width(l)
+     stream_channel_depth = lun%stream_channel_depth(l)
+  else
+     stream_water_depth = tdepth(g)               ! from MOSART via coupler
+     stream_channel_depth = tdepth_bankfull(g)    ! from MOSART via coupler
+  endif
+  ```
+
+  The terminal column still gets a Darcy gradient computed against
+  some stream depth in both branches. The only difference is where
+  that depth comes from.
+
+`PerchedLateralFlow` (`:1703+`) is structurally identical for the
+perched water table; the same Darcy gradient between adjacent
+columns runs at `:1817-1820`, the same routing-gated stream-depth
+swap at `:1822-1829`.
+
+#### 8.3 Where the flow is applied to soil water
+
+`SubsurfaceLateralFlow` lines `:2433-2509`:
+
+```fortran
+qflx_net_latflow(c) = qflx_latflow_out(c) - qflx_latflow_in(c)
+...
+drainage(c) = qflx_net_latflow(c)                 ! for hillslope columns
+...
+drainage_tot = - drainage(c) * dtime
+if (drainage_tot > 0.) then                        ! rising water table
+   ! water added to h2osoi_liq, zwt rises
+else                                               ! deepening water table
+   ! water removed from h2osoi_liq, zwt falls
+endif
+```
+
+So if a column receives more lateral inflow than it sends out
+(`qflx_latflow_in > qflx_latflow_out`), `drainage` is negative,
+`drainage_tot` is positive, and water is **added** to its soil
+column. The transfer is real and applied to `h2osoi_liq`.
+
+#### 8.4 Empirical confirmation
+
+Two independent observations confirm inter-column flow runs under
+routing-off:
+
+1. **Routing.test vs routing.control h1a (5-yr smoke test).** QDRAI
+   has negative values at hillslope columns in both cases. Min/max:
+   test = −4.32×10⁻⁵ / 1.47×10⁻⁵, control = −4.15×10⁻⁵ /
+   1.43×10⁻⁵. Both cases show the lateral-inflow signature; the
+   values differ only at ~10⁻⁶ scale (the boundary-condition delta).
+
+2. **`osbs.swenson.spinup` h1a (600 yr, routing-off).** QRUNOFF
+   column-level min/max = −1.156×10⁻⁴ / 1.992×10⁻⁴ mm/s. ZWT spans
+   0.011 → 8.6 m across columns. If columns were "hydrologically
+   isolated 1D soil columns" as the earlier docs claimed, we'd see
+   no negative QRUNOFF and far less ZWT variation. The negative
+   values are the unambiguous fingerprint of inter-column lateral
+   redistribution.
+
+#### 8.5 Enumerated routing-gated sites
+
+For completeness, every `use_hillslope_routing` reference in
+CTSM 5.3.085 source (excluding declaration/bcast/log plumbing):
+
+| File:line | What it gates |
+|---|---|
+| `HillslopeHydrologyMod.F90:378-411` | Read `hillslope_stream_depth/width/slope` from NetCDF |
+| `HillslopeHydrologyMod.F90:475-507` | Compute `nhill_per_landunit`, `stream_channel_length`, `stream_channel_number` |
+| `HillslopeHydrologyMod.F90:1078+` (`HillslopeUpdateStreamWater`) — called only from `HydrologyDrainageMod.F90:150-158` | Advance `stream_water_volume`; includes the SourceMod terminal-column gate at `:1118-1126` |
+| `HillslopeHydrologyMod.F90:977+` (`HillslopeStreamOutflow`) — called only from `HydrologyDrainageMod.F90:151-153` | Manning's-equation streamflow velocity |
+| `SoilHydrologyMod.F90:1822-1829` | Perched-LF stream-depth source switch |
+| `SoilHydrologyMod.F90:2265-2272` | Subsurface-LF stream-depth source switch |
+| `SoilHydrologyMod.F90:2362-2367` | Losing-stream outflow cap |
+| `WaterFluxType.F90:525-534` | Register `VOLUMETRIC_STREAMFLOW` history field |
+| `WaterFluxType.F90:922-928` | Zero `volumetric_streamflow_lun` each step |
+| `BalanceCheckMod.F90:274-280, 744-750` | Add `stream_water_volume` / `qflx_streamflow_grc` into gridcell water-balance ledger |
+| `lnd2atmMod.F90:343+` | Sum streamflow over landunits for lnd→rof coupling |
+| `lnd_import_export.F90:916-919` | Add stream component to subsurface-runoff field exported to coupler |
+
+Every site is on the stream-channel side. None of them are inside
+the column-to-column flow path of `PerchedLateralFlow` or
+`SubsurfaceLateralFlow` proper.
+
+#### 8.6 Implications for the project narrative
+
+The corrected understanding does **not** invalidate any decision
+made under the earlier framing — it reframes what those decisions
+mean physically:
+
+- **Phase F is delivering more TAI physics than its doc claimed.**
+  The 600-yr spinup is running inter-column lateral flow. The
+  column-level water-table and soil-moisture differentiation
+  observed in the h0a/h1a plots is a combination of (a) independent
+  per-column forcing and (b) actual lateral redistribution. The
+  TAI mechanism is not "dormant" in Phase F.
+- **Phase G Stage 1 (lake column construction) is correct.** The
+  doc actually got this right in its detailed sections (line 92,
+  125-138 of `phases/G-ctsm-lake-representation.md`): "water drains
+  from hillslope to lake naturally through the existing lateral
+  flow pathway" — that lateral flow is exactly the unconditional
+  inter-column flow this audit identifies. Only the Stage-1 framing
+  at lines 63-65 ("columns are hydrologically isolated") contradicts
+  the doc's own physics description.
+- **Phase H Track A is correct; Track B/C deliverable narrows.**
+  The mesh-mode work still solves the spval bug. The routing-on
+  test still validates that the stream-side machinery functions.
+  But "lateral subsurface flow activation" is not what Phase H
+  delivers — that activation happened automatically when
+  `use_hillslope=.true.` was first turned on. Phase H delivers
+  the stream-coupling BC and the internal stream-water ledger.
+- **PI consultation B1-B4 still relevant**, with refined framing:
+  - B2 (Darcy gradient reasonableness) — applies to inter-column
+    gradients that are *already running*. Reviewing actual
+    `osbs.swenson.spinup` `QDRAI`/ZWT trajectories may be more
+    informative than purely theoretical reasoning.
+  - B4 (stream geometry, lake overflow threshold) — applies only
+    once routing is on; until then the relevant BC is `tdepth_grc`
+    (likely 0 with our DATM+MOSART setup).
+- **The 2026-05-12 A4 smoke test result has a cleaner physical
+  interpretation now**: bit-identical gridcell aggregates and
+  near-identical column states isolate the BC swap, not the
+  presence/absence of lateral flow.
+
+#### 8.7 What needs verification before the production routing-on run
+
+- **Whether `tdepth_grc` is actually populated by MOSART in our
+  case.** If it stays at 0 (default fallback at
+  `lnd_import_export.F90:623`), then the routing-off terminal
+  column effectively sees an empty stream — Darcy gradient
+  dominated by `col%hill_elev - zwt` minus 0. If MOSART sends
+  meaningful values, the BC difference between routing-on and
+  routing-off is more subtle than the A4 test suggests.
+- **Whether the column-level QDRAI/QRUNOFF time series in the
+  600-yr spinup actually show TAI-like behavior** (saturated
+  low-HAND columns near the lake, drier ridges, seasonal cycles
+  of low-HAND saturation). The audit confirms the mechanism is
+  present; whether it manifests at OSBS scales requires looking
+  at the data.
+
 ## Software problems — engineering only
 
 Pure engineering / configuration tasks. Can be planned, prototyped,
@@ -577,35 +1184,59 @@ and reported on without PI input.
   `output/mesh/osbs_scrip_90km2_c260512.nc` and
   `output/mesh/osbs_mesh_90km2_c260512.nc`.
 
-- [ ] **A3.** Construct a new test case as a sibling of
-  `osbs.swenson.spinup`. Override:
-  - `PTS_LAT = -999.99` (unset)
-  - `PTS_LON = -999.99` (unset)
-  - `LND_DOMAIN_MESH = /path/to/test_mesh.nc`
-  - `MASK_MESH = /path/to/test_mesh.nc`
-  - `use_hillslope_routing = .true.` (in user_nl_clm)
+- [x] **A3.** Construct a paired test case + control case as siblings of
+  `osbs.swenson.spinup`. **Done 2026-05-12.** Two cases:
+  `$CASES/osbs.routing.test` (routing on) and
+  `$CASES/osbs.routing.control` (routing off). Both: identical
+  COMPSET (1850_DATM%CRUv7_CLM60%BGC), identical mesh
+  (`osbs_mesh_90km2_c260512.nc`), identical SourceMods (5 .F90 files
+  copied from `osbs.swenson.spinup`), identical fsurdat and
+  `hillslope_file`, `CLM_ACCELERATED_SPINUP=off`, cold start. 5-year
+  run, 6-hourly output, ~monthly files. **Only difference:**
+  `use_hillslope_routing = .true.` vs `.false.`. Build ~5.5 min each.
+  Run wallclock: test 42 min, control 52 min (both well under 12-hr
+  budget).
 
-  Build, run for 1–5 model years. Goal: verify the model completes
-  without errors, not yet to do science.
-
-- [ ] **A4.** Inspect output to verify:
-  - `grc%area` in h0a is a real number (not 1e36)
-  - `nhill_per_landunit` is computed and sensible (need to either
-    add a hist variable or check via debug print in a SourceMod)
-  - Stream channel length is a sensible magnitude
-  - Water budget closes (CTSM internal balance checks pass)
+- [x] **A4.** Inspect output. **Done 2026-05-12.** Headline results
+  (see Log entry below for full analysis):
+  - `grc%area` = **90.006 km²** in both cases — **NOT spval**.
+    Phase H mesh-mode workaround works.
+  - `VOLUMETRIC_STREAMFLOW` registered and populated only in test
+    (mean ~8 m³/s); correctly absent from control.
+  - Water budget closes (no balance-check errors).
+  - 5-yr gridcell-aggregate variables (RAIN, ET, TWS, GPP, soil C
+    pools) bit-identical between test and control to 4–7 sig figs.
+  - `H2OSFC = 0` in every column at every timestep, both cases:
+    cold-start + Florida ET dries the soils faster than rainfall
+    can saturate. No standing surface water emerges in 5 years.
+  - **Year-5 deep soil moisture (H2OSOI, layer 15 ≈ 3 m) shows
+    the textbook TAI signature** at column level:
+    `H2OSOI[lake, TEST] − H2OSOI[lake, CTRL] = +7.14e-4`
+    (lake wetter under routing)
+    `H2OSOI[bridge col 13, TEST] − [bridge, CTRL] = −9.61e-5`
+    (drier — water drained downhill toward lake)
+    high upland (cols 20–24): no signal (too far for 5 yr).
+  - Stream-channel parameters (depth/width from Swenson power laws,
+    Phase H Section 7) didn't manifest as problems in this short
+    run. The "too generous" stream concern is real but invisible
+    here because nothing accumulates enough to overflow.
 
 - [ ] **A5.** Document the cookbook of xmlchange commands needed to
-  migrate a PTS_MODE case to mesh-mode. This will be reused for the
-  production routing-on run after the scientific decisions land.
-  Skeleton recipe in research notes Section 5 — refine after A2–A4.
+  migrate a PTS_MODE case to mesh-mode. Production-ready recipe
+  exists in `phases/H-lateral-flow.md` Section 5 and was validated
+  by the A3/A4 work above. Optional refinement: extract into a
+  standalone shell script. Decision deferred until ready for the
+  production spinup.
 
 - [ ] **A6.** Record the working configuration as the canonical
   reference for single-point routing-on (since no community precedent
-  exists — see research notes Section 6). Either in this phase doc,
-  in a new `docs/` file, or as a tutorial-style README under
-  `scripts/`. Decision deferred until after A4 validates the
-  configuration actually works.
+  exists — see research notes Section 6). **A3/A4 are now the
+  canonical working example.** The user_nl_clm + xmlchange recipe
+  for the two paired cases is documented in this phase doc Section 5,
+  in the 2026-05-12 log entry below, and in the case directories
+  themselves (`$CASES/osbs.routing.test`, `$CASES/osbs.routing.control`).
+  Whether to extract into a tutorial-style README in `scripts/` or
+  `docs/` is deferred until after the production spinup.
 
 ## Scientific decisions — PI consultation required
 
@@ -694,6 +1325,48 @@ meaningful without resolving them.**
   Without a clear validation framing agreed up front, any output is
   hard to interpret or publish.
 
+- [ ] **B4. Stream-channel geometry and lake column overflow
+  threshold.** New (2026-05-12). Stream depth (1.52 m) and width
+  (59.23 m) come from Swenson's MERIT-global power laws and are
+  ~5–10× too generous for OSBS Florida coastal plain. The lake
+  column overflow threshold is 6 m of water above lake floor (from
+  `lake_hill_elev = −6 m`), several times wider than real OSBS
+  lake seasonal range (~1–2 m). Section 7 of research notes above
+  has the full analysis with numerical examples.
+
+  Sub-questions for the PI:
+  - Do we tune stream cross-section to match OSBS observed swale
+    geometry before the production spinup? Pipeline rework ~1 hour
+    once we have a target value.
+  - **Where does the target stream width/depth come from?**
+    Suggested sourcing in priority order (full discussion in
+    research notes Section 7.7):
+    1. **USGS NHD** (National Hydrography Dataset) high-resolution
+       shapefile for Putnam County, FL — published, citable,
+       ~2 hours of work.
+    2. **Extract from our own pipeline** (~half day) — re-derive
+       channel widths from the pysheds flow-network mask and
+       LIDAR mosaic. Self-consistent with our data-derived
+       `stream_slope`.
+    3. Manual Google Earth + DTM inspection (~1 hour, lower
+       confidence).
+
+    The earlier-quoted "~5 m × ~0.5 m" is an order-of-magnitude
+    placeholder, not a measurement. NHD is the strongest path to
+    a defensible value before production.
+  - Do we reduce `lake_hill_elev` from −6 m to ~−1 or −2 m to
+    match real lake seasonal range and produce more frequent
+    overflow events? Pipeline rework ~1 hour.
+  - The decision interacts with B2 (Darcy gradients): if lateral
+    inflow is small, lake stays in normal range and tuning is
+    less critical. If inflow is large, tuning becomes essential.
+
+  Smoke test result (2026-05-12): the system stayed too dry for
+  any of these levers to matter in 5 years. Production spinup
+  will saturate soils and surface this question. Recommend
+  getting a real NHD-derived stream width BEFORE starting the
+  600-yr production spinup.
+
 ## Validation tasks (after A + B)
 
 Once software (A) is in place and scientific decisions (B) are made:
@@ -730,7 +1403,10 @@ Explicit categorization so each task tracks the right authority:
 | **`nhill_per_landunit` interpretation** | **Scientific** | **PI** |
 | **Hydraulic conductivity reasonableness** | **Scientific** | **PI** |
 | **Validation framing without precedent** | **Scientific** | **PI** |
+| **Stream cross-section tuning (Swenson power laws vs OSBS coastal plain)** | **Scientific** | **PI** |
+| **Lake overflow threshold (`lake_hill_elev` choice)** | **Scientific** | **PI** |
 | Bin spacing revisit (if needed) | Mixed | PI + Engineering |
+| Stream/lake retuning pipeline rework | Software | Engineering (once direction decided) |
 | Long-spinup approval | Mixed | PI (timing) + Engineering (config) |
 
 ## Deliverable
@@ -764,6 +1440,202 @@ decision not to pursue further with explicit scientific rationale.
 - `components/cmeps/cime_config/config_component.xml` — LND_DOMAIN_MESH variable definition
 
 ## Log
+
+### 2026-05-19 — Routing-gate source audit; reframe of project narrative
+
+Comprehensive review of every `use_hillslope_routing` reference in
+CTSM 5.3.085 source plus empirical check of h1a outputs from
+`osbs.routing.test`/`control` and the operative
+`osbs.swenson.spinup`. Result: `use_hillslope_routing` does NOT
+gate inter-column lateral subsurface flow. That flow runs under
+`use_hillslope=.true.` via `PerchedLateralFlow` and
+`SubsurfaceLateralFlow`, both dispatched unconditionally from
+`HydrologyDrainageMod.F90:139, 143`. The routing switch controls
+stream-side state (channel geometry, internal `stream_water_volume`,
+Manning streamflow, lnd→rof export) and a swap of the terminal-
+column boundary depth from MOSART's `tdepth_grc` to internal
+stream state.
+
+Empirical confirmation: spinup case h1a shows column-level QRUNOFF
+ranging −1.16×10⁻⁴ to +1.99×10⁻⁴ mm/s. Negative values at hillslope
+columns are the unambiguous fingerprint of lateral inflow exceeding
+outflow — only possible if inter-column flow is happening. ZWT
+spans 0.011 to 8.6 m across columns, far more variation than would
+emerge from isolated 1D columns under identical forcing.
+
+Documents corrected:
+- Problem section table (this doc, top) — revised what each switch toggles
+- Section 7.5 table — Mechanism B "Active" → "Inactive under routing-off"; added Mechanism E (SaturatedExcessRunoffMod 295)
+- A4 smoke-test log entry below — reinterpreted as boundary-condition delta, not "TAI emergence from lateral flow"
+- Section 8 (new) — full source-code audit with file:line citations
+- STATUS.md — cross-cutting concerns bullet rewritten + change-log entry
+- `phases/F-validate-deploy.md` — Key Context callout (the "hydrologically isolated columns" claim was wrong)
+- `phases/G-ctsm-lake-representation.md` — Stage 1 framing fix at lines 63-65
+
+Implications for Phase H deliverable:
+- Track A (mesh-mode workaround) still needed — solves the spval
+  bug and is the necessary infrastructure for routing-on.
+- Track B/C (PI decisions + routing-on validation) narrows in
+  scope. Phase H validates the stream-side coupling, not the
+  emergence of lateral flow itself.
+- B2 (Darcy-gradient reasonableness) should be revisited with
+  the 600-yr spinup's actual column-level QDRAI / ZWT
+  trajectories rather than purely theoretical reasoning — the
+  flow has been running all along; we can measure it.
+- B4 (stream geometry, lake overflow threshold) is unaffected;
+  still applies only when routing turns on.
+
+Phase H status header updated to reflect the narrowed scope.
+
+### 2026-05-12 — A3/A4 smoke test: routing-on infrastructure validated
+
+Paired-case smoke test completed. Routing-on infrastructure works
+end-to-end; cold-start dryness limits surface signal in 5 years but
+the depth-profile TAI signature is emerging.
+
+**Case setup** (executed 2026-05-12):
+
+| Property | Test | Control |
+|---|---|---|
+| Case dir | `$CASES/osbs.routing.test` | `$CASES/osbs.routing.control` |
+| COMPSET | 1850_DATM%CRUv7_CLM60%BGC… | (same) |
+| Mesh | `output/mesh/osbs_mesh_90km2_c260512.nc` | (same) |
+| SourceMods | 5 .F90 copied from `osbs.swenson.spinup/SourceMods/src.clm/` | (same) |
+| fsurdat / hillslope_file | same as spinup case | (same) |
+| `CLM_ACCELERATED_SPINUP` | off | off |
+| Run | 5 yr cold start, 6-hourly output, ~monthly files | (same) |
+| `use_hillslope_routing` | `.true.` | `.false.` |
+| Build time | ~5.5 min | ~5.5 min |
+| Run wallclock | 42 min | 52 min |
+
+**Two namelist fixes caught during the run:**
+
+1. `SOILLIQ_vr` is not a CTSM hist variable name — `SOILLIQ` itself
+   is 2D on `levsoi`. Fixed: replaced in h3 list, removed from h1.
+2. `VOLUMETRIC_STREAMFLOW` registration is gated by
+   `use_hillslope_routing=.true.` in `WaterFluxType.F90:526`.
+   Including it in the control case's `hist_fincl2` would crash
+   the htapes check. Fixed: removed from control only; kept in test.
+   `STREAM_WATER_VOLUME` and `STREAM_WATER_DEPTH` are gated only
+   on `use_hillslope` and stay in both (zero in control).
+
+**Validation results:**
+
+| Check | Result |
+|---|---|
+| `grc%area` at gridcell | **90.006 km²** in BOTH cases (not spval) — mesh workaround verified |
+| `VOLUMETRIC_STREAMFLOW` | Present only in test (~8 m³/s mean); correctly absent in control |
+| `STREAM_WATER_VOLUME`, `_DEPTH` | Present in both (gated on `use_hillslope` only) |
+| Water budget closure | No CTSM balance-check errors in either run |
+| Gridcell aggregates (5-yr means) | Bit-identical to 4–7 sig figs: RAIN, TBOT, QVEGT, QSOIL, QFLX_EVAP_TOT, QRUNOFF, TWS, GPP, TOTECOSYSC, TOTSOMC, TOTVEGC, EFLX_LH_TOT, FSH |
+| Column-level state, Year 1 | Bit-identical between test and control |
+| Surface water `H2OSFC` | Zero everywhere, all timesteps, both cases — no surface pool emerges |
+| `FH2OSFC` (inundated fraction) | Zero everywhere, both cases |
+
+**TAI signature in deep soil moisture (Year-5 December, layer 15 ≈ 3 m):**
+
+| Column | hill_elev (m) | Type | H2OSOI TEST − CTRL |
+|---|---|---|---|
+| 0 | −6.00 | lake | **+7.14×10⁻⁴** |
+| 1 | −5.13 | deepest FZ | **+1.56×10⁻⁴** |
+| 13 | +0.12 | bridge / TAI | **−9.61×10⁻⁵** |
+| 20–24 | +4.5 to +12.5 | high upland | ~0 (no signal) |
+
+Lake column got wetter under routing, bridge column drained
+slightly, high upland unaffected at this timescale.
+
+> **Reinterpreted 2026-05-19 after the routing-gate audit (Section 8).**
+> Lateral inter-column flow runs in BOTH cases (`use_hillslope=.true.`
+> is sufficient). What the test/control delta actually measures is
+> the effect of the terminal-column boundary swap: routing-off uses
+> `tdepth_grc` (likely 0 with our DATM+MOSART setup, where MOSART
+> doesn't push `Sr_tdepth` back to CTSM); routing-on uses CTSM-internal
+> stream state that builds up from column drainage. Lake column gets
+> +7×10⁻⁴ wetter under routing because internal stream water at the
+> chain bottom raises the effective stream depth seen by the
+> lake-column Darcy gradient — i.e., less subsurface drainage out of
+> the lake. Not "TAI emergence from lateral flow turning on"; rather,
+> a stream-side BC effect on top of identical inter-column flow.
+> Magnitude is small (~0.07% volumetric) because 5 years isn't long
+> enough for the BC change to propagate deeply.
+
+**Why the surface signal is invisible:**
+
+Cold start from CTSM defaults → soil at field capacity (~0.30
+vol/vol), surface dry. Florida potential ET (~1500 mm/yr) >
+precipitation (~1300 mm/yr). With sandy OSBS soils, the column
+drains faster than it can saturate. For surface water to pool,
+soil must saturate first; that doesn't happen in 5 years from
+cold start. Hence `H2OSFC = 0` everywhere in both cases.
+
+This is exactly why the smoke test was designed as a smoke test:
+infrastructure validation, not science emergence. **Both pass.**
+
+**Stream-channel issue (Section 7) — no manifestation here.**
+The "too generous 59 m × 1.52 m channel" concern is real but
+invisible in this run because: (a) almost no water makes it to the
+stream (everything ET'd away first), and (b) when water does flow,
+the stream is so oversized that depth stays near zero. We'll only
+see channel sizing matter once soils saturate during a real spinup.
+Same for `lake_hill_elev = −6 m` overflow threshold — the lake
+never fills enough to test it.
+
+**Production estimate.** Test ran 42 min for 5 yr = ~7 yr/wallhr.
+Control 52 min for 5 yr = ~5.8 yr/wallhr. At this rate, a 600-yr
+production AD spinup with routing on would take ~85–100 wallclock
+hours, very similar to `osbs.swenson.spinup`'s observed pace.
+
+**Phase H Track A: complete.** A1, A2, A3, A4 all done. A5 (cookbook)
+and A6 (canonical reference) folded into the doc itself and the
+existing case directories. Ready to move to the scientific decisions
+(B1–B4) and, once those are resolved, the production routing-on
+spinup (Track C).
+
+### 2026-05-12 — Stream + lake routing-on interface analysis
+
+Documented the interaction between Swenson power-law stream
+geometry, the lake column at `hill_elev = −6 m`, and the SourceMod
+mechanisms when `use_hillslope_routing = .true.`. Full analysis in
+Section 7 of research notes above. Headline findings:
+
+1. **Stream depth (1.52 m) and width (59.23 m) are from Swenson's
+   MERIT-global power laws** (`run_pipeline.py:1645-1651`):
+   `depth = 0.001×A^0.4`, `width = 0.001×A^0.6`. The values were
+   originally locked under routing-off (PI #4, 2026-03-30) where
+   CTSM never read them. They're physically appropriate for the
+   global river-system ensemble the power laws were calibrated
+   against (Appalachians, Cascades — places where 90 km² = real
+   tributary basin). They are **5–10× too generous for OSBS
+   coastal plain reality** (~5 m wide × ~0.5 m deep real swales).
+
+2. **The lake-column overflow threshold is 6 m above lake floor,
+   not 0 (i.e. not "no release valve").** Earlier framing was
+   wrong. The release valve is Mechanism A in our SurfaceWaterMod
+   SourceMod (pond-builds for `hill_elev<0`, overflows when water
+   surface exceeds 0). It's still active despite `spillheight=0`.
+   The 6 m threshold comes from `lake_hill_elev = −6 m` directly,
+   not from spillheight.
+
+3. **Four mechanisms in the SourceMods** (verified by diffing
+   `$CASES/osbs.swenson.spinup/SourceMods/src.clm/` against
+   upstream): pond-building (A), terminal-column-only stream
+   coupling (B), global elevation shift (C — disabled with
+   spillheight=0), inter-column surface chain (D). Only Mechanism
+   C was disabled.
+
+4. **Two tuning levers, ~1 hour each:**
+   - Override stream depth/width in pipeline → realistic OSBS
+     cross-section
+   - Reduce `lake_hill_elev` from −6 to ~−1 or −2 m → realistic
+     overflow threshold
+
+5. **Added B4 to Scientific decisions** for PI consultation. Both
+   levers interact with B2 (Darcy gradient reasonableness) — the
+   answer depends on actual lateral inflow magnitude, which the
+   sniff test will measure directly.
+
+6. Added two rows to the Software vs scientific summary: stream
+   cross-section tuning and lake overflow threshold, both PI calls.
 
 ### 2026-05-12 — A2 done: 90 km² ESMF mesh built and validated
 
