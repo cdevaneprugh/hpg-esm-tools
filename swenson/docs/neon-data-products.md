@@ -144,3 +144,88 @@ pre-built** NEON forcing already shipped in the fork at
 `$BLUE/ctsm5.3/tools/site_and_regional/`. Run that first to validate the
 end-to-end workflow before investing in extending the record with the
 full pipeline.
+
+---
+
+## Local data layout (raw + processed)
+
+Recommended directory structure for downloaded NEON met data and
+processed CTSM-DATM output. Mirrors the existing `data/neon/{dtm,slope,aspect}`
+pattern (raw products by type) and adds a sibling `data/datm/` for
+processed model-input format.
+
+```
+data/
+├── neon/
+│   ├── dtm/                       # existing
+│   ├── slope/                     # existing
+│   ├── aspect/                    # existing
+│   ├── met/                       # NEW — raw NEON met downloads (gitignored)
+│   │   ├── DP1.00001.001/         # one dir per DP, NEON API naming
+│   │   ├── DP1.00002.001/
+│   │   ├── DP1.00004.001/
+│   │   ├── DP1.00023.001/
+│   │   ├── DP1.00045.001/
+│   │   ├── DP1.00098.001/
+│   │   └── DP4.00200.001/
+│   └── README.md                  # update to catalog the new section
+├── datm/                          # NEW — CTSM-DATM-ready output (gitignored)
+│   └── neon_OSBS/
+│       └── clmforc.neon.OSBS.{Prec,Solr,TPQWL}.YYYY-MM.nc
+└── .gitignore                     # extend to ignore neon/met/, datm/
+```
+
+### Filename convention
+
+Mirror CRUNCEPv7's 3-stream split exactly so the DATM namelist swap is a
+drop-in path change:
+
+| New (NEON-derived) | Existing (CRUNCEPv7) | Variables |
+|---|---|---|
+| `clmforc.neon.OSBS.Prec.YYYY-MM.nc` | `clmforc.cruncep.V7.c2016.0.5d.Prec.OSBS.YYYY-MM.nc` | PRECTmms |
+| `clmforc.neon.OSBS.Solr.YYYY-MM.nc` | `clmforc.cruncep.V7.c2016.0.5d.Solr.OSBS.YYYY-MM.nc` | FSDS |
+| `clmforc.neon.OSBS.TPQWL.YYYY-MM.nc` | `clmforc.cruncep.V7.c2016.0.5d.TPQWL.OSBS.YYYY-MM.nc` | TBOT, PSRF, WIND, QBOT, FLDS |
+
+Existing CRUNCEPv7 forcing lives at `/blue/gerber/sgerber/CTSM/subset_input/datmdata/`.
+
+### Raw data preservation
+
+Keep two layers under each `data/neon/met/DP*/`:
+- **Pristine zips** from NEON API — the source of truth (downloads timestamps drift; preserve as-received)
+- **Extracted/concatenated CSVs** — intermediate, regeneratable from zips; safe to wipe
+
+### Gitignore additions
+
+Extend `data/.gitignore` from:
+
+```
+*.tif
+*.nc
+```
+
+to:
+
+```
+*.tif
+*.nc
+neon/met/
+datm/
+```
+
+Directory-level ignores cover us against unexpected file formats from the NEON API (zip, CSV, JSON metadata, etc.).
+
+### Per-directory READMEs
+
+Provenance traceability — at minimum:
+- `data/neon/met/README.md`: DPs downloaded, year range, NEON API call snippet used, RELEASE-2026 confirmation per product
+- `data/datm/neon_OSBS/README.md`: NCAR-NEON pipeline commit hash, ReddyProc version, years with anomalies flagged (e.g. Issue #34 OSBS 2018 TBOT), conversion script path
+
+Without these, six months from now nobody can tell whether the NetCDFs were generated with the buggy 2018 TBOT or with it patched.
+
+### Open question — final storage location
+
+Two options for the processed DATM output:
+- `swenson/data/datm/` — co-located with this project, recommended initially
+- `$BLUE/datm_neon/` (or `/blue/gerber/sgerber/CTSM/subset_input/datmdata_neon/`) — sibling to other shared data, available to any future OSBS case
+
+Start swenson-local; promote to a shared location once a second case needs it. Easier to move data once the access pattern is known than to predict it.
