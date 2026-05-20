@@ -91,6 +91,7 @@ swenson/
 │   ├── hillslope-binning-rationale.md  # 1x16 hybrid history (partially superseded by E.5)
 │   ├── water-masking-and-lake-representation.md  # CTSM source investigation (partially superseded)
 │   ├── data-acquisition-dates.md  # NEON LIDAR, NWI, Lee 2023 vintage notes
+│   ├── neon-data-products.md  # NEON DP catalog: atmospheric forcing (primary) + vegetation/soil/AOP (secondary)
 │   ├── ns-aspect-bug.md      # N/S aspect swap bug analysis (historical)
 │   ├── pysheds-utm-walkthrough.md  # UTM CRS support walkthrough (historical)
 │   └── synthetic_lake_bottoms.md   # Brainstorming (not implemented)
