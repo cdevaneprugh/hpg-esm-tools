@@ -42,14 +42,14 @@ Caveats:
 Standalone CO2 DPs (DP1.00034.001, DP1.00099.001) are still FUTURE
 status. Use the bundle.
 
-### Pre-built forcing — what's available out of the box
+### Pre-built / alternative forcing sources surveyed
 
-| Source | OSBS years | Format | Effort |
+| Source | OSBS years | Format | Status |
 |---|---|---|---|
-| CTSM `run_tower OSBS` | **2018–2021** | CTSM-DATM NetCDF (shipped in `$BLUE/ctsm5.3/tools/site_and_regional/`) | One command |
-| AmeriFlux US-xSB | 2019–2024 | FLUXNET BASE | Column rename + NetCDF conversion |
-| NCAR-NEON pipeline (raw) | 2014–2024 (in principle) | NetCDF after running pipeline | Setup + per-year processing |
-| PLUMBER2 | **NOT INCLUDED** (confirmed via Ukkola 2022 site list) | — | — |
+| NCAR-NEON pipeline (manual run) | 2014–2024 (in principle) | NetCDF after running pipeline | **The path forward** — see Pipeline installation below |
+| CTSM `run_tower OSBS` | 2018–2021 | CTSM-DATM NetCDF (shipped in `$BLUE/ctsm5.3/tools/site_and_regional/`) | **Tested, insufficient** — PI evaluated the pre-built forcing and found years + variables too limited for the science. Not a viable starting point. |
+| AmeriFlux US-xSB | 2019–2024 | FLUXNET BASE | Optional cross-check during 2019–2024 overlap; shorter record, different gap-fill provenance |
+| PLUMBER2 | — | — | **Does NOT include OSBS** (confirmed via Ukkola 2022 site list — sources are FLUXNET2015 + La Thuile + OzFlux, all pre-NEON-era) |
 
 ---
 
@@ -139,11 +139,53 @@ Caveats:
 - Long gaps (multi-week) gap-fill but quality degrades — flag downstream
 - Tower reference height (`ZBOT`) hard-coded per site; verify matches actual OSBS instrument height
 
-Shortest-path alternative: CTSM `run_tower OSBS` uses the **2018–2021
-pre-built** NEON forcing already shipped in the fork at
-`$BLUE/ctsm5.3/tools/site_and_regional/`. Run that first to validate the
-end-to-end workflow before investing in extending the record with the
-full pipeline.
+### Pipeline installation on HiPerGator
+
+No compile step — NCAR-NEON is interpreted R with an `renv.lock`-pinned
+dependency tree (~50–100 R packages from CRAN). Three install paths, in
+order of recommendation:
+
+**1. HiPerGator R module + `renv` (recommended)**
+
+```bash
+module spider R                     # find available R versions
+module load R/<version>             # pick closest to NCAR-NEON's renv.lock R version
+cd $BLUE
+git clone https://github.com/NEONScience/NCAR-NEON
+cd NCAR-NEON
+R -e 'install.packages("renv"); renv::restore()'
+```
+
+`renv::restore()` is the long step — 20–60 min on first run while CRAN
+packages with C/Fortran dependencies compile. Fewest moving parts on
+HiPerGator. If module R version diverges from `renv.lock`, renv warns;
+override only if necessary.
+
+**2. Conda `r-base` + `renv` (fallback)**
+
+```bash
+conda create -n ncar-neon -c conda-forge r-base r-essentials
+conda activate ncar-neon
+cd $BLUE && git clone https://github.com/NEONScience/NCAR-NEON
+cd NCAR-NEON
+R -e 'install.packages("renv"); renv::restore()'
+```
+
+Isolated env, but renv inside conda can be finicky around system libs
+(`ncdf4`, anything spatial). Use only if Path 1 hits dependency issues.
+
+**3. Apptainer from upstream Dockerfile (last resort)**
+
+HiPerGator doesn't run Docker but Apptainer can build from a Dockerfile.
+Most reproducible — bit-identical to upstream — but most setup effort
+(non-root build, writable overlays, bind mounts for `$BLUE`). Only
+worth it if exact reproducibility against the Wieder 2023 GMD paper is
+required.
+
+**Not viable:** there is no conda/PyPI/CRAN package for NCAR-NEON
+itself. `ReddyProc` (the gap-filling library underneath) is on conda as
+`r-reddyproc`, but bypassing NCAR-NEON means reimplementing the
+NEON-API → ReddyProc → CTSM-NetCDF glue.
 
 ---
 
