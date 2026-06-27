@@ -2,9 +2,12 @@
 
 Status: **Routing-off AD-spinup track complete 2026-05-19.** osbs.swenson.spinup
 600-yr accelerated AD spinup converged (drift_50yr = 0.48%) and was analyzed;
-see `output/2026-05-19_phase_F_analysis/REPORT.md`. Post-AD continuation blocked
-by N-state error in `SoilBiogeochemNitrogenStateType.F90:874` (separate
-diagnostic effort).
+verdicts inlined below and in `STATUS.md`'s 2026-05-19 change-log entry; plots
+at `output/2026-05-19_osbs.swenson.spinup_timeseries/`. PI is investigating
+the TAI absence and bridge-zone anomaly; production hillslope file frozen
+during the investigation. Post-AD continuation (`osbs.swenson.post-ad`) hit an
+N-state crash on first attempt 2026-05-19, recovered by 2026-05-20, ran 200 yr
+successfully through 2026-05-21, idle since.
 Depends on: Phase E (parameter pipeline), Phase E.5 (bin scheme + lake column)
 Blocks: nothing — Phase H Tracks B/C are on hold and may not be pursued (see
 `phases/H-lateral-flow.md`)
@@ -119,9 +122,9 @@ mechanism.
 - [x] Run 100-year accelerated AD spinup (job 31936055, completed 2026-05-06)
 - [x] Generate 8 spinup-analysis plots (5 gridcell, 3 column-level) at `$SWENSON/output/2026-05-06_osbs5_spinup_timeseries/`
 - [x] **Extend spinup to convergence** — DONE 2026-05-19. 600-yr accelerated
-  AD spinup completed 2026-05-14; analyzed in
-  `output/2026-05-19_phase_F_analysis/REPORT.md`. drift_50yr = 0.48% (well
-  under 3% threshold). PASS.
+  AD spinup completed 2026-05-14; plots at
+  `output/2026-05-19_osbs.swenson.spinup_timeseries/`. drift_50yr = 0.48%
+  (well under 3% threshold). PASS.
 - [~] ~~Optional apples-to-apples comparison: parallel case with Swenson
   reference hillslope file~~ — **STRUCK 2026-05-19 per user.** Framing
   dissolved by 2026-05-19 routing-gate audit; comparison would be confounded
@@ -139,9 +142,14 @@ Validated hillslope file ready for production runs. Comparison document showing 
 
 ### 2026-05-19 — Phase F analysis pass complete
 
-600-yr accelerated AD spinup analyzed; deliverable doc at
-`output/2026-05-19_phase_F_analysis/REPORT.md` (8 plots,
-diagnostics.json, ~21 KB report).
+600-yr accelerated AD spinup analyzed. The narrative deliverable
+doc (~21 KB report + diagnostics.json) was produced locally during
+this pass but was not persisted — the closeout commit (06d2131)
+recorded it as gitignored, and the file is no longer on disk. The
+8 plots backing the analysis are intact at
+`output/2026-05-19_osbs.swenson.spinup_timeseries/`. Verdicts below
++ the 2026-05-19 change-log entry in `STATUS.md` are the canonical
+record of the findings.
 
 Three verdicts:
 
@@ -172,9 +180,12 @@ Two struck Phase F tasks per user 2026-05-19:
   setup-era differences).
 
 Phase F routing-off track is closed out. Post-AD continuation
-(`osbs.swenson.post-ad`) is blocked by N-state error in
-`SoilBiogeochemNitrogenStateType.F90:874` and is a separate
-diagnostic effort.
+(`osbs.swenson.post-ad`) crashed at first run on 2026-05-19 with
+the N-state error in `SoilBiogeochemNitrogenStateType.F90:874`,
+recovered by 2026-05-20, and completed 200 yr (two 100-yr submits)
+by 2026-05-21. Idle since. Not prioritized while PI investigates
+the AD-spinup TAI / bridge-zone questions; production hillslope
+file frozen during the investigation.
 
 Two real open scientific questions surfaced by the analysis (for
 PI conversation):
