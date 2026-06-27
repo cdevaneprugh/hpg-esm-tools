@@ -1,48 +1,9 @@
 # Lake Column CTSM Audit: hill_distance and Implementation Viability
 
-Date: 2026-04-21
-Revised: 2026-04-23 (lake at col 1, surface infiltration pathway, bedrock depth
-inert under Uniform soil profile, PI items 2 and 6 resolved)
-Revised: 2026-04-23 (bathymetric slope from Lee et al. 2023 for `hill_slope`
-and `hill_aspect`; spill depth discrepancy flagged for PI)
-Revised: 2026-04-23 (verified `tdepth(g) = 0` for osbs4 via
-`flds_r2l_stream_channel_depths = .false.` chain; PI item 4 resolved)
-Revised: 2026-04-23 (lake-at-col-1 converted from PI item to design decision)
-Revised: 2026-04-23 (SPILLHEIGHT=0.2m confirmed; `hill_elev = -SPILLHEIGHT`
-formula holds regardless of PI tuning; item 3 resolved, item 7 reframed as
-spill-depth tuning)
-Revised: 2026-04-23 (Section 6 rewritten: the real HAND contamination source
-at OSBS is unmapped wetland basins being filled to rim elevation, not
-ridgetop dimples — the latter story was mountainous-terrain intuition and
-doesn't apply to OSBS's low relief. Fill_depth diagnostic reframed as
-plots-first-then-decide; 1cm threshold retracted.)
-Revised: 2026-04-23 (Section 6 expanded with fill-depth decomposition
-approach: split the four conditioning stages into separate signals;
-`depression_fill_depth > 0` is the crisp contamination marker with no
-threshold needed. Added 5-phase diagnostic workflow and secondary signals.)
-Revised: 2026-04-25 (PI notes incorporated: lake hill_distance ≈ stream
-width, hill_slope = 0 with lake-bottom framing, hill_width = 1/2 NWI
-perimeter. Items 5 and 7 resolved — don't enforce permanent submersion
-parametrically; defer SPILLHEIGHT tuning to model output. Earlier 0.015
-bathymetric slope and col2/2 distance superseded.)
-Revised: 2026-04-25 (Section 6.7 added: the HAND binning fix proposal.
-After diagnostic analysis, identified that compute_hand uses inflated DEM,
-producing geometrically incorrect HAND values for ~25% of land pixels at
-OSBS. Proposed fix: use raw DEM for HAND, keep inflated for routing.
-Generalizes across all bins. Pending PI approval of architectural shift to
-flood-zone bins.)
-Revised: 2026-04-29 (Section 7.5 added: NWI mask has holes from nested-
-polygon rasterization. ~18.5K hole pixels per major lake; ~50-200K total
-domain-wide. Pipeline data impact small (88% of holes are NaN-HAND, filtered
-out); visualization impact visible. Fix deferred to next pipeline rerun via
-NWI re-rasterization with proper nested-polygon handling.)
-Revised: 2026-04-30 (Section 6.7.3 corrected: the prior "NWI-interior fill
-2.97m matches Lee 2023's 2.64m" framing was wrong — those measure different
-quantities (storage above water vs. basin-bottom-to-rim). After reading
-McLaughlin 2019 and Lee 2023 in full, the correct empirical comparison is
-non-NWI basins ≥ 1 ha (n=107, mean 3.33m vs. Lee's 2.64m, within ~25%).
-Section 5.5 and PI item #7 updated accordingly. McLaughlin 2019 added to
-references.)
+Date: 2026-04-21. Last substantive revision: 2026-04-30 (PI redesign
+callout below; Sections 5, 6.7.3, 7.5 reworked). Earlier dated revision
+log condensed 2026-06-27 — full revision history is in `git log
+docs/lake-column-ctsm-audit.md`.
 
 ---
 

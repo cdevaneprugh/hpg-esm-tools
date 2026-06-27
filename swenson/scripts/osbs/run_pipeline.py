@@ -12,7 +12,6 @@ The processing algorithm follows merit_regression.py (the validated source of
 truth), adapted for UTM CRS using shared modules:
   - spatial_scale.py: FFT-based characteristic length scale
   - hillslope_params.py: Binning, trapezoidal fit, width computation
-  - dem_processing.py: Basin detection
 
 Phase decisions baked in:
   - Phase A: pgrid compute_hand() is UTM-aware

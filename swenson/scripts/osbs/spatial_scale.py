@@ -73,7 +73,8 @@ def calc_gradient(
     times: once on elevation, then once on each gradient component. The
     Laplacian differentiates each axis twice, so sign conventions from
     np.gradient cancel out. This is fundamentally different from aspect
-    computation (STATUS.md #4) where first-derivative sign matters.
+    computation (see audit/260627-cleanup/docs/ns-aspect-bug.md), where
+    first-derivative sign matters.
     """
     if method not in ["Horn1981", "O1"]:
         raise ValueError("method must be either Horn1981 or O1")
@@ -741,7 +742,8 @@ def identify_spatial_scale_laplacian_dem(
     # The Laplacian is d2z/dx2 + d2z/dy2. Each axis is differentiated
     # twice, so the sign convention of np.gradient cancels out on each
     # axis. This is why there is no N/S sign issue here (unlike aspect,
-    # which uses first derivatives — see STATUS.md #4).
+    # which uses first derivatives — see
+    # audit/260627-cleanup/docs/ns-aspect-bug.md for the full bug history).
     if has_utm:
         grad = calc_gradient(elev, pixel_size=pixel_size)
         x = calc_gradient(grad[0], pixel_size=pixel_size)

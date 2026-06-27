@@ -84,17 +84,17 @@ swenson/
 │   │   ├── osbs-pipeline-divergence-audit-260316.md  # Line-by-line divergence audit
 │   │   └── docs-update-plan-260317.md             # Documentation update plan
 │   ├── 260512-cleanup/                     # Hygiene cleanup batch (one-off scripts, dem_processing, smoke_tests, README)
+│   ├── 260627-cleanup/                     # Audit-driven cleanup: stale diagnostics, superseded docs, duplicate SLURM wrapper
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
 │   ├── lake-column-ctsm-audit.md       # Canonical lake-column params + CTSM source investigation
-│   ├── hillslope-binning-rationale.md  # 1x16 hybrid history (partially superseded by E.5)
-│   ├── water-masking-and-lake-representation.md  # CTSM source investigation (partially superseded)
-│   ├── data-acquisition-dates.md  # NEON LIDAR, NWI, Lee 2023 vintage notes
-│   ├── neon-data-products.md  # NEON DP catalog: atmospheric forcing (primary) + vegetation/soil/AOP (secondary)
-│   ├── ns-aspect-bug.md      # N/S aspect swap bug analysis (historical)
-│   ├── pysheds-utm-walkthrough.md  # UTM CRS support walkthrough (historical)
-│   └── synthetic_lake_bottoms.md   # Brainstorming (not implemented)
+│   ├── data-acquisition-dates.md       # NEON LIDAR, NWI, Lee 2023 vintage notes
+│   ├── neon-data-products.md           # NEON DP catalog: atmospheric forcing (primary) + vegetation/soil/AOP (secondary)
+│   └── pysheds-utm-walkthrough.md      # UTM CRS support walkthrough (historical)
+│   (Superseded docs — hillslope-binning-rationale.md, ns-aspect-bug.md,
+│    water-masking-and-lake-representation.md, synthetic_lake_bottoms.md
+│    — archived to audit/260627-cleanup/docs/)
 │
 ├── data/
 │   ├── neon/
@@ -102,6 +102,7 @@ swenson/
 │   │   ├── slope/             # 231 NEON slope tiles (DP3.30025.001, degrees)
 │   │   ├── aspect/            # 231 NEON aspect tiles (DP3.30025.001, degrees CW from N)
 │   │   └── README.md          # NEON data product catalog
+│   ├── HU8_03080103_Watershed/  # NWI source shapefile (HUC8 Lower St. John, ~115 MB, gitignored). See README.md.
 │   ├── mosaics/               # Generated mosaics (gitignored)
 │   ├── merit/                 # MERIT DEM for validation
 │   ├── reference/             # Swenson published data
@@ -115,22 +116,20 @@ swenson/
 └── scripts/
     ├── osbs/                     # OSBS production pipeline (self-contained)
     │   ├── run_pipeline.py       # Main hillslope pipeline (24-bin TAI-focused, raw-HAND Q01/Q99 trim, lake column, water-masked)
-    │   ├── run_pipeline.sh       # Default SLURM wrapper
-    │   ├── run_pipeline_production.sh    # Production SLURM wrapper
+    │   ├── run_pipeline_production.sh    # Canonical production SLURM wrapper
     │   ├── run_pipeline_smoke.sh         # Smoke test SLURM wrapper (R6C10)
+    │   ├── make_osbs_scrip.py    # Phase H Track A: single-cell SCRIP/mesh generator (CTSM Issue #1432 workaround)
     │   ├── spatial_scale.py      # FFT Lc module (was at scripts/ root pre-2026-05-12)
     │   └── hillslope_params.py   # Hillslope computation module (same provenance)
-    ├── merit_validation/         # MERIT regression test (self-contained, frozen)
+    ├── merit_validation/         # MERIT regression test (self-contained)
     │   ├── merit_regression.py   # Single-file regression (Lc + 6 params vs published)
     │   ├── merit_regression.sh   # SLURM wrapper
     │   ├── README.md             # Script purpose and flowchart
-    │   ├── spatial_scale.py      # Frozen copy (same as osbs/ on 2026-05-12)
-    │   ├── hillslope_params.py   # Frozen copy (same as osbs/ on 2026-05-12)
+    │   ├── spatial_scale.py      # Co-located copy of osbs/ module (kept manually in sync)
+    │   ├── hillslope_params.py   # Co-located copy of osbs/ module (kept manually in sync)
     │   └── output/               # results.json, summary.txt, SLURM logs
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
-    │   ├── compare_hillslope_configs.py  # Generic profile comparison utility
-    │   ├── plot_hillslope_comparison.py  # OSBS vs Swenson reference plotter
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay
     └── visualization/            # KML generation scripts
         └── export_nwi_water_kml.py  # NWI water features KML for Google Earth
@@ -139,9 +138,10 @@ swenson/
 **Module ownership (de-coupled 2026-05-12):** `spatial_scale.py` and
 `hillslope_params.py` live inside each pipeline directory rather than
 at `scripts/` root. The OSBS copy is the active version; the MERIT
-copy is frozen alongside its regression test. `dem_processing.py` was
-dead code; archived to `audit/260512-cleanup/`. See STATUS.md
-"Shared modules" subsection for the rationale.
+copy is a co-located byte-identical sibling. There is no automated
+freeze — keep them manually in sync after edits to the OSBS copy.
+`dem_processing.py` was dead code; archived to `audit/260512-cleanup/`.
+See STATUS.md "Shared modules" subsection for the rationale.
 
 ## Running the Pipeline
 
@@ -166,7 +166,7 @@ cd $TOOLS/swenson
 sbatch scripts/merit_validation/merit_regression.sh
 ```
 
-Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `scripts/merit_validation/output/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL. Expected runtime: ~3-4 min.
+Computes Lc via FFT and 6 hillslope parameters for a known MERIT gridcell, then compares to Swenson's published data. Outputs `scripts/merit_validation/output/results.json` and `summary.txt`. Exits 0 on PASS, 1 on FAIL. Expected runtime: ~10-20 min, 48 GB RAM.
 
 **Pass criteria:** All 6 parameter correlations within 0.01 of expected, Lc within 5% of 763m.
 

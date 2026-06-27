@@ -136,11 +136,13 @@ hydrologic conditions:
 - NEON DTM bare-earth processing (canopy stripped by NEON; no additional
   vegetation filter applied in our pipeline).
 - NWI water polygons rasterized to a binary mask; pixels marked as water are
-  excluded from HAND statistics via the dual-mask approach
-  (`run_pipeline.py:921` and surrounding logic).
-- The `flooded_arr[water_mask > 0] -= 0.1` operation
-  (`run_pipeline.py:831`) lowers water pixels by 10 cm purely for D8 routing
-  direction, not as a physical correction.
+  excluded from HAND statistics via the dual-mask approach (`scripts/osbs/run_pipeline.py`,
+  Step 4 "Wide channel mask for HAND" block — see comments around the
+  `wide_channel_mask = (np.array(grid.channel_mask) > 0) | (water_mask > 0)`
+  line).
+- The `flooded_arr[water_mask > 0] -= 0.1` operation (`scripts/osbs/run_pipeline.py`,
+  Step 3c, just after the depression-fill arrays are captured) lowers water
+  pixels by 10 cm purely for D8 routing direction, not as a physical correction.
 
 **Not yet accounted for:**
 - No physical correction for residual ponded water at NEON 2023-05 flight
