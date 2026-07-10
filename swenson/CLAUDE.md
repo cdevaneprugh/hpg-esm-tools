@@ -131,8 +131,9 @@ swenson/
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay
-    └── visualization/            # KML generation scripts
-        └── export_nwi_water_kml.py  # NWI water features KML for Google Earth
+    └── visualization/            # Visualization + docs-figure generators
+        ├── export_nwi_water_kml.py  # NWI water features KML for Google Earth
+        └── plot_docs_figures.py     # OSBS elevation/width + col-areas plots for hpg-esm-docs dataset-comparison page
 ```
 
 **Module ownership (de-coupled 2026-05-12):** `spatial_scale.py` and
