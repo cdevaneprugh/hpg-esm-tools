@@ -1,6 +1,6 @@
 # STATUS — Swenson Hillslope for OSBS
 
-**Updated:** 2026-06-27
+**Updated:** 2026-07-15
 
 ## Project context
 
@@ -141,6 +141,7 @@ are the canonical record.
 | F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19. Convergence PASS; TAI signal ABSENT; lake stable. PI investigating TAI / bridge-zone. Plots at `output/2026-05-19_osbs.swenson.spinup_timeseries/` |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
 | H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
+| I | NEON atmospheric forcing | **Not started** | Adopt pre-built NCAR-NEON v4 (2018–2024) to replace CRUNCEPv7; custom pipeline a PI-gated contingency. Input-quality upgrade, independent of routing on/off |
 
 ## Roadmap
 
@@ -151,6 +152,7 @@ are the canonical record.
 4. Long spinup with lateral flow F + G Stage 1     ─ IN PROGRESS (lateral flow active under use_hillslope=.true.)
 5. Stream-coupling (routing-on)  H                 ─ Track A done; Tracks B/C on hold; may not be pursued
 6. Post-AD continuation          (optional)        ─ Future
+7. Site-specific inputs (NEON)   I                 ─ Not started (atmospheric forcing; NEON soil/PFT are future siblings)
 ```
 
 Phases run sequentially within each track. F + G Stage 1 share the
@@ -235,7 +237,7 @@ through the UTM code path.
 |---|---|---|
 | Paper summary | `../docs/papers/Swenson_2025_Hillslope_Dataset_Summary.md` | Methodology blueprint |
 | Lake column CTSM audit | `docs/lake-column-ctsm-audit.md` | Canonical lake-column parameter values + CTSM source investigation |
-| Phase docs | `phases/{A,B,C,D,E,E.5,F,G,H}-*.md` | Detailed records of each phase |
+| Phase docs | `phases/{A,B,C,D,E,E.5,F,G,H,I}-*.md` | Detailed records of each phase |
 | Audit history | `audit/{240210,250223,260310,260512}-*/` | Historical audits + cleanup record |
 | Production NetCDF | `output/osbs/2026-05-05_production/hillslopes_osbs_production_c260505.nc` | Current operative hillslope file |
 | Operative case | `$CASES/osbs.swenson.spinup` | Current 600-yr accelerated AD spinup |
@@ -243,6 +245,7 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-07-15** — Phase I created (NEON atmospheric forcing). Pre-built NCAR-NEON forcing found available through 2024-12 (v4); the old "2018–2021" ceiling was a namelist cap (`NEONVERSION=v2`), not a data limit — the v3 set (2018 → 2024-06) is already on disk. Scoped pre-built-first (adopt/validate v4); custom NEON→DATM pipeline is a PI-gated contingency (no gap v4 can't fill has been identified). Registered as roadmap track 7. See `phases/I-neon-forcing.md`. Task list written but NOT started.
 - **2026-06-27** — Doc reconciliation pass. Removed references to the never-persisted `output/2026-05-19_phase_F_analysis/REPORT.md` (closeout commit said it was gitignored; not on disk — verdicts inlined here and in `phases/F-validate-deploy.md` are the canonical record; plots backing them remain at `output/2026-05-19_osbs.swenson.spinup_timeseries/`). Corrected post-AD framing: initial 2026-05-19 N-state crash recovered by 2026-05-20, 200 yr ran successfully through 2026-05-21, idle since; reframed "Known blockers" → "Status of secondary tracks." Added PI-investigating callout under Open scientific questions plus an explicit production-hillslope-file freeze pending PI's findings.
 - **2026-05-19** — Phase F routing-off track complete. 600-yr accelerated AD spinup converged cleanly (drift_50yr = 0.48%, well under 3%). Three verdicts: (1) **convergence PASS**, (2) **TAI signal ABSENT** — the expected "FZ wet, Upland dry, anoxia depression" pattern does not emerge; O_SCALAR is essentially 1.0 everywhere all years, (3) **lake column stable** — max 5.78 m at yr 107 (just under 6 m overflow), drained to 2.5 m by yr 600, no runaway. **Darcy drain (Phase H Option 5) NOT NEEDED**. Two open scientific questions for PI conversation: O_SCALAR not triggering despite saturated columns (TAI carbon signature missing); bridge-zone anomaly at chain indices 3-6 (HAND -3 to -1.5 m show deepest water tables — consequence of steep Darcy gradients over short distances). Phase F current-state row, Open questions section, and Phase F doc all updated. Apples-to-apples and osbs2/4-6 comparisons struck per user.
 - **2026-05-19** — Phase H reframed as contingent. **We are not assuming a routing-on CTSM configuration will be pursued.** Track A (mesh-mode workaround) is complete and verified, but Tracks B/C are on hold and may never run — the original scientific motivation (activating inter-column lateral flow) collapsed when the routing-gate audit showed that flow is already active under `use_hillslope=.true.` Routing-on's remaining value is narrow (stream-coupling BC at chain bottom, internal stream-water ledger, `VOLUMETRIC_STREAMFLOW` diagnostic); whether that's worth the B1–B4 + C1–C4 cost depends on what Phase F shows. PI floated a vague idea of a regional Darcy drain on the lake column to address possible unbounded accumulation — no design exists; also contingent on Phase F. STATUS.md project context, Open questions, current-state table, roadmap, and Phase H doc all updated to reflect this framing.

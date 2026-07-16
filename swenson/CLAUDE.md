@@ -55,7 +55,7 @@ swenson/
 ├── CLAUDE.md                  # This file
 ├── STATUS.md                  # Living project status document
 │
-├── phases/                    # Phase tracking files (A-H)
+├── phases/                    # Phase tracking files (A-I)
 │   ├── A-pysheds-utm.md       # Fix pysheds for UTM CRS
 │   ├── B-flow-resolution.md   # Resolve flow routing resolution
 │   ├── C-characteristic-length.md  # Establish trustworthy Lc
@@ -65,7 +65,8 @@ swenson/
 │   ├── E.5-bin-redesign.md    # 24-bin TAI-focused scheme + lake column
 │   ├── F-validate-deploy.md   # Long convergent spinup + CTSM ingestion
 │   ├── G-ctsm-lake-representation.md  # Lake column construction (Stage 1 done; Stage 2 → Phase H)
-│   └── H-lateral-flow.md      # Routing-on (mesh-mode workaround for CTSM Issue #1432)
+│   ├── H-lateral-flow.md      # Routing-on (mesh-mode workaround for CTSM Issue #1432)
+│   └── I-neon-forcing.md      # NEON atmospheric forcing (pre-built v4 first; custom pipeline PI-gated)
 │
 ├── audit/
 │   ├── 240210-validation_and_initial_implementation/
