@@ -1,10 +1,10 @@
 # Phase I: NEON Atmospheric Forcing
 
-Status: **In progress — I1 done; single linear plan (reworked 2026-07-15).**
+Status: **In progress — I1–I2.5 done; single linear plan (reworked 2026-07-15).**
 Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
 NEON→DATM pipeline and validate against v4 → produce the full 2016–2026 dataset →
-full CTSM integration (PI-gated tail). I1 (claims verification + drop-in analysis)
-complete; I2 onward not begun.
+full CTSM integration (PI-gated tail). I1 (verification), I2 (v4 fetched), and
+I2.5 (integration smoke test — **PASSED**) complete; I3 (pipeline) next.
 Depends on: — (independent of the hillslope track A–H)
 Blocks: — (input-quality upgrade; does not gate routing on/off decisions)
 
@@ -449,18 +449,17 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   v3) but only at reprocessing scale (RMS Δ: TBOT 0.17 K, PSRF 9 Pa, FSDS
   0.07 W/m²); new months physical, no fills. See Log. The on-disk run_tower v3 set
   is superseded. This is the temporary starting forcing + the reference for I4.
-- [ ] **I2.5. Integration smoke test — v4 dry run (early de-risk; a preview of
-  I6–I7).** Before investing in the pipeline, prove the Approach-B wiring with the
-  known-good v4 forcing: build a short cold-start `1PT` + hillslope case
-  (`I1PtClm60Bgc` + NEON usermods; re-assert our `fsurdat` / `hillslope_file` /
-  `use_hillslope=.true.` in `user_nl_clm`; `datafiles` override → the I2 v4 files;
-  1850 knobs) and run ≈5 years. Goal is not science — it's to confirm the
-  **untested combinations build and run**: `1PT` + hillslope hydrology, `SROF`
-  (stub river) + hillslope, and the `datafiles` override. Using v4 (not custom
-  data) isolates wiring bugs from data bugs. Cold-start + short → safe against the
-  production freeze. If it runs, the integration skeleton is proven and later swaps
-  to the custom dataset are just a `datafiles` repoint; if it breaks, we've found a
-  blocker cheaply, before the pipeline build. See §8, §9.
+- [x] **I2.5. Integration smoke test — v4 dry run. DONE 2026-07-15 — PASSED.**
+  Purpose (met): prove the Approach-B wiring on known-good v4 forcing before
+  building the pipeline, isolating wiring bugs from data bugs. Case
+  `osbs.swenson.neon-v4-smoke` (`I1PtClm60Bgc` + NEON usermods; our
+  `fsurdat`/`hillslope_file`/`use_hillslope=.true.`; `datafiles` override → the I2
+  v4 files; present-day knobs; cold-start, 2 yr) **completed cleanly**: **26
+  hillslope columns** active, ran with our v4 files (168 runtime stream refs, 0
+  auto-download), forcing ingested with **measured FLDS** (354.9 W/m²) and
+  **converted RH** (RH2M 84.6%) — empirically confirming §8/§9. All three untested
+  combos — `1PT`+hillslope, `SROF`+hillslope, `datafiles` override — work. **Four
+  integration issues found, each carrying to I6** (see Log). See §8, §9.
 - [ ] **I3. Stand up the pipeline — venue, raw-data access, and R environment.**
   Decide where to run `flow.api.clm.R`. **Recommended: process on a personal
   machine** — it isn't behind the `/data/` block (§7) and can run NEON's Docker
@@ -480,11 +479,16 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   versions are expected). If it reproduces v4, the pipeline is trusted. See
   Research notes §5, §9.
 - [ ] **I5. Produce the full dataset.** Once I4 passes, run the pipeline over the
-  full **2016-08 → 2026-06** record (via the `METHPARAFLOW` env-var path, no
-  source edits) into the curated dir. **Usable start is 2016-08** — all 7 core
-  variables are real there; do **not** placeholder pre-2016 precip/RH (they can't
-  be invented; a reanalysis blend for pre-2016 would be a separate PI decision).
-  Released record ends 2025-06 (2025-07→2026-06 is provisional). See §9.
+  full record (via the `METHPARAFLOW` env-var path, no source edits) into the
+  curated dir. **Usable start is 2016-08** — all 7 core variables are real there;
+  do **not** placeholder pre-2016 precip/RH (they can't be invented; a reanalysis
+  blend for pre-2016 would be a separate PI decision). **End date is a
+  reproducibility choice (see I8):** the RELEASE-2026 record (frozen, citable, and
+  for the EC bundle *reprocessed* with updated models) ends **2025-06**;
+  **2025-07 → 2026-06 is provisional** — still auto-QC'd and usable, but a moving
+  target NEON revises without notice, not citable, and whose EC component skips the
+  pre-release reprocessing. So produce to 2025-06 for a frozen/reproducible set, or
+  to 2026-06 to gain ~1 yr recency on a provisional base. See §9.
 
 ### Integration tail — downstream (needs the dataset first; PI-gated; pairs with the respin)
 
@@ -508,8 +512,12 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
 - [ ] **I8. PI decisions.** (a) **Cycle vs blend** for the 600-yr spinup — cycle
   the NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
   final transient/evaluation run, as successive cases). (b) **Adoption** — whether
-  to drive the production respin with the full custom dataset. Pairs with the PI's
-  TAI investigation (production hillslope file currently frozen).
+  to drive the production respin with the full custom dataset. (c) **End date —
+  released vs provisional** (the I5 choice): cap at **2025-06** (RELEASE-2026:
+  frozen, reproducible, EC reprocessed) or extend to **2026-06** for ~1 yr more
+  recency on NEON *provisional* data (revised without notice, not citable, EC not
+  pre-release-reprocessed). Pairs with the PI's TAI investigation (production
+  hillslope file currently frozen).
 
 ### Claims-to-verify checklist (for I1)
 
@@ -571,6 +579,51 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-15 — I2.5 smoke test PASSED (first CTSM run of Phase I)
+
+Built and ran a cold-start `1PT` + hillslope case (`osbs.swenson.neon-v4-smoke`)
+on our pre-built v4 forcing via the `datafiles` override. **Result: PASS** — the
+2-yr run completed (`case.run success`, ~17 min), **26 hillslope columns** active,
+and the runtime `datm.streams.xml` used our v4 files exclusively (168 refs, 0
+auto-download). Forcing empirically confirmed from h0a: TBOT 289.7 K, RAIN
+5.2e-5 mm/s, FSDS 118 W/m², **measured FLDS 354.9 W/m²** (not DATM-derived),
+**RH2M 84.6%** (CDEPS converted RH→shum) — §8/§9 proven end to end. All three
+untested combos (`1PT`+hillslope, `SROF`+hillslope, `datafiles` override) work.
+
+**Four integration issues found — each a blocker cleared for I6:**
+1. **MPI library.** NEON usermods force `MPILIB=mpi-serial`, but HiPerGator's
+   ESMF/PIO are OpenMPI builds → the final link fails on OpenMPI symbols. **Force
+   `MPILIB=openmpi`, set before the first build** (a mid-stream switch left stale
+   state). Working recipe (from `osbs.swenson.spinup` + run_tower): openmpi,
+   `NTASKS=NTHRDS=1`, `GMAKE_J=1`, `PIO_TYPENAME=netcdf`, DEBUG FALSE, nuopc.
+2. **SourceMods.** The operative `user_nl_clm` sets `spillheight=0.0`, valid only
+   with the operative case's **6-file hydrology SourceMod set**
+   (`HillslopeHydrologyMod`, `InfiltrationExcessRunoffMod`,
+   `SaturatedExcessRunoffMod`, `SoilHydrologyMod`, `SurfaceWaterMod`). A fresh
+   case without them ENDRUNs at `read_hillslope_properties_namelist`. **I6 must
+   carry those SourceMods** (or drop `spillheight`). The smoke test ran stock — OK
+   for wiring, but I6 needs them for the production hydrology science.
+3. **Coordinate mismatch.** Our OSBS surfdata is at (29.689282, 278.006569); the
+   NEON usermods point the domain at NEON's official OSBS (29.68819, 278.00655),
+   ~120 m off → `surfrdMod` domain-vs-surfdata ENDRUN. **Set `PTS_LAT/PTS_LON` to
+   the surfdata coords** (or regenerate surfdata at NEON coords).
+4. **Walltime.** Cold-start hillslope BGC ran ~1 sim-yr / ~8 min single-point; the
+   2-yr run took 17 min. Budget walltime accordingly for longer I6 runs.
+
+Case retained at `$CASES/osbs.swenson.neon-v4-smoke` for reference. Next: I3
+(stand up the pipeline).
+
+### 2026-07-15 — I5/I8: released-vs-provisional reproducibility trade-off
+
+Folded NEON's data-release model into the dataset end-date choice (verified
+against NEON's `data-revisions-releases` docs). Provisional data (2025-07 →
+2026-06) is auto-QC'd but a **moving target** — revised without notice, not
+citable, and its eddy-covariance bundle (which the pipeline pulls for QC +
+gap-fill) skips the pre-release reprocessing that released data gets; RELEASE-2026
+(to 2025-06) is frozen + citable. So the end date is a reproducibility choice:
+2025-06 (frozen/reproducible) vs 2026-06 (provisional, ~1 yr more recency). Added
+detail to **I5** and a decision item (c) to **I8**. Doc only.
 
 ### 2026-07-15 — I2 done: fetched pre-built v4 forcing (first operational step)
 
