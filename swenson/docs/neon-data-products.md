@@ -7,11 +7,13 @@ here for later reference.
 
 Existing NEON data in pipeline: OSBS 2023-05 collection, **RELEASE-2026**
 (see `data/neon/README.md`). Atmospheric products below are also
-RELEASE-2026 at OSBS — no release divergence.
+RELEASE-2026 at OSBS — no release divergence. **The released cut ends 2025-06;
+the most recent 12 months (2025-07 → 2026-06) are PROVISIONAL**, not part of
+RELEASE-2026.
 
-Years listed are approximate site availability based on NEON sensor
-commissioning. Verify per-product via the NEON API:
-`https://data.neonscience.org/api/v0/products/<DPNUM>/sites/OSBS/RELEASE-2026`.
+OSBS start months below were **verified against the live NEON API on 2026-07-15**
+(`https://data.neonscience.org/api/v0/products/<DPNUM>`). All OSBS tower met
+products commission 2014-08; nothing predates it.
 
 ---
 
@@ -19,37 +21,58 @@ commissioning. Verify per-product via the NEON API:
 
 ### Tier 1: Core DATM forcing (7 CTSM-required variables)
 
-| DP Number | Product | DATM var | Resolution | OSBS years |
+| DP Number | Product | DATM var | Resolution | OSBS start |
 |---|---|---|---|---|
-| DP1.00002.001 | Single Aspirated Air Temperature | TBOT | 1-min, 30-min | 2014– |
-| DP1.00003.001 | Triple Aspirated Air Temperature (tower top, redundant) | TBOT QC | 1-min, 30-min | 2014– |
-| DP1.00045.001 | Precipitation — Tipping Bucket (secondary) | PRECTmms | 1-min, 30-min | 2014– |
-| DP1.00023.001 | Shortwave & Longwave Radiation (NR01) | FSDS, FLDS | 1-min, 30-min | 2013– |
-| DP1.00004.001 | Barometric Pressure | PSRF | 1-min, 30-min | 2014– |
-| DP1.00001.001 | 2D Wind Speed & Direction | WIND | 2-min, 30-min | 2013– |
-| DP1.00098.001 | Relative Humidity | RH → QBOT/SHUM | 1-min, 30-min | 2015– |
+| DP1.00003.001 | Triple Aspirated Air Temperature (tower top) | TBOT | 1-min, 30-min | 2014-08 |
+| DP1.00002.001 | Single Aspirated Air Temperature (all levels) | TBOT (alt) | 1-min, 30-min | 2014-08 |
+| DP1.00044.001 | Precipitation — Weighing Gauge (primary) | PRECTmms | 1-min, 30-min | 2016-09 |
+| DP1.00045.001 | Precipitation — Tipping Bucket (secondary) | PRECTmms | 1-min, 30-min | 2016-08 |
+| DP1.00023.001 | Shortwave & Longwave Radiation (net radiometer) | FSDS, FLDS | 1-min, 30-min | 2014-08 |
+| DP1.00004.001 | Barometric Pressure | PSRF | 1-min, 30-min | 2014-08 |
+| DP1.00001.001 | 2D Wind Speed & Direction | WIND | 2-min, 30-min | 2014-08 |
+| DP1.00098.001 | Relative Humidity | RH → Sa_rh | 1-min, 30-min | 2015-06 |
+
+TBOT source: the NCAR-NEON pipeline uses the **triple-aspirated** product
+(DP1.00003.001, NEON's tower-top primary reference); single-aspirated
+(DP1.00002.001) is an alternative available at all tower levels. Humidity: the
+forcing file carries **RH (%)**; CDEPS converts RH → specific humidity internally
+(`components/cdeps/datm/datm_datamode_clmncep_mod.F90`), so no `QBOT` is stored.
+The pipeline additionally ingests **DP1.00024.001 (PAR)** and **DP1.00014.001
+(direct/diffuse shortwave)** as gap-fill/partitioning inputs — these are not CTSM
+output variables.
 
 Caveats:
-- DP1.00044.001 (primary weighing-gauge precip) is NOT installed at OSBS.
-- OSBS 2018 TBOT has a documented anomaly (NCAR-NEON Issue #34); inspect/flag before gap-filling.
+- **DP1.00044.001 (weighing-gauge precip) IS installed at OSBS** (2016-09→,
+  RELEASE-2026) and is the pipeline's primary precip source. (Corrected
+  2026-07-15 — the live NEON API and the pipeline both use it; the earlier "NOT
+  installed" claim was wrong.)
+- OSBS 2018 TBOT: NCAR-NEON Issue #34 reported an unphysical ~562 K value in the
+  **v1** files — a Celsius→Kelvin unit artifact, fixed upstream by reprocessing
+  (2021). Verified sane in the on-disk v3 set (2018 TBOT 269–307 K), so it is
+  **not** a concern for pre-built v3/v4; only relevant if pulling raw/v1-era data.
 
 ### Tier 2: CO2
 
-| DP Number | Product | Why | OSBS years |
+| DP Number | Product | Why | OSBS start |
 |---|---|---|---|
-| DP4.00200.001 | Bundled Eddy Covariance | Embeds CO2 mole fraction (storage + turbulent) at multiple tower heights; carries redundant T/RH/WIND for QC | 2016– |
+| DP4.00200.001 | Bundled Eddy Covariance | Embeds CO2 mole fraction (storage + turbulent) at multiple tower heights; carries redundant T/RH/WIND for QC | 2017-02 |
 
 Standalone CO2 DPs (DP1.00034.001, DP1.00099.001) are still FUTURE
-status. Use the bundle.
+status (no OSBS data). Use the bundle.
+
+**CO2 is not a forcing-file variable.** CTSM delivers CO2 via a separate
+mechanism — the constant `CCSM_CO2_PPMV` or the `co2tseries.*` DATM stream
+(`DATM_CO2_TSERIES`), never inside the met file. Tower CO2 (in the bundle) is a
+validation target, not a forcing input. See `phases/I-neon-forcing.md` §6.
 
 ### Pre-built / alternative forcing sources surveyed
 
-| Source | OSBS years | Format | Status |
+| Source | OSBS coverage | Format | Status |
 |---|---|---|---|
-| NCAR-NEON pipeline (manual run) | 2014–2024 (in principle) | NetCDF after running pipeline | **The path forward** — see Pipeline installation below |
-| CTSM `run_tower OSBS` | 2018–2021 | CTSM-DATM NetCDF (shipped in `$BLUE/ctsm5.3/tools/site_and_regional/`) | **Tested, insufficient** — PI evaluated the pre-built forcing and found years + variables too limited for the science. Not a viable starting point. |
-| AmeriFlux US-xSB | 2019–2024 | FLUXNET BASE | Optional cross-check during 2019–2024 overlap; shorter record, different gap-fill provenance |
-| PLUMBER2 | — | — | **Does NOT include OSBS** (confirmed via Ukkola 2022 site list — sources are FLUXNET2015 + La Thuile + OzFlux, all pre-NEON-era) |
+| NCAR-NEON pre-built forcing | **v4: 2018-01 → 2024-12** (84 files) | CTSM-DATM NetCDF, gap-filled on NEON's cloud | **The path forward.** Server has v1–v4; v3 (2018→2024-06) already on disk. Exceeding v4 requires a custom pipeline run (raw record reaches 2016-08 → 2025-06 released). |
+| CTSM `run_tower OSBS` | 2018–2021 as shipped | fetches the NCAR-NEON files above | The "2018–2021" is a **namelist year-cap** (`NEONVERSION=v2`, `DATM_YR_END=2021`), NOT a data limit — the same mechanism reaches v4/2024-12. The earlier "tested insufficient" verdict traced to this cap. |
+| AmeriFlux US-xSB (= OSBS) | BASE 2018–2024; FLUXNET 2019–2024 | AmeriFlux BASE / FLUXNET-1F | Optional cross-check; different gap-fill provenance |
+| PLUMBER2 | — | — | **Does NOT include OSBS** (confirmed — 170 sites from FLUXNET2015 + La Thuile + OzFlux, all pre-NEON; Ukkola et al. 2022, ESSD 14, 449) |
 
 ---
 
@@ -142,8 +165,9 @@ Caveats:
 ### Pipeline installation on HiPerGator
 
 No compile step — NCAR-NEON is interpreted R with an `renv.lock`-pinned
-dependency tree (~50–100 R packages from CRAN). Three install paths, in
-order of recommendation:
+dependency tree (**195 packages**, R 4.0.5, including Bioconductor (`rhdf5`) and
+GitHub-only (`eddy4R`) sources — not CRAN-only). Three install paths, in order of
+recommendation:
 
 **1. HiPerGator R module + `renv` (recommended)**
 

@@ -141,7 +141,7 @@ are the canonical record.
 | F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19. Convergence PASS; TAI signal ABSENT; lake stable. PI investigating TAI / bridge-zone. Plots at `output/2026-05-19_osbs.swenson.spinup_timeseries/` |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
 | H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
-| I | NEON atmospheric forcing | **Not started** | Adopt pre-built NCAR-NEON v4 (2018–2024) to replace CRUNCEPv7; custom pipeline a PI-gated contingency. Input-quality upgrade, independent of routing on/off |
+| I | NEON atmospheric forcing | **In progress (I1 done)** | Single linear plan: fetch v4 → build + validate our own pipeline → full 2016–2026 dataset → CTSM integration (PI-gated tail). Claims verified; NEON is not a drop-in for CRUNCEP (§8). Input-quality upgrade, independent of routing on/off |
 
 ## Roadmap
 
@@ -152,7 +152,7 @@ are the canonical record.
 4. Long spinup with lateral flow F + G Stage 1     ─ IN PROGRESS (lateral flow active under use_hillslope=.true.)
 5. Stream-coupling (routing-on)  H                 ─ Track A done; Tracks B/C on hold; may not be pursued
 6. Post-AD continuation          (optional)        ─ Future
-7. Site-specific inputs (NEON)   I                 ─ Not started (atmospheric forcing; NEON soil/PFT are future siblings)
+7. Site-specific inputs (NEON)   I                 ─ IN PROGRESS (I1 done; atmospheric forcing; NEON soil/PFT are future siblings)
 ```
 
 Phases run sequentially within each track. F + G Stage 1 share the
@@ -245,6 +245,8 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-07-15** — Phase I task list reworked to a single linear track (dropped the Track 1 / Track 2 split). One plan: fetch v4 → build + validate our own pipeline against it → produce the full 2016–2026 dataset → CTSM integration (downstream/PI-gated tail). v4 and custom data wire in identically (a `user_nl_datm_streams` `datafiles` override), so the two-track framing was moot. See `phases/I-neon-forcing.md`.
+- **2026-07-15** — Phase I task I1 complete (claims verification + NEON↔CRUNCEP drop-in analysis). Re-verified all NEON product claims (live API + CTSM source + external web, 3 adversarial agents) and corrected `docs/neon-data-products.md`: wind/radiation start 2014-08 (not "2013–"), tipping-bucket 2016-08, **weighing gauge DP1.00044.001 IS installed** (was "not installed"), CO₂ bundle 2017-02, TBOT source is DP1.00003.001 (triple) not DP1.00002.001; RELEASE-2026 has a provisional tail after 2025-06. **NEON is NOT a drop-in for CRUNCEP** — differs in DATM_MODE/streams/humidity(RH↔QBOT)/calendar, but CDEPS handles all four via the `1PT` machinery (RH→shum converted internally); recommended structure is a compset change (`I1PtClm60Bgc`) + re-asserting our hillslope surfdata in `user_nl_clm`, keeping 1850 CO₂/chemistry knobs ("swap the weather, not the experiment"). 2018 TBOT anomaly (Issue #34) retired — verified sane in pre-built (269–307 K). Drop-in analysis added as phase Research note §8.
 - **2026-07-15** — Phase I created (NEON atmospheric forcing). Pre-built NCAR-NEON forcing found available through 2024-12 (v4); the old "2018–2021" ceiling was a namelist cap (`NEONVERSION=v2`), not a data limit — the v3 set (2018 → 2024-06) is already on disk. Scoped pre-built-first (adopt/validate v4); custom NEON→DATM pipeline is a PI-gated contingency (no gap v4 can't fill has been identified). Registered as roadmap track 7. See `phases/I-neon-forcing.md`. Task list written but NOT started.
 - **2026-06-27** — Doc reconciliation pass. Removed references to the never-persisted `output/2026-05-19_phase_F_analysis/REPORT.md` (closeout commit said it was gitignored; not on disk — verdicts inlined here and in `phases/F-validate-deploy.md` are the canonical record; plots backing them remain at `output/2026-05-19_osbs.swenson.spinup_timeseries/`). Corrected post-AD framing: initial 2026-05-19 N-state crash recovered by 2026-05-20, 200 yr ran successfully through 2026-05-21, idle since; reframed "Known blockers" → "Status of secondary tracks." Added PI-investigating callout under Open scientific questions plus an explicit production-hillslope-file freeze pending PI's findings.
 - **2026-05-19** — Phase F routing-off track complete. 600-yr accelerated AD spinup converged cleanly (drift_50yr = 0.48%, well under 3%). Three verdicts: (1) **convergence PASS**, (2) **TAI signal ABSENT** — the expected "FZ wet, Upland dry, anoxia depression" pattern does not emerge; O_SCALAR is essentially 1.0 everywhere all years, (3) **lake column stable** — max 5.78 m at yr 107 (just under 6 m overflow), drained to 2.5 m by yr 600, no runaway. **Darcy drain (Phase H Option 5) NOT NEEDED**. Two open scientific questions for PI conversation: O_SCALAR not triggering despite saturated columns (TAI carbon signature missing); bridge-zone anomaly at chain indices 3-6 (HAND -3 to -1.5 m show deepest water tables — consequence of steep Darcy gradients over short distances). Phase F current-state row, Open questions section, and Phase F doc all updated. Apples-to-apples and osbs2/4-6 comparisons struck per user.

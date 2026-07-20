@@ -1,10 +1,10 @@
 # Phase I: NEON Atmospheric Forcing
 
-Status: **Not started** — adopt pre-built NCAR-NEON tower forcing (2018–2024, v4)
-for the OSBS case to replace CRUNCEPv7; custom NEON→DATM pipeline documented as a
-PI-gated contingency, not active work. Scoping research complete 2026-07-15
-(pipeline confirmed real and runnable; coverage gap quantified at ~3 yr) — no
-task begun.
+Status: **In progress — I1 done; single linear plan (reworked 2026-07-15).**
+Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
+NEON→DATM pipeline and validate against v4 → produce the full 2016–2026 dataset →
+full CTSM integration (PI-gated tail). I1 (claims verification + drop-in analysis)
+complete; I2 onward not begun.
 Depends on: — (independent of the hillslope track A–H)
 Blocks: — (input-quality upgrade; does not gate routing on/off decisions)
 
@@ -29,7 +29,10 @@ measured longwave) instead of interpolated global reanalysis.
 
 Research this session (NEON API + on-disk verification) reshaped the effort. The
 central finding: **gap-filled, CTSM-ready NEON forcing for OSBS already exists
-through 2024-12** — the "process the data" work is done upstream by NEON.
+through 2024-12** — NEON's pipeline does the "process the data" work upstream for
+that window. (The plan nonetheless runs that same pipeline ourselves for the
+fuller 2016–2026 record; v4 is the temporary start + validation reference — see
+Approach.)
 
 - **The "2018–2021 only" premise was wrong.** That was a namelist cap
   (`NEONVERSION=v2`, `DATM_YR_END=2021`) in the CTSM NEON usermods, not a data
@@ -75,34 +78,48 @@ through 2024-12** — the "process the data" work is done upstream by NEON.
   The canonical NEON path uses compset `I1PtClm60Bgc` / `IHist1PtClm60Bgc`,
   `DATM_MODE=1PT`, and usermods `cime_config/usermods_dirs/clm/NEON/OSBS/`;
   `buildnml` reads `listing.csv` and downloads monthly files from
-  `storage.neonscience.org/neon-ncar/NEON/atm/cdeps/`. **Caveat:** the fork's
-  `buildnml` `_get_neon_data_availability` only searches versions v3/v2/v1 —
-  reaching v4 (2024-12) needs a one-line patch or an explicit `NEONVERSION=v4`.
+  `storage.neonscience.org/neon-ncar/NEON/atm/cdeps/`. **We bypass that
+  auto-download entirely:** we fetch v4 ourselves (I2) and point the stream at our
+  files via a `datafiles` override (§9, I6). So the fork's `buildnml` version cap
+  (`_get_neon_data_availability` searches only v3/v2/v1, missing v4) never applies.
 
 - **The prior "run_tower is insufficient" verdict is attributable to the v2
-  cap.** No specific gap that pre-built v4 cannot fill has been identified.
-  Confirming this with the PI (task I8) gates any custom-pipeline work.
+  cap.** Pre-built v4 (2018–2024) is the temporary starting forcing; the plan is
+  to build our own pipeline for the fuller 2016–2026 record and validate it
+  against v4 (I3–I5). The remaining PI decision is narrower — whether to *adopt*
+  the custom dataset for the production respin (I8).
 
 ## Approach
 
-Two tracks, sequenced pre-built-first (user decision 2026-07-15):
+**Single linear track (reworked 2026-07-15 — no pre-built-vs-custom split).** v4
+and any custom dataset wire into CTSM identically (a `user_nl_datm_streams`
+`datafiles` override, §9), so the only difference is which files sit in our
+directory. The plan:
 
-- **Track 1 (primary) — adopt/validate pre-built v4.** Verify the research
-  record, obtain the v4 files, wire them into a test case that keeps our custom
-  hillslope surface data, and validate against the CRUNCEP baseline. Nearly free
-  (data exists, CTSM downloads it) and de-risking.
-- **Track 2 (contingency, PI-gated) — custom pipeline.** The from-scratch
-  NEON-API → ReddyProc → NetCDF pipeline. **Dormant.** Fires only if a PI
-  conversation (I8) identifies a concrete gap v4 can't fill (pre-2018 years,
-  gap-fill quality, or post-2024 recency). **CO₂ is NOT among these** — it is
-  architecturally separate from met forcing and needs no pipeline; see Research
-  notes §6.
+1. **Fetch pre-built v4** to our directory (I2) — the temporary starting forcing
+   and the validation reference.
+2. **Smoke-test the CTSM integration** with v4 (I2.5) — an early dry run of the
+   Approach-B wiring, before the pipeline build, to catch integration blockers
+   cheaply.
+3. **Stand up our own pipeline** (I3).
+4. **Validate against v4** — run the pipeline for 2018–2024 and compare to v4
+   bit-for-bit / within tolerance (I4). Go/no-go gate.
+5. **Produce the full dataset** — 2016-08 → 2026-06 (I5).
+6. **Integrate into CTSM (full)** — build a case on the forcing, keeping our
+   hillslope surfdata (I6–I8). Downstream tail: needs the dataset first, carries
+   the PI knob decisions, and pairs with the eventual spinup respin.
 
-## Coverage options — the I8 decision
+CO₂ drives none of this — it is architecturally separate from met forcing (§6).
+
+## Coverage — v4 vs. the full custom record
 
 Pre-built v4 is **not** the full NEON record. The raw tower data spans a longer
 period than NCAR-NEON chose to process; the pre-built set is trimmed at both
 ends.
+
+**Decision (2026-07-15): build the full custom record (Option 3 below).** v4 is
+the temporary starting forcing and the validation reference; our pipeline produces
+the full 2016–2026 set. The options below are the recorded rationale.
 
 | Layer | Coverage | Notes |
 |---|---|---|
@@ -125,10 +142,11 @@ Weighing it:
   interannual-variability sample. Low value.
 - **For a transient / evaluation run** against real observations, extra years and
   recency (2025–2026) matter considerably more. Moderate value.
-- **Provenance mixing** is the catch with Option 2 — a caveat carried forever. If
-  the pipeline gets built at all, Option 3 is usually cleaner than patching edges.
-- The **2018 TBOT anomaly** (Issue #34) sits *inside* v4's window. If real, v4 is
-  effectively "6 clean years + 1 flagged," narrowing the gap further. Verify in I1.
+- **Provenance mixing** is the catch with Option 2 — a caveat carried forever;
+  Option 3 (chosen) keeps the whole record uniform rather than patching edges.
+- The **2018 TBOT anomaly** (Issue #34) is **retired** — verified in I1 as a
+  v1-era unit artifact fixed by reprocessing; on-disk v3 2018 TBOT is sane
+  (269–307 K). All 7 pre-built years are clean.
 - **CO₂ is not part of this trade-off.** It is absent from *both* the pre-built
   NEON files and our current CRUNCEP files by design — a separate DATM stream,
   not a met variable. It cannot motivate Option 2 or 3. See Research notes §6.
@@ -175,14 +193,17 @@ a SLURM wrapper with **no source edits**. Prefer this over editing the script.
 
 ### 3. Environment — dedicated conda env, with renv for the package tree
 
-**Decision (user, 2026-07-15): a dedicated conda environment**, not the project
-`ctsm` env — this is an R 4.0.5-era stack and would pollute the Python dev env.
+**Decision (user, 2026-07-15): a dedicated environment**, not the project `ctsm`
+env — this is an R 4.0.5-era stack and would pollute the Python dev env. **Venue
+(I3):** processing on a personal machine via NEON's Docker image is now the
+recommended path — it sidesteps both this env build and the `/data/` block (§7);
+the HiPerGator conda + `renv` build below is the alternative.
 
 Verified 2026-07-15:
 
 | Fact | Value |
 |---|---|
-| `renv.lock` pins | **195 packages** (`docs/neon-data-products.md` says "~50–100" — **wrong**), R **4.0.5** |
+| `renv.lock` pins | **195 packages** (R **4.0.5**; `docs/neon-data-products.md` corrected from "~50–100" this session) |
 | Pinned repos | 4 × Posit Package Manager CRAN snapshots (2022-02-28 … 2023-10-22) — **all live, HTTP 200** |
 | `eddy4R.base` 0.2.24 / `eddy4R.qaqc` 0.2.14 | GitHub source — **not on CRAN, not on conda** |
 | `REddyProc` 1.3.2 | CRAN/Repository |
@@ -280,7 +301,7 @@ and, if desired, a CO₂ time series — independent knobs). **Caveat:** the shi
 historical file ends at **2014**, before NEON's 2018–2024 window, so a
 present-day run needs an SSP variant for the overlap — verify what is on disk
 under `$DIN_LOC_ROOT/atm/datm7/CO2/` when it matters. Note also that the NEON
-usermods set `CCSM_CO2_PPMV=408.83` (present-day) — see the I4 config-vs-weather
+usermods set `CCSM_CO2_PPMV=408.83` (present-day) — see the I6 config-vs-weather
 caution.
 
 ### 7. Raw-data access from HiPerGator — the gating unknown (verify first)
@@ -301,7 +322,7 @@ Denied" from HiPerGator** (login node). Diagnosis:
   token is untested.
 
 Why it matters: the entire pipeline exists to pull raw NEON data, and the
-standard route is blocked from where we would run it. **This gates Track 2** — no
+standard route is blocked from where we would run it. **This gates the pipeline (I3)** — no
 environment work matters if the inputs can't be fetched. Resolution options,
 cheapest first: (1) register a free NEON API token and pass it to `neonUtilities`
 (test whether it lifts the 403); (2) run the pull from a non-blocked network, or
@@ -309,119 +330,221 @@ download raw data via the NEON portal (web / Globus / S3) and feed the pipeline
 pre-downloaded files locally; (3) ask UF RC / NEON whether HiPerGator's range is
 blocked. **Do this before building the R env.**
 
+### 8. NEON is not a drop-in for CRUNCEP — how to structure the swap
+
+**Verified 2026-07-15 against `components/cdeps/datm/` source and real namelists
+(I1).** NEON tower forcing cannot be swapped into the CRUNCEP streams as a file
+substitution. It differs in four ways — but **all four are handled by CDEPS,
+provided the case uses the NEON DATM machinery** (`DATM%1PT` +
+`CLM_USRDAT_NAME=NEON` + `NEONSITE`); none are handled by repointing the CRUNCEP
+streams at NEON files.
+
+| Axis | CRUNCEP (now) | NEON |
+|---|---|---|
+| DATM_MODE | `CLMCRUNCEPv7` | `1PT` (both run internal datamode `CLMNCEP`) |
+| Streams | 3 gridded (Solar/Precip/TPQW), 0.5° mesh, bilinear | 2 single-point (`NEON.$SITE` + `NEON.NEON_PRECIP.$SITE`), `meshfile=none` |
+| Humidity | `QBOT → Sa_shum` (specific) | `RH → Sa_rh` — **CDEPS converts to shum internally**, `datm_datamode_clmncep_mod.F90:436-461` |
+| Longwave | computed by DATM | measured `FLDS → Faxa_lwdn` (automatic) |
+| Calendar | `noleap` | `gregorian` file, run under `noleap` for control/spinup (set by NEON usermods per compset) |
+
+**Recommended structure — Approach B (use the NEON DATM mode, re-assert our
+surface data).** Build with compset `I1PtClm60Bgc` (control/spinup) or
+`IHist1PtClm60Bgc` (transient) + the NEON usermods so CDEPS constructs the
+supported NEON streams, then override CLM's surface data in `user_nl_clm`:
+
+```
+fsurdat        = '<our OSBS surfdata>'
+hillslope_file = '<our production hillslope nc>'
+use_hillslope  = .true.
+```
+
+`fsurdat`/`hillslope_file`/`use_hillslope` are **CLM** namelist vars, independent
+of DATM — fully compatible with NEON forcing. (Approach A — hacking the CRUNCEP
+streams via `user_nl_datm_streams` — is rejected: it can only modify existing
+streams, cannot add the NEON stream or flip `datamode`.)
+
+**Swap the weather, not the experiment.** The NEON usermods bundle scientific
+changes beyond the weather. To keep the 1850 experiment, do NOT inherit them —
+keep `CCSM_CO2_PPMV=284.7` (NEON sets 408.83), `DATM_PRESAERO/NDEP/O3=clim_1850`
+(NEON sets SSP3-7.0), `DATM_CO2_TSERIES=none`, `CLM_NML_USE_CASE=1850_control`.
+
+**Caveats.** (a) The `1Pt` compsets use `SROF` (stub river), not the current
+case's `MOSART`. (b) `buildnml` version auto-discovery caps at `v3` — set
+`NEONVERSION` explicitly for v4 — moot for us: the `datafiles` override (§9)
+bypasses auto-discovery, so the cap never applies. (c) NEON weather only exists
+~2018+, so the swap means *cycling* the 2018–2024 NEON years under fixed 1850
+boundary conditions — not a like-for-like 1901–1920 replacement.
+
+Source: `components/cdeps/datm/cime_config/{config_component.xml,
+namelist_definition_datm.xml, stream_definition_datm.xml, buildnml}`,
+`datm_datamode_clmncep_mod.F90`, `cime_config/usermods_dirs/clm/NEON/`,
+`config_compsets.xml`.
+
+### 9. Producer/consumer contract — what CDEPS converts vs. what any file must provide
+
+**The DATM machinery is format-driven, not source-driven.** CDEPS is the
+*consumer*; NEON's cloud files and a custom `flow.api.clm.R` run are both
+*producers* of the same format. The consumer does not care which made the file —
+so a **custom "fuller" dataset (pre-2018, post-2024, or the full 2016→2026 record)
+feeds the exact same `1PT` machinery as prepackaged v4.** This is what makes
+building our own pipeline worthwhile, and why I4 validates by *reproducing v4*
+first.
+
+**What the consumer converts for you** (runtime, `CLMNCEP` datamode) — supply a
+compact set, it derives the rest:
+- `RH` (%) → specific humidity (`datm_datamode_clmncep_mod.F90:436-461`)
+- `FLDS` used if present, else longwave computed
+- total `PRECTmms` → rain/snow split; total `FSDS` → direct/diffuse + vis/near-IR
+  bands (standard CLMNCEP derivations)
+- time interpolation to the model step; calendar reconciliation (gregorian file
+  under a noleap spinup)
+
+**What "correct format" demands** (the consumer trusts these **blindly**):
+1. **Names** — `FSDS, FLDS, PRECTmms, TBOT, RH, WIND, PSRF, ZBOT`.
+2. **Units** — K, Pa, mm/s, W/m², m/s, %. **Not converted, not validated.** Wrong
+   units are ingested silently — this *is* Issue #34 (Celsius read as Kelvin →
+   562 K; the file was structurally perfect).
+3. **Structure** — single-point `(time, lat=1, lon=1)` + `LONGXY/LATIXY`,
+   gregorian half-hourly.
+4. **No gaps** — every timestep needs a real value; a `-9999` fed as forcing
+   wrecks the run. Gap-filling is the *producer's* job (ReddyProc, upstream); the
+   consumer assumes it is done.
+
+**The two things the consumer will NOT do — fix units, fill gaps — both fall on
+the producer.** Our producer is `flow.api.clm.R` (NEON's own generator): it emits
+correct names/units/structure *and* gap-fills, so "correct format" comes out by
+construction. The risk appears only if someone hand-rolls the NetCDF instead of
+running the generator — hence the pipeline routes through the real
+`flow.api.clm.R`, not a reimplementation, and I4 proves it by reproducing v4.
+
+**Wiring a fuller-than-NEON record.** Stock NEON file *discovery* is driven by
+NEON's `listing.csv`, so it only sees NEON-published months. To use a record that
+extends beyond that, override the active `NEON.$SITE` stream's `datafiles` in
+`user_nl_datm_streams` to point at our custom files (allowed — modifying an
+*existing active* stream's datafiles is fine; the §8 "can't use
+`user_nl_datm_streams`" caveat was only about *adding* a stream or flipping
+`datamode`), and set `DATM_YR_START/END` to span the fuller range.
+
 ## Tasks
 
-### Track 1 — pre-built forcing (primary)
+**Single linear track (reworked 2026-07-15).** No pre-built-vs-custom split: v4
+and any custom dataset wire into CTSM identically (a `user_nl_datm_streams`
+`datafiles` override, §9), so the only difference is which files sit in our
+directory. Spine (I1–I5) produces and validates the forcing dataset — with an
+early integration smoke test (I2.5) that dry-runs the CTSM wiring on v4 before the
+pipeline build; the tail (I6–I8) does the full integration (downstream / PI-gated).
 
-- [ ] **I1. Formal claims verification.** Work the claims-to-verify checklist
-  (below) against the NEON API (`.../products/<DP>/sites/OSBS/RELEASE-2026`) and
-  on-disk evidence. Record outcomes. Correct the `docs/neon-data-products.md`
-  weighing-gauge claim (the API shows DP1.00044.001 "Precipitation – weighing
-  gauge" present 2016-09→, contradicting "NOT installed at OSBS").
+- [x] **I1. Formal claims verification. DONE 2026-07-15.** Claims re-verified via
+  three adversarial agents (NEON API / CTSM source / external web) + on-disk
+  checks; `docs/neon-data-products.md` corrected (see the checklist below and the
+  Log entry). Refuted: wind/radiation start 2014-08 (not 2013), tipping-bucket
+  2016-08 (not 2014), weighing gauge IS installed, CO₂ bundle 2017-02, TBOT source
+  is 00003 not 00002. Drop-in question answered in Research notes §8. 2018 TBOT
+  verified sane in pre-built (269–307 K).
 - [ ] **I2. Fetch the full pre-built v4 set** — all 84 files, 2018-01 → 2024-12,
   from the NEON storage bucket via the `listing.csv` URLs (`curl -L` to follow
   the 301 redirect). Fetch **proven 2026-07-15** (test file downloaded, valid
-  8-var file). **Ignore the on-disk run_tower v3 set** — superseded per user
-  (stale, sits in a disposable case run dir). Store in a curated
-  `data/datm/neon_OSBS/v4/OSBS/` (mirrors the server layout; `*.nc` gitignored)
-  with a provenance README. Prerequisite for I10's reproduce-v4 validation.
-- [ ] **I3. Resolve the `buildnml` v4 gap.** Patch
-  `_get_neon_data_availability`'s version list to include v4, or set
-  `NEONVERSION=v4` explicitly; verify resolution to 2024-12.
-- [ ] **I4. Wire NEON forcing into a test case that keeps our custom hillslope
-  surfdata + `hillslope_file`.** NEON usermods stage their own NEON surface
-  dataset — the integration point is NEON DATM streams + our CLM
-  surface/hillslope inputs. Ensure RH is read and measured FLDS is used.
-- [ ] **I5. Caveat handling.** Inspect/flag the **2018 TBOT anomaly (NCAR-NEON
-  Issue #34)** before use; verify `ZBOT` matches the OSBS instrument height.
-- [ ] **I6. Test.** Build + run a short (≈5-yr) NEON-forced case; confirm from
-  `datm.log`/`lnd.log` that `OSBS_atm_*.nc` are the active streams, FLDS is
-  measured (not derived), RH is ingested; sanity-compare TBOT/PRECT/FLDS against
-  the CRUNCEP baseline (reuse `case.analyzer` / `/case-check`).
-- [ ] **I7. PI decision — cycle vs blend** for the 600-yr spinup: cycle the
-  ~7-yr NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
-  final transient/evaluation run, as successive cases). Document the choice.
+  8-var file). **Ignore the on-disk run_tower v3 set** — superseded (stale, in a
+  disposable run dir). Store in a curated `data/datm/neon_OSBS/v4/OSBS/` (mirrors
+  the server layout; `*.nc` gitignored) with a provenance README. This is both the
+  temporary starting forcing and the reference for the I4 validation.
+- [ ] **I2.5. Integration smoke test — v4 dry run (early de-risk; a preview of
+  I6–I7).** Before investing in the pipeline, prove the Approach-B wiring with the
+  known-good v4 forcing: build a short cold-start `1PT` + hillslope case
+  (`I1PtClm60Bgc` + NEON usermods; re-assert our `fsurdat` / `hillslope_file` /
+  `use_hillslope=.true.` in `user_nl_clm`; `datafiles` override → the I2 v4 files;
+  1850 knobs) and run ≈5 years. Goal is not science — it's to confirm the
+  **untested combinations build and run**: `1PT` + hillslope hydrology, `SROF`
+  (stub river) + hillslope, and the `datafiles` override. Using v4 (not custom
+  data) isolates wiring bugs from data bugs. Cold-start + short → safe against the
+  production freeze. If it runs, the integration skeleton is proven and later swaps
+  to the custom dataset are just a `datafiles` repoint; if it breaks, we've found a
+  blocker cheaply, before the pipeline build. See §8, §9.
+- [ ] **I3. Stand up the pipeline — venue, raw-data access, and R environment.**
+  Decide where to run `flow.api.clm.R`. **Recommended: process on a personal
+  machine** — it isn't behind the `/data/` block (§7) and can run NEON's Docker
+  image for the R env, sidestepping the HiPerGator block, the conda/renv build,
+  and home-storage limits in one move; produce files there and SFTP the ~13 MB
+  output. **Alternative: HiPerGator** — resolve the `/data/` 403 (NEON API token,
+  portal bulk download, or SFTP raw data in) and build the dedicated conda env +
+  `renv::restore()` (195 pkgs, R 4.0.5; reconcile the script's ad-hoc
+  `install.packages()` vs `renv.lock`). Either way the raw download is GB-scale
+  (dominated by the EC bundle); `zipsByProduct` reports the exact size before
+  pulling. See Research notes §3, §7.
+- [ ] **I4. Reproduce-v4 validation — the go/no-go gate.** Run the pipeline for
+  **2018–2024** (its default range = v4's), changing only `Site="OSBS"` and
+  `MethOut="local"`, then diff the output against the v4 files from I2. Pass =
+  bit-for-bit (if the R environment matches exactly) or numerically comparable
+  within a tight tolerance (define it; small diffs from library/compression
+  versions are expected). If it reproduces v4, the pipeline is trusted. See
+  Research notes §5, §9.
+- [ ] **I5. Produce the full dataset.** Once I4 passes, run the pipeline over the
+  full **2016-08 → 2026-06** record (via the `METHPARAFLOW` env-var path, no
+  source edits) into the curated dir. **Usable start is 2016-08** — all 7 core
+  variables are real there; do **not** placeholder pre-2016 precip/RH (they can't
+  be invented; a reanalysis blend for pre-2016 would be a separate PI decision).
+  Released record ends 2025-06 (2025-07→2026-06 is provisional). See §9.
 
-### Track 2 — custom pipeline (contingency)
+### Integration tail — downstream (needs the dataset first; PI-gated; pairs with the respin)
 
-**Gating (reframed 2026-07-15).** Two phases, different gates. *Exploratory*
-work — verifying NEON `/data/` access (I8b), building the env (I9), and
-reproducing v4 (the reproduce half of I10) — **may proceed now**, ahead of the PI
-meeting; it produces exactly the evidence that makes the I8 conversation
-concrete. What stays **PI-gated on I8** is the *adoption* decision: committing to
-a custom full-record product as the case forcing (the extend half of I10, and
-choosing it over pre-built v4).
-
-- [ ] **I8. PI conversation — now a quantified question.** Supersedes the earlier
-  "no specific gap identified" framing. Pre-built v4 gives **7 yr** (2018–2024,
-  one year carrying a known TBOT anomaly, nothing after 2024); the raw record
-  gives **~10 yr**. **The gap is ~3 years.** Put the three options from
-  "Coverage options" above to the PI and ask: is the extra ~3 yr — particularly
-  2025–2026 recency — worth building the pipeline? **CO₂ is NOT a driver here
-  and should be struck from the question** — it is architecturally separate from
-  met forcing (a `co2tseries` stream / `DATM_CO2_TSERIES` xml lever, not a
-  forcing-file variable), so wanting time-varying CO₂ is a one-line `xmlchange`,
-  not a reason to build a pipeline. Tower CO₂ is a validation target, not an
-  input. See Research notes §6. Record the verdict — this gates the *adoption*
-  half of I10 (the exploratory env build does not wait on it).
-- [ ] **I8b. Verify NEON `/data/` access from HiPerGator — Track-2 step 0.** The
-  pipeline pulls raw data via `neonUtilities`, which calls NEON's `/data/`
-  endpoint; that endpoint **currently 403s from this host** (Research notes §7).
-  No environment work fixes a blocked download — resolve first: try a free NEON
-  API token, an alternate network/route, or the NEON portal's bulk (web / Globus
-  / S3) download feeding the pipeline locally. **Blocks I9 and I10.**
-- [ ] **I9.** *(exploratory — may run before the PI meeting; requires I8b
-  resolved)* Stand up the environment in a
-  **dedicated conda env** (NOT the project `ctsm` env — R 4.0.5-era stack):
-  conda for the R interpreter + system libs (hdf5/netcdf), `renv::restore()` for
-  the 195 pinned packages from the live Posit snapshots, `eddy4R` from GitHub.
-  Apptainer from `quay.io/battelleecology/rstudio:4.0.5` is the fallback.
-  Reconcile the script's ad-hoc `install.packages()` block against `renv.lock`
-  first. See Research notes §3.
-- [ ] **I10. Reproduce v4 (exploratory) → extend (PI-gated).** *Reproduce half*
-  (may run now; needs I2 + I9): run `flow.api.clm.R` changing only `Site="OSBS"`
-  and `MethOut="local"` (its default dates already equal v4's range), then diff
-  against the v4 files from I2 — the known-correct reference. *Extend half* (gated
-  on the I8 adoption verdict): extend `dateBgn`/`dateEnd` to
-  `2016-08-01`/`2026-06-30` — prefer the `METHPARAFLOW` env-var path over source
-  edits — and produce the full-record `OSBS_atm_YYYY-MM.nc` set matching the
-  Key-context spec (8 vars, units, gregorian half-hourly, `-9999` fill). See
-  Research notes §2 and §5.
+- [ ] **I6. Integrate into a CTSM case (Approach B), keeping our hillslope
+  surfdata.** Per Research notes §8, a **compset change**, not a stream-swap in the
+  existing spinup case: build `I1PtClm60Bgc` + NEON usermods; re-assert `fsurdat` +
+  `hillslope_file` + `use_hillslope=.true.` in `user_nl_clm`; **point the NEON
+  stream at our curated files via a `user_nl_datm_streams` `datafiles` override**
+  (this is where the old buildnml-version task folded in — no auto-discovery, no v4
+  cap). RH→shum conversion and measured FLDS are automatic. **Swap the weather, not
+  the experiment** — override the NEON usermods' present-day knobs back to 1850
+  (`CCSM_CO2_PPMV=284.7`, `DATM_PRESAERO/NDEP/O3=clim_1850`, `DATM_CO2_TSERIES=none`,
+  `CLM_NML_USE_CASE=1850_control`) unless the PI wants present-day. Note `1Pt`
+  compsets use `SROF`, not `MOSART`. Also verify `ZBOT` matches the OSBS instrument
+  height. See §8, §9.
+- [ ] **I7. Run + validate the case.** Build + run a short (≈5-yr) NEON-forced
+  case; confirm from `datm.log`/`lnd.log` that `OSBS_atm_*.nc` are the active
+  streams, FLDS is measured (not derived), RH is ingested; sanity-compare
+  TBOT/PRECT/FLDS against the CRUNCEP baseline (reuse `case.analyzer` /
+  `/case-check`).
+- [ ] **I8. PI decisions.** (a) **Cycle vs blend** for the 600-yr spinup — cycle
+  the NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
+  final transient/evaluation run, as successive cases). (b) **Adoption** — whether
+  to drive the production respin with the full custom dataset. Pairs with the PI's
+  TAI investigation (production hillslope file currently frozen).
 
 ### Claims-to-verify checklist (for I1)
 
 Per-product OSBS availability (verify each via NEON API, RELEASE-2026):
 
-- [ ] 7 Tier-1 DPs — TBOT `DP1.00002.001`, radiation `DP1.00023.001`, pressure
-  `DP1.00004.001`, wind `DP1.00001.001` (all ~2014–), RH `DP1.00098.001`
-  (2015-06–), precip-tipping `DP1.00045.001` (2016-08–).
-- [ ] **`DP1.00044.001` weighing-gauge precip** — doc says "NOT installed";
-  **API shows present 2016-09→**. Correct the doc.
-- [ ] CO₂ — `DP4.00200.001` bundle (2017-02–); standalone `DP1.00034.001` /
-  `DP1.00099.001` "FUTURE" status.
-- [ ] 2018 TBOT anomaly / NCAR-NEON Issue #34 exists and is a 2018 air-temp
-  issue.
-- [ ] run_tower "insufficient" verdict — now attributable to the v2/2021 cap
-  (documented in Key context).
-- [ ] Alt sources — PLUMBER2 excludes OSBS; AmeriFlux US-xSB 2019–2024 (confirm
-  US-xSB = OSBS).
-- [ ] RELEASE-2026 consistency across atmospheric products ("no release
-  divergence").
-- [ ] NCAR-NEON install claims — **partially verified 2026-07-15** (Research
-  notes §3): repo, `flow.api.clm.R`, `renv.lock`, and Dockerfile all confirmed
-  real. Corrections still to apply to `docs/neon-data-products.md`: it pins
-  **195** packages, not "~50–100"; the "renv::restore() is the path" claim
-  conflicts with the script's own ad-hoc `install.packages()` block; Apptainer is
-  undersold as "last resort"; and the install path is now a **dedicated conda
-  env** per user decision, not the lmod R module.
+- [x] 7 Tier-1 DPs — verified. **All start 2014-08** (not 2013): wind
+  `DP1.00001.001` and radiation `DP1.00023.001` were wrongly "2013–"; tipping
+  `DP1.00045.001` is 2016-08 (was "2014–"); pressure `DP1.00004.001` 2014-08; RH
+  `DP1.00098.001` 2015-06. TBOT: pipeline uses `DP1.00003.001` (triple), not
+  `DP1.00002.001` (single) — doc reconciled.
+- [x] **`DP1.00044.001` weighing-gauge precip** — REFUTED "NOT installed"; present
+  2016-09→, RELEASE-2026, the pipeline's primary precip. Doc corrected.
+- [x] Pipeline aux inputs — also pulls `DP1.00024.001` (PAR) + `DP1.00014.001`
+  (direct/diffuse SW); added to doc.
+- [x] CO₂ — `DP4.00200.001` bundle **2017-02–** (was "2016–"); standalone
+  `DP1.00034.001`/`DP1.00099.001` confirmed FUTURE (null siteCodes).
+- [x] 2018 TBOT / Issue #34 — real ("TBOT ... unrealistic", 562 K) but a v1-era
+  C→K unit artifact **fixed by reprocessing (2021)**; on-disk v3 2018 TBOT sane
+  (269–307 K). Not a gap-fill concern for pre-built.
+- [x] run_tower "insufficient" — confirmed = the v2/2021 namelist cap.
+- [x] Alt sources — PLUMBER2 excludes OSBS (confirmed, Ukkola 2022 ESSD 14, 449);
+  US-xSB = OSBS confirmed (BASE 2018–2024, FLUXNET 2019–2024 — doc split).
+- [x] RELEASE-2026 — confirmed consistent; released cut ends **2025-06**, last 12
+  mo (2025-07→2026-06) PROVISIONAL. Noted in doc.
+- [x] NCAR-NEON install — repo/`flow.api.clm.R`/`renv.lock`/Dockerfile real;
+  **195** packages (doc corrected from "~50–100"). renv-vs-script mismatch,
+  Apptainer framing, and dedicated-conda-env decision recorded in Research §3.
 - [ ] Lee-2023 OSBS LIDAR vintage — still awaiting Cohen; non-blocking, tracked
   in `docs/data-acquisition-dates.md`.
 
 ## Deliverable
 
-A validated NEON-forced OSBS test case (pre-built v4) plus a documented
-forcing-swap path for the production spinup. The custom pipeline is recorded here
-as a contingency, ready to activate only on a PI-confirmed gap.
+A trusted NEON forcing dataset for OSBS — our own pipeline output, validated
+against pre-built v4 (I4) and extended to the full 2016–2026 record (I5) — plus a
+NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
+(I6–I7). The production respin / adoption decision is the PI-gated tail (I8).
 
 ## References
 
@@ -447,6 +570,93 @@ as a contingency, ready to activate only on a PI-confirmed gap.
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-15 — Added early integration smoke test (I2.5)
+
+Per user, inserted a small smoke-test step after the v4 download. Rationale
+(verified this session): the run_tower v3 case ran successfully, but in the
+*vanilla* NEON config (`use_hillslope=.false.`, default NEON surfdata) — so it
+proves the NEON forcing path works but **not** our Approach-B integration (`1PT` +
+our hillslope surfdata + `datafiles` override + 1850 knobs), which has never been
+run. I2.5 dry-runs that wiring on known-good v4 forcing before the pipeline build,
+isolating integration bugs from data bugs and surfacing any `1PT`+hillslope /
+`SROF`+hillslope blocker cheaply. Cold-start + short → safe against the production
+freeze. Sub-numbered (not a renumber) to avoid re-churning the just-reworked list.
+Approach list, spine description, and status header updated. Doc only.
+
+### 2026-07-15 — Task list reworked to a single linear track
+
+Dropped the Track 1 / Track 2 split (user decision — option A). The two-track
+framing was an artifact of treating "pre-built vs. custom" as different
+mechanisms; §9 established they wire in identically (a `datafiles` override), so
+there is one linear plan: fetch v4 → stand up the pipeline → validate against v4
+→ produce the full dataset → integrate into CTSM (downstream/PI-gated tail).
+
+Old → new task mapping (earlier Log entries keep their original numbers as a
+dated record):
+- I1 → **I1** (unchanged; done)
+- I2 (fetch v4) → **I2**
+- I3 (buildnml v4 patch) → **dropped** — the `datafiles` override (§9) bypasses
+  auto-discovery, so no patch is needed; folded into I6 as a wiring step
+- I8b (`/data/` access) + I9 (R env) → **I3** (stand up the pipeline — venue +
+  access + env; recommends process-on-laptop via Docker)
+- I10 reproduce-half → **I4** (reproduce-v4 validation gate)
+- I10 extend-half → **I5** (produce the full 2016–2026 dataset)
+- I4 (build case) + I5 (ZBOT) → **I6** (integrate into a CTSM case)
+- I6 (test) → **I7** (run + validate the case)
+- I7 (cycle vs blend) + I8 (adoption) → **I8** (PI decisions)
+
+I8's old "is it worth building the pipeline?" go/no-go is resolved — we build it;
+the surviving PI decision is adoption for the respin. Status header, Approach,
+Coverage heading, and the §6–§9 cross-references were updated to the new numbers.
+Doc only; nothing operational.
+
+### 2026-07-15 — §9 added: producer/consumer contract (format vs. source)
+
+Follow-on to the §8 drop-in analysis, clarifying a recurring question: does
+"CDEPS handles it" lock us to the prepackaged data? No — the DATM machinery is
+**format-driven, not source-driven**, so a custom "fuller" dataset feeds the same
+`1PT` machinery as prepackaged v4. §9 records what CDEPS converts at runtime
+(RH→shum, longwave fallback, precip rain/snow + solar band splits, time interp,
+calendar) vs. what "correct format" demands (names, units — trusted blindly,
+structure, no gaps), the two burdens the consumer will NOT do (units, gaps — both
+the producer's job, hence routing Track 2 through the real `flow.api.clm.R`), and
+how to wire a fuller-than-NEON record (`user_nl_datm_streams` datafiles override).
+Issue #34 is the units cautionary tale; ReddyProc is the gap-fill. I10
+cross-referenced. Doc-only; nothing operational.
+
+### 2026-07-15 — I1 complete: claims re-verified, drop-in analysis, doc corrected
+
+Executed I1 (first Phase I task). Research via three adversarial Explore agents
+(NEON API / CTSM source / external web) + direct on-disk checks; corrections
+applied to `docs/neon-data-products.md`, `STATUS.md`, and this file.
+
+- **Claims re-verified, several REFUTED.** Wind + radiation start 2014-08 (doc
+  said "2013–"); tipping-bucket 2016-08 (said "2014–"); **weighing gauge
+  DP1.00044.001 IS installed** (2016-09→, said "NOT installed"); CO₂ bundle
+  2017-02 (said "2016–"); TBOT source is `DP1.00003.001` (triple), not the doc's
+  `DP1.00002.001` (single); pipeline also pulls PAR + direct/diffuse SW. Standalone
+  CO₂ confirmed FUTURE. RELEASE-2026 confirmed, with a provisional tail after
+  2025-06.
+- **Issue #34 (2018 TBOT) is a non-issue for pre-built.** A v1-era C→K unit
+  artifact (562 K) fixed by upstream reprocessing in 2021; **on-disk v3 2018 TBOT
+  verified sane (269–307 K).** The "6 clean + 1 flagged" coverage caveat is
+  retired — all 7 pre-built years are clean.
+- **External claims confirmed:** PLUMBER2 excludes OSBS (Ukkola 2022, ESSD 14,
+  449); AmeriFlux US-xSB = OSBS (BASE 2018–2024, FLUXNET 2019–2024).
+- **Drop-in verdict (new Research note §8): NOT a drop-in.** NEON is a different
+  DATM_MODE / stream structure / humidity var / calendar than CRUNCEP, but CDEPS
+  handles all four via the NEON `1PT` machinery (RH→shum converted internally,
+  `datm_datamode_clmncep_mod.F90:436-461`; measured FLDS automatic). Recommended
+  structure = Approach B: build the `I1PtClm60Bgc` compset + NEON usermods, then
+  re-assert our `fsurdat`/`hillslope_file`/`use_hillslope` in `user_nl_clm` (CLM
+  vars, independent of DATM). "Swap the weather, not the experiment" — keep the
+  1850 CO₂/chemistry knobs. I4 reframed accordingly.
+- **CO₂** re-confirmed separate (§6): constant `CCSM_CO2_PPMV` or `co2tseries.*`
+  stream, never in the met file.
+
+I1 checked off; checklist ticked. Still no data fetched / case built / CTSM source
+patched.
 
 ### 2026-07-15 — Pre-PI-meeting scoping: v4 fetch proven, pipeline access blocker found
 
