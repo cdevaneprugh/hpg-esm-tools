@@ -136,7 +136,11 @@ Weighing it:
 ## Research notes (2026-07-15): custom-pipeline feasibility
 
 Verdict: **configure-and-run, not reimplement — and not plug-and-play.** The cost
-is dominated by standing up a 2021-era R stack, not by writing pipeline code.
+is dominated by standing up a 2021-era R stack, not by writing pipeline code —
+**but the gating unknown sits upstream of the R stack:** whether HiPerGator can
+reach NEON's raw-data API at all. The `/data/` download endpoint currently 403s
+from this host (§7). No R environment fixes a blocked download — resolve §7
+before investing in §3.
 
 ### 1. The generator is public and is the exact tool that made v4
 
@@ -279,6 +283,32 @@ under `$DIN_LOC_ROOT/atm/datm7/CO2/` when it matters. Note also that the NEON
 usermods set `CCSM_CO2_PPMV=408.83` (present-day) — see the I4 config-vs-weather
 caution.
 
+### 7. Raw-data access from HiPerGator — the gating unknown (verify first)
+
+**Found 2026-07-15; not yet resolved.** The pipeline pulls raw tower data with
+`neonUtilities` (`zipsByProduct` / `loadByProduct`), which calls NEON's REST
+`/data/{DP}/{site}/{month}` endpoint. **That endpoint returns HTTP 403 "Access
+Denied" from HiPerGator** (login node). Diagnosis:
+
+- **Not rate-limiting:** the 403 carries `x-ratelimit-remaining: 200` (full
+  quota) — rejected at the edge before the limiter.
+- **Not a host/connectivity problem:** `/products/` and `/sites/` return 200 from
+  the same host, and the storage bucket downloads fine (that is how the pre-built
+  v4 files are fetched).
+- **Scope:** the whole `/data/` *download* family is blocked (`/data/` and
+  `/data/query` both 403); metadata endpoints are open. Signature is **IP-based
+  access control on datacenter/HPC ranges**, not obviously a token gate — but a
+  token is untested.
+
+Why it matters: the entire pipeline exists to pull raw NEON data, and the
+standard route is blocked from where we would run it. **This gates Track 2** — no
+environment work matters if the inputs can't be fetched. Resolution options,
+cheapest first: (1) register a free NEON API token and pass it to `neonUtilities`
+(test whether it lifts the 403); (2) run the pull from a non-blocked network, or
+download raw data via the NEON portal (web / Globus / S3) and feed the pipeline
+pre-downloaded files locally; (3) ask UF RC / NEON whether HiPerGator's range is
+blocked. **Do this before building the R env.**
+
 ## Tasks
 
 ### Track 1 — pre-built forcing (primary)
@@ -288,9 +318,13 @@ caution.
   on-disk evidence. Record outcomes. Correct the `docs/neon-data-products.md`
   weighing-gauge claim (the API shows DP1.00044.001 "Precipitation – weighing
   gauge" present 2016-09→, contradicting "NOT installed at OSBS").
-- [ ] **I2. Obtain v4 files.** Reuse the on-disk v3 set for a first test; fetch
-  the v4 remainder (2024-07 … 2024-12) via the `listing.csv` URLs. Decide
-  storage: per-case run dir vs a curated `data/datm/neon_OSBS/`.
+- [ ] **I2. Fetch the full pre-built v4 set** — all 84 files, 2018-01 → 2024-12,
+  from the NEON storage bucket via the `listing.csv` URLs (`curl -L` to follow
+  the 301 redirect). Fetch **proven 2026-07-15** (test file downloaded, valid
+  8-var file). **Ignore the on-disk run_tower v3 set** — superseded per user
+  (stale, sits in a disposable case run dir). Store in a curated
+  `data/datm/neon_OSBS/v4/OSBS/` (mirrors the server layout; `*.nc` gitignored)
+  with a provenance README. Prerequisite for I10's reproduce-v4 validation.
 - [ ] **I3. Resolve the `buildnml` v4 gap.** Patch
   `_get_neon_data_availability`'s version list to include v4, or set
   `NEONVERSION=v4` explicitly; verify resolution to 2024-12.
@@ -308,7 +342,15 @@ caution.
   ~7-yr NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
   final transient/evaluation run, as successive cases). Document the choice.
 
-### Track 2 — custom pipeline (contingency, PI-gated — do NOT start without PI go-ahead)
+### Track 2 — custom pipeline (contingency)
+
+**Gating (reframed 2026-07-15).** Two phases, different gates. *Exploratory*
+work — verifying NEON `/data/` access (I8b), building the env (I9), and
+reproducing v4 (the reproduce half of I10) — **may proceed now**, ahead of the PI
+meeting; it produces exactly the evidence that makes the I8 conversation
+concrete. What stays **PI-gated on I8** is the *adoption* decision: committing to
+a custom full-record product as the case forcing (the extend half of I10, and
+choosing it over pre-built v4).
 
 - [ ] **I8. PI conversation — now a quantified question.** Supersedes the earlier
   "no specific gap identified" framing. Pre-built v4 gives **7 yr** (2018–2024,
@@ -320,21 +362,31 @@ caution.
   met forcing (a `co2tseries` stream / `DATM_CO2_TSERIES` xml lever, not a
   forcing-file variable), so wanting time-varying CO₂ is a one-line `xmlchange`,
   not a reason to build a pipeline. Tower CO₂ is a validation target, not an
-  input. See Research notes §6. Record the verdict — this gates I9/I10.
-- [ ] **I9.** *(only if I8 finds a gap)* Stand up the environment in a
+  input. See Research notes §6. Record the verdict — this gates the *adoption*
+  half of I10 (the exploratory env build does not wait on it).
+- [ ] **I8b. Verify NEON `/data/` access from HiPerGator — Track-2 step 0.** The
+  pipeline pulls raw data via `neonUtilities`, which calls NEON's `/data/`
+  endpoint; that endpoint **currently 403s from this host** (Research notes §7).
+  No environment work fixes a blocked download — resolve first: try a free NEON
+  API token, an alternate network/route, or the NEON portal's bulk (web / Globus
+  / S3) download feeding the pipeline locally. **Blocks I9 and I10.**
+- [ ] **I9.** *(exploratory — may run before the PI meeting; requires I8b
+  resolved)* Stand up the environment in a
   **dedicated conda env** (NOT the project `ctsm` env — R 4.0.5-era stack):
   conda for the R interpreter + system libs (hdf5/netcdf), `renv::restore()` for
   the 195 pinned packages from the live Posit snapshots, `eddy4R` from GitHub.
   Apptainer from `quay.io/battelleecology/rstudio:4.0.5` is the fallback.
   Reconcile the script's ad-hoc `install.packages()` block against `renv.lock`
   first. See Research notes §3.
-- [ ] **I10.** *(only if needed)* **Reproduce v4 before extending.** Run
-  `flow.api.clm.R` changing only `Site="OSBS"` and `MethOut="local"` (its default
-  dates already equal v4's range), then diff against the real v4 files. Once it
-  reproduces, extend `dateBgn`/`dateEnd` to `2016-08-01`/`2026-06-30` — prefer
-  the `METHPARAFLOW` env-var path over source edits — and produce the full-record
-  `OSBS_atm_YYYY-MM.nc` set matching the Key-context spec (8 vars, units,
-  gregorian half-hourly, `-9999` fill). See Research notes §2 and §5.
+- [ ] **I10. Reproduce v4 (exploratory) → extend (PI-gated).** *Reproduce half*
+  (may run now; needs I2 + I9): run `flow.api.clm.R` changing only `Site="OSBS"`
+  and `MethOut="local"` (its default dates already equal v4's range), then diff
+  against the v4 files from I2 — the known-correct reference. *Extend half* (gated
+  on the I8 adoption verdict): extend `dateBgn`/`dateEnd` to
+  `2016-08-01`/`2026-06-30` — prefer the `METHPARAFLOW` env-var path over source
+  edits — and produce the full-record `OSBS_atm_YYYY-MM.nc` set matching the
+  Key-context spec (8 vars, units, gregorian half-hourly, `-9999` fill). See
+  Research notes §2 and §5.
 
 ### Claims-to-verify checklist (for I1)
 
@@ -395,6 +447,33 @@ as a contingency, ready to activate only on a PI-confirmed gap.
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-15 — Pre-PI-meeting scoping: v4 fetch proven, pipeline access blocker found
+
+Fourth pass, prepping for the PI meeting: what does fetching v4 and standing up
+the pipeline actually entail, and how does each slot into the task list?
+
+- **v4 fetch proven.** Pulled the live `listing.csv` and test-downloaded the
+  2024-12 file (153 KB, valid 8-var forcing file). Fetching the full 84-file v4
+  set is a trivial `curl -L` loop, ~13 MB. **I2 rewritten**: fetch the full set
+  to a curated `data/datm/neon_OSBS/v4/OSBS/`, and **ignore the on-disk
+  run_tower v3 set** (superseded per user).
+- **Pipeline access blocker found (Research notes §7, new).** The raw-data
+  `/data/` endpoint `neonUtilities` depends on **403s from HiPerGator** (full
+  rate-limit quota, metadata endpoints fine → IP-based edge block, not
+  throttling). Gates the whole custom pipeline and was absent from the doc.
+  Added as **task I8b** (Track-2 step 0) and flagged in the feasibility verdict —
+  resolve before building the R env.
+- **Track 2 gating reframed.** Was "do NOT start without PI go-ahead." Split into
+  *exploratory* (verify access, build env, reproduce v4 — may run now, ahead of
+  the PI meeting) vs. *adoption* (commit to a custom full-record product — stays
+  PI-gated on I8). I9/I10 relabeled; I10 split into reproduce (exploratory) and
+  extend (gated) halves.
+- **I2↔I10 coupling made explicit:** v4 on disk (I2) is the reference oracle for
+  the reproduce-v4 step (I10), so Task A precedes Task B's validation.
+
+Mapping recorded: "fetch v4" = I2; "get the pipeline working" = I8b + I9 + I10
+(reproduce half). Still no Phase I task started.
 
 ### 2026-07-15 — CO₂ removed as a custom-pipeline driver
 
