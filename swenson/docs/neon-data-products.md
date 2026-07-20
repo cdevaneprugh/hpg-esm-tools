@@ -288,10 +288,12 @@ Provenance traceability — at minimum:
 
 Without these, six months from now nobody can tell whether the NetCDFs were generated with the buggy 2018 TBOT or with it patched.
 
-### Open question — final storage location
+### Storage location — RESOLVED (2026-07-15)
 
-Two options for the processed DATM output:
-- `swenson/data/datm/` — co-located with this project, recommended initially
-- `$BLUE/datm_neon/` (or `/blue/gerber/sgerber/CTSM/subset_input/datmdata_neon/`) — sibling to other shared data, available to any future OSBS case
-
-Start swenson-local; promote to a shared location once a second case needs it. Easier to move data once the access pattern is known than to predict it.
+Pre-built / processed DATM output lives **swenson-local** at
+`swenson/data/datm/neon_OSBS/`. The fetched pre-built v4 set is in
+`neon_OSBS/v4/OSBS/` (`*.nc` gitignored; provenance in `neon_OSBS/README.md`).
+Chosen over a shared `$BLUE` location initially — it's ~12 MB and trivially
+re-downloadable; promote to a shared spot (e.g. `$BLUE/datm_neon/`) once a second
+case needs it. (Easier to move data once the access pattern is known than to
+predict it.)

@@ -441,13 +441,14 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   2016-08 (not 2014), weighing gauge IS installed, CO₂ bundle 2017-02, TBOT source
   is 00003 not 00002. Drop-in question answered in Research notes §8. 2018 TBOT
   verified sane in pre-built (269–307 K).
-- [ ] **I2. Fetch the full pre-built v4 set** — all 84 files, 2018-01 → 2024-12,
-  from the NEON storage bucket via the `listing.csv` URLs (`curl -L` to follow
-  the 301 redirect). Fetch **proven 2026-07-15** (test file downloaded, valid
-  8-var file). **Ignore the on-disk run_tower v3 set** — superseded (stale, in a
-  disposable run dir). Store in a curated `data/datm/neon_OSBS/v4/OSBS/` (mirrors
-  the server layout; `*.nc` gitignored) with a provenance README. This is both the
-  temporary starting forcing and the reference for the I4 validation.
+- [x] **I2. Fetch the full pre-built v4 set. DONE 2026-07-15.** 84 files
+  (2018-01 → 2024-12, **12.08 MB**) fetched from the NEON storage bucket to
+  `data/datm/neon_OSBS/v4/OSBS/` (`*.nc` gitignored; provenance README at
+  `data/datm/neon_OSBS/README.md`). Integrity 84/84 valid; **v3 sanity check
+  PASS** — v4 is a full reprocessing (all overlap months differ from the on-disk
+  v3) but only at reprocessing scale (RMS Δ: TBOT 0.17 K, PSRF 9 Pa, FSDS
+  0.07 W/m²); new months physical, no fills. See Log. The on-disk run_tower v3 set
+  is superseded. This is the temporary starting forcing + the reference for I4.
 - [ ] **I2.5. Integration smoke test — v4 dry run (early de-risk; a preview of
   I6–I7).** Before investing in the pipeline, prove the Approach-B wiring with the
   known-good v4 forcing: build a short cold-start `1PT` + hillslope case
@@ -570,6 +571,30 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-15 — I2 done: fetched pre-built v4 forcing (first operational step)
+
+Fetched the full NCAR-NEON **v4** OSBS forcing — 84 files (2018-01 → 2024-12),
+**12.08 MB** — to `data/datm/neon_OSBS/v4/OSBS/` (`*.nc` gitignored; provenance
+README at `data/datm/neon_OSBS/README.md`). First operational Phase I step;
+everything prior was documentation.
+
+- **Integrity:** 84/84 open cleanly with the 8-var spec; byte total 12.08 MB
+  (exact match to the GCS-reported size).
+- **v4 is a full reprocessing, not v3 + 6 months.** All 78 months overlapping the
+  older on-disk v3 differ (0/78 byte-identical; every file regenerated 2025-11-09).
+  Differences are **reprocessing-scale**: RMS Δ over the overlap is TBOT 0.17 K,
+  PSRF 9 Pa, FSDS 0.07 W/m², FLDS 0.09 W/m², precip 3×10⁻⁴ mm/s, RH 0.21 %, WIND
+  0.025 m/s, ZBOT 0. Larger max-Δ (TBOT 14.6 K, RH 29 %) are isolated gap-filled
+  intervals refilled differently — bulk unchanged. **Sanity PASS.**
+- New months (2024-07 → 2024-12) physically plausible; no `-9999` in physical vars.
+- No formal release notes in the bucket; v4 (ends 2024-12) is entirely within the
+  RELEASE-2026 released window (to 2025-06) — released, not provisional.
+- Pointers updated: `docs/neon-data-products.md` storage-location question
+  resolved; `CLAUDE.md` (Key Resources + data tree) and `STATUS.md` (References +
+  change log) point at the new location.
+
+Next: I2.5 (integration smoke test) — not started.
 
 ### 2026-07-15 — Added early integration smoke test (I2.5)
 

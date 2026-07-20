@@ -39,6 +39,7 @@ affecting decision was made.
 | Swenson's codebase | `/blue/gerber/cdevaneprugh/Representative_Hillslopes/` |
 | Our pysheds fork | `$BLUE/pysheds_fork` |
 | pysheds documentation | https://mattbartos.com/pysheds/ |
+| NEON v4 forcing (Phase I) | `data/datm/neon_OSBS/v4/OSBS/` (12 MB, 2018–2024; see `data/datm/neon_OSBS/README.md`) |
 
 ## Standard Test Data
 
@@ -103,6 +104,7 @@ swenson/
 │   │   ├── slope/             # 231 NEON slope tiles (DP3.30025.001, degrees)
 │   │   ├── aspect/            # 231 NEON aspect tiles (DP3.30025.001, degrees CW from N)
 │   │   └── README.md          # NEON data product catalog
+│   ├── datm/neon_OSBS/        # NEON pre-built DATM forcing (v4 2018–2024, *.nc gitignored; see README.md)
 │   ├── HU8_03080103_Watershed/  # NWI source shapefile (HUC8 Lower St. John, ~115 MB, gitignored). See README.md.
 │   ├── mosaics/               # Generated mosaics (gitignored)
 │   ├── merit/                 # MERIT DEM for validation
