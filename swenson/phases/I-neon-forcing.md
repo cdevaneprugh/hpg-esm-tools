@@ -472,7 +472,10 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   `renv::restore()` (195 pkgs, R 4.0.5; reconcile the script's ad-hoc
   `install.packages()` vs `renv.lock`). Either way the raw download is GB-scale
   (dominated by the EC bundle); `zipsByProduct` reports the exact size before
-  pulling. See Research notes §3, §7.
+  pulling. See Research notes §3, §7. **Local-processing handoff:**
+  `docs/neon-forcing-download-guide.md` — a self-contained brief for a Claude
+  instance on a personal machine (why-local, products/years, released-only
+  enforcement, Docker env, the two runs, sanity checks, what to hand back).
 - [ ] **I4. Reproduce-v4 validation — the go/no-go gate.** Run the pipeline for
   **2018–2024** (its default range = v4's), changing only `Site="OSBS"` and
   `MethOut="local"`, then diff the output against the v4 files from I2. Pass =
@@ -579,6 +582,27 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-26 — I3 prep: local-download handoff guide written
+
+Decided the pipeline venue: **process on a personal machine** (the `/data/` 403 is
+a HiPerGator-IP block — confirmed still active, rejected at NEON's Google edge with
+full rate-limit quota; a residential/campus IP is not blocked). Checked HiPerGator's
+docs (docs.rc.ufl.edu): outbound is open (wget/curl documented, no proxy/firewall
+on standard nodes), there is no proxy to route around a *remote* provider's block,
+and their endorsed pattern for exactly this case is "download off-cluster, bring it
+in via Globus" — so the transfer-in route is the sanctioned one.
+
+Wrote `docs/neon-forcing-download-guide.md`: a self-contained brief for a Claude
+instance on a laptop to run NEON's `flow.api.clm.R` and produce the OSBS forcing.
+Covers why-local, the deliverable/format, the exact NEON products pulled (with the
+verified DP table), the `flow.api.clm.R` parameter surface (Site/dates/`MethOut=local`
+/dirs/lowmem + the `METHPARAFLOW` env path), released-only enforcement (dateEnd
+cap 2025-06-30 + `release="RELEASE-2026"`), the two runs (validation 2018→2024 =
+84 files, then full 2016-08→2025-06 = 107 files), sanity checks, and what to hand
+back (~30 MB: two NetCDF dirs + plots + provenance). The user will run it locally
+and upload via Globus/SFTP; the authoritative Run-1-vs-v4 comparison (I4) stays on
+HiPerGator. Doc only.
 
 ### 2026-07-15 — PI decisions: released data only + hillslope file un-frozen
 
