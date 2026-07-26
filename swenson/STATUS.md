@@ -101,11 +101,11 @@ Logged as Section 7.7 Option 5 in `phases/H-lateral-flow.md`.
 
 ### Open scientific questions surfaced by Phase F analysis (2026-05-19)
 
-> **PI is actively investigating both questions below as of 2026-06-27.**
-> Per PI direction, the production hillslope file
-> (`output/osbs/2026-05-05_production/hillslopes_osbs_production_c260505.nc`)
-> is **frozen** during the investigation — no pipeline regeneration or
-> parameter changes pending PI's findings.
+> **Update 2026-07-15: the production hillslope file is no longer frozen.** The PI
+> can work with the existing file
+> (`output/osbs/2026-05-05_production/hillslopes_osbs_production_c260505.nc`) via
+> soil-value adjustments — generally working, some concerns remain, left in the
+> PI's wheelhouse. The two questions below are still being investigated.
 
 These are independent follow-ups from the routing-off results, not
 Phase H prerequisites.
@@ -174,8 +174,8 @@ AD spinup completed 2026-05-14 and was analyzed 2026-05-19 (plots at
 hit an N-state crash on first attempt 2026-05-19, recovered by
 2026-05-20, ran 200 yr successfully through 2026-05-21, and has been
 idle since. PI is investigating the AD-spinup TAI absence and
-bridge-zone anomaly; production hillslope file frozen during
-investigation.
+bridge-zone anomaly; the production hillslope file is no longer frozen
+(2026-07-15) — PI proceeding via soil-value adjustments.
 
 ## Methodology validation summary
 
@@ -246,6 +246,7 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-07-15** — PI decisions folded into Phase I: (1) **released data only** — the custom dataset targets 2016-08 → 2025-06 (RELEASE-2026 cut), excluding the provisional 2025-07 → 2026-06 tail (I5 / I8(c) resolved); (2) **production hillslope file no longer frozen** — PI proceeding with the existing file via soil-value adjustments (some concerns remain, in the PI's wheelhouse), so Phase I adoption (I8) is not freeze-blocked. See `phases/I-neon-forcing.md`.
 - **2026-07-15** — Phase I task **I2.5 done — integration smoke test PASSED**. Built + ran a cold-start `1PT` + hillslope case (`$CASES/osbs.swenson.neon-v4-smoke`) on the v4 forcing via a `user_nl_datm_streams` `datafiles` override: 2-yr run completed, 26 hillslope columns active, forcing ingested (measured FLDS, CDEPS-converted RH) — §8/§9 confirmed end-to-end. Found 4 integration issues that carry to I6: force `MPILIB=openmpi`; the operative case's 6-file hydrology SourceMod set (needed for `spillheight`); surfdata-vs-NEON coordinate mismatch (~120 m → set `PTS_LAT/LON` to surfdata coords); walltime budget. See `phases/I-neon-forcing.md`.
 - **2026-07-15** — Phase I task **I2 done** — fetched pre-built NCAR-NEON v4 forcing (84 files, 2018-01 → 2024-12, 12.08 MB) to `swenson/data/datm/neon_OSBS/v4/OSBS/` (`*.nc` gitignored; provenance README alongside). Integrity 84/84; v3 sanity check PASS (v4 is a full reprocessing, differences reprocessing-scale — RMS Δ TBOT 0.17 K, PSRF 9 Pa). First operational Phase I step. See `phases/I-neon-forcing.md`.
 - **2026-07-15** — Phase I task list reworked to a single linear track (dropped the Track 1 / Track 2 split). One plan: fetch v4 → build + validate our own pipeline against it → produce the full 2016–2026 dataset → CTSM integration (downstream/PI-gated tail). v4 and custom data wire in identically (a `user_nl_datm_streams` `datafiles` override), so the two-track framing was moot. See `phases/I-neon-forcing.md`.

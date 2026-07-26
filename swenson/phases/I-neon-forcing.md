@@ -2,7 +2,7 @@
 
 Status: **In progress — I1–I2.5 done; single linear plan (reworked 2026-07-15).**
 Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
-NEON→DATM pipeline and validate against v4 → produce the full 2016–2026 dataset →
+NEON→DATM pipeline and validate against v4 → produce the full 2016–2025 dataset (released) →
 full CTSM integration (PI-gated tail). I1 (verification), I2 (v4 fetched), and
 I2.5 (integration smoke test — **PASSED**) complete; I3 (pipeline) next.
 Depends on: — (independent of the hillslope track A–H)
@@ -31,7 +31,7 @@ Research this session (NEON API + on-disk verification) reshaped the effort. The
 central finding: **gap-filled, CTSM-ready NEON forcing for OSBS already exists
 through 2024-12** — NEON's pipeline does the "process the data" work upstream for
 that window. (The plan nonetheless runs that same pipeline ourselves for the
-fuller 2016–2026 record; v4 is the temporary start + validation reference — see
+fuller 2016–2025 record; v4 is the temporary start + validation reference — see
 Approach.)
 
 - **The "2018–2021 only" premise was wrong.** That was a namelist cap
@@ -85,7 +85,7 @@ Approach.)
 
 - **The prior "run_tower is insufficient" verdict is attributable to the v2
   cap.** Pre-built v4 (2018–2024) is the temporary starting forcing; the plan is
-  to build our own pipeline for the fuller 2016–2026 record and validate it
+  to build our own pipeline for the fuller 2016–2025 record and validate it
   against v4 (I3–I5). The remaining PI decision is narrower — whether to *adopt*
   the custom dataset for the production respin (I8).
 
@@ -104,7 +104,7 @@ directory. The plan:
 3. **Stand up our own pipeline** (I3).
 4. **Validate against v4** — run the pipeline for 2018–2024 and compare to v4
    bit-for-bit / within tolerance (I4). Go/no-go gate.
-5. **Produce the full dataset** — 2016-08 → 2026-06 (I5).
+5. **Produce the full dataset** — 2016-08 → 2025-06 (I5; released data only).
 6. **Integrate into CTSM (full)** — build a case on the forcing, keeping our
    hillslope surfdata (I6–I8). Downstream tail: needs the dataset first, carries
    the PI knob decisions, and pairs with the eventual spinup respin.
@@ -117,9 +117,11 @@ Pre-built v4 is **not** the full NEON record. The raw tower data spans a longer
 period than NCAR-NEON chose to process; the pre-built set is trimmed at both
 ends.
 
-**Decision (2026-07-15): build the full custom record (Option 3 below).** v4 is
+**Decision (2026-07-15): build the full custom record, released data only.** v4 is
 the temporary starting forcing and the validation reference; our pipeline produces
-the full 2016–2026 set. The options below are the recorded rationale.
+the full **2016-08 → 2025-06** set (Option 3, capped at the RELEASE-2026 cut — PI
+decision: no provisional 2025-07 → 2026-06 tail). The options below are the
+recorded rationale.
 
 | Layer | Coverage | Notes |
 |---|---|---|
@@ -181,7 +183,7 @@ Top-of-script parameters (~lines 88–115):
 |---|---|---|
 | `Site` | `"TOOL"` | `"OSBS"` |
 | `dateBgn` | `"2018-01-01"` | **= v4's start**; → `2016-08-01` for the full record |
-| `dateEnd` | `"2024-12-31"` | **= v4's end**; → `2026-06-30` |
+| `dateEnd` | `"2024-12-31"` | **= v4's end**; → `2025-06-30` (released cut) |
 | `MethOut` | `c("local","gcs")[2]` | → `[1]`. **Defaults to uploading to NEON's GCS bucket** |
 | `DirDnld` | `c("/home/ddurden/eddy/tmp/CLM", tempdir())[1]` | → `[2]` or our path |
 | `lowmem` / `maxmonths` | `FALSE` / `2` | memory throttles — likely needed for a 10-yr run |
@@ -385,7 +387,7 @@ namelist_definition_datm.xml, stream_definition_datm.xml, buildnml}`,
 **The DATM machinery is format-driven, not source-driven.** CDEPS is the
 *consumer*; NEON's cloud files and a custom `flow.api.clm.R` run are both
 *producers* of the same format. The consumer does not care which made the file —
-so a **custom "fuller" dataset (pre-2018, post-2024, or the full 2016→2026 record)
+so a **custom "fuller" dataset (pre-2018, post-2024, or the full 2016→2025 record)
 feeds the exact same `1PT` machinery as prepackaged v4.** This is what makes
 building our own pipeline worthwhile, and why I4 validates by *reproducing v4*
 first.
@@ -482,13 +484,11 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   full record (via the `METHPARAFLOW` env-var path, no source edits) into the
   curated dir. **Usable start is 2016-08** — all 7 core variables are real there;
   do **not** placeholder pre-2016 precip/RH (they can't be invented; a reanalysis
-  blend for pre-2016 would be a separate PI decision). **End date is a
-  reproducibility choice (see I8):** the RELEASE-2026 record (frozen, citable, and
-  for the EC bundle *reprocessed* with updated models) ends **2025-06**;
-  **2025-07 → 2026-06 is provisional** — still auto-QC'd and usable, but a moving
-  target NEON revises without notice, not citable, and whose EC component skips the
-  pre-release reprocessing. So produce to 2025-06 for a frozen/reproducible set, or
-  to 2026-06 to gain ~1 yr recency on a provisional base. See §9.
+  blend for pre-2016 would be a separate PI decision). **End date = 2025-06 — PI
+  decision: released data only.** The RELEASE-2026 cut ends 2025-06 (frozen,
+  citable, EC reprocessed); the PI does **not** want the provisional
+  2025-07 → 2026-06 tail (a moving target NEON revises without notice, not citable,
+  EC not pre-release-reprocessed). Target record: **2016-08 → 2025-06**. See §9.
 
 ### Integration tail — downstream (needs the dataset first; PI-gated; pairs with the respin)
 
@@ -513,11 +513,11 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   the NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
   final transient/evaluation run, as successive cases). (b) **Adoption** — whether
   to drive the production respin with the full custom dataset. (c) **End date —
-  released vs provisional** (the I5 choice): cap at **2025-06** (RELEASE-2026:
-  frozen, reproducible, EC reprocessed) or extend to **2026-06** for ~1 yr more
-  recency on NEON *provisional* data (revised without notice, not citable, EC not
-  pre-release-reprocessed). Pairs with the PI's TAI investigation (production
-  hillslope file currently frozen).
+  RESOLVED (PI): released data only**, so the dataset ends **2025-06**; the
+  provisional 2025-07 → 2026-06 tail is excluded. Note: the production hillslope
+  file is **no longer frozen** — the PI is proceeding with the existing file via
+  soil-value adjustments (some concerns remain; left in the PI's wheelhouse), so
+  adoption is not freeze-blocked.
 
 ### Claims-to-verify checklist (for I1)
 
@@ -551,7 +551,7 @@ Per-product OSBS availability (verify each via NEON API, RELEASE-2026):
 ## Deliverable
 
 A trusted NEON forcing dataset for OSBS — our own pipeline output, validated
-against pre-built v4 (I4) and extended to the full 2016–2026 record (I5) — plus a
+against pre-built v4 (I4) and extended to the full 2016–2025 record (I5) — plus a
 NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 (I6–I7). The production respin / adoption decision is the PI-gated tail (I8).
 
@@ -579,6 +579,22 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-15 — PI decisions: released data only + hillslope file un-frozen
+
+Two PI directions folded in:
+- **Dataset end date RESOLVED — released data only.** The custom record targets
+  **2016-08 → 2025-06** (the RELEASE-2026 cut); the provisional 2025-07 → 2026-06
+  tail is **excluded** (the PI does not want a moving, non-citable base). Updated
+  I5, I8(c), the Coverage decision, the Approach/Status/Deliverable end dates, and
+  the `flow.api.clm.R` `dateEnd` (→ 2025-06-30).
+- **Production hillslope file is no longer frozen.** The PI can work with the
+  existing file via soil-value adjustments — generally working, some concerns
+  remain, left in the PI's wheelhouse. So the I8 adoption decision is no longer
+  freeze-blocked (I8 note updated). Not tracking the soil-value work here — it's
+  the PI's.
+
+Doc only.
 
 ### 2026-07-15 — I2.5 smoke test PASSED (first CTSM run of Phase I)
 
