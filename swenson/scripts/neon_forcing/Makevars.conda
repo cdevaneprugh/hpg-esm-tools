@@ -1,0 +1,10 @@
+# R Makevars for building old (v4-era snapshot) source packages with conda's modern
+# gcc (15.x). gcc 14+/15 default to C23, where `int f()` means `int f(void)` -- this
+# turns old K&R declarations (e.g. locfit's `extern int k0_reqd();` called with args)
+# into "too many arguments" ERRORS, and makes implicit declarations / missing ints
+# errors too. The flags below restore the older, permissive C behavior so 2022-era
+# CRAN sources compile. It deliberately does NOT set CC/CXX/FC -- conda's activated
+# toolchain remains the compiler (ABI-matched to conda's r-base).
+#
+# Pointed at by R_MAKEVARS_USER in build_env.sh.
+CFLAGS += -std=gnu17 -Wno-implicit-function-declaration -Wno-implicit-int -fcommon

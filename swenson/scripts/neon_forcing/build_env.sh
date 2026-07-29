@@ -33,8 +33,10 @@ fi
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "${ENV_NAME}"
 
-# neutralize any user-level R config that could inject lmod gcc / a foreign lib
-export R_MAKEVARS_USER=/dev/null
+# supply our own Makevars with lenient C flags (-std=gnu17 etc.) so old v4-era
+# snapshot packages (e.g. locfit) compile with conda's modern gcc; it does NOT set
+# CC (conda's activated toolchain stays the compiler). Stray ~/.R config stays out.
+export R_MAKEVARS_USER="${PROJ_DIR}/Makevars.conda"
 export R_ENVIRON_USER=/dev/null
 unset R_LIBS_USER R_LIBS 2>/dev/null || true
 

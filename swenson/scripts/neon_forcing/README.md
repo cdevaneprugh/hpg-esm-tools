@@ -13,14 +13,23 @@ See `../../docs/neon-forcing-pipeline-hipergator.md` for the full plan and
 
 | File | Purpose |
 |------|---------|
-| `environment.yml` | conda spec for the `neon-forcing` env (conda-satisfiable packages + toolchain; the 10 source-only packages are built by `install_source_pkgs.R`) |
-| `build_env.sh` | Build the env — conda solve → source-install → smoke test |
-| `install_source_pkgs.R` | Installs the R packages on no conda channel (REddyProc, eddy4R.base/qaqc @898a72d, metScanR, prism, NEON.gf) |
+| `environment.yml` | conda spec for the `neon-forcing` env (r-base **4.2** + conda-satisfiable packages + toolchain; source-only packages built by `install_source_pkgs.R`) |
+| `build_env.sh` | Build the env — conda solve → source-install → smoke test (audits compiler ABI) |
+| `install_source_pkgs.R` | Installs the R packages on no conda channel (`neonUtilities`, `REddyProc`, `eddy4R.base`/`qaqc` @898a72d, `NEON.gf`) from the v4-era CRAN snapshots |
+| `Makevars.conda` | Lenient C flags (`-std=gnu17` …) so old snapshot packages compile with conda's modern gcc; wired in via `R_MAKEVARS_USER` |
 | `output/` | Results from the later `neon_v4_regression` comparison (gitignored) |
 
 Planned, not yet added: `download_raw.R` (laptop-side `zipsByProduct`),
 `run_pipeline.sh` (SLURM offline run), `neon_v4_regression.py` (fqc-partitioned
 v4 comparison).
+
+**Environment note:** this is a **reconstruction of NEON's v4-era stack** (2021), not
+a modern build. `r-base` is pinned to **4.2** because `ffbase` (a hard `eddy4R.base`
+dependency) is archived and will not build on newer R; the source layer resolves
+against the four dated CRAN snapshots the v4 `renv.lock` used, and `Makevars.conda`
+lets that old C compile under conda's gcc 15. Chosen for fidelity to the pre-built v4
+forcing (the I4 comparison target). Full rationale in the plan doc. **Built + smoke-tested
+2026-07-29** (all 16 packages load).
 
 ## Build the environment
 

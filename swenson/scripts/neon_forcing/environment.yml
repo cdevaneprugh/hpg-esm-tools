@@ -4,19 +4,27 @@
 #
 # channel_priority=strict cannot live in this file; build_env.sh sets it via
 #   CONDA_CHANNEL_PRIORITY so bioconda never shadows a conda-forge build.
-# EXCLUDES the 10 source-only R packages (REddyProc, solartime, bigleaf,
-#   eddy4R.base/qaqc, DataCombine, EMD, robfilter, metScanR, prism) and r-ffbase
-#   (no r44 conda build) -- install_source_pkgs.R builds those from source.
+#
+# R 4.2 (not 4.4): the archived package `ffbase` (a hard eddy4R.base dependency)
+#   will NOT build against modern R/ff -- conda-forge has no r44 ffbase build, and
+#   conda's r-ff 4.5 ships no LinkingTo C headers (ffbase's compile fails on the
+#   `Sint` type). conda DOES provide a PRECOMPILED r-ffbase for r42, so pinning
+#   r-base 4.2 gets ff+ffbase as matched binaries and sidesteps the compile.
+#
+# EXCLUDES the source-only R packages -- REddyProc (+solartime/bigleaf),
+#   eddy4R.base (+DataCombine/EMD/robfilter), eddy4R.qaqc, and neonUtilities (no
+#   r42 conda build; a snapshot source-install gives 2.4.x, matching the
+#   getProductInfo/loadByProduct API flow.api.clm.R expects). install_source_pkgs.R
+#   builds those. metScanR/prism are NOT included -- only the unused
+#   flow.gf.precip.R references them; the main pipeline gap-fills precip via ReddyProc.
 name: neon-forcing
 channels:
   - conda-forge
   - bioconda
   - nodefaults
 dependencies:
-  # === R interpreter (ABI anchor) -- pin the minor series ===
-  # r-base 4.4 pairs with bioconductor-rhdf5 2.50.0 (r44). conda-forge ships r-base
-  # to 4.6.1 but rhdf5 tops at r45 (no r46), so unpinned would drift and break rhdf5.
-  - r-base=4.4.*
+  # === R interpreter (ABI anchor) -- pin 4.2 to get precompiled ff/ffbase ===
+  - r-base=4.2.*
 
   # === conda-forge toolchain (NOT lmod gcc) -- ABI-matched to conda's r-base ===
   - gcc_linux-64
@@ -30,7 +38,7 @@ dependencies:
   - r-remotes                # install_github / install_version / install_local
 
   # === packReq: runtime-required, conda-satisfiable ===
-  - bioconductor-rhdf5       # bioconda; r44 build 2.50.0
+  - bioconductor-rhdf5       # bioconda; r42 build 2.42.0
   - r-ncdf4
   - r-reshape2
   - r-ggplot2
@@ -38,28 +46,22 @@ dependencies:
   - r-knitr
   - r-naniar
   - r-rfast
-  - r-neonutilities>=3.0     # v4 used 2.4.0; conda min is 3.0.0 -- see README/plan risks
   - r-googlecloudstorager
   - r-dplyr
   - r-tidyr
+  # neonUtilities is NOT here -- no r42 conda build; install_source_pkgs.R builds 2.4.x
 
-  # === compiled/heavy/niche bases the source pkgs link/import (pre-provisioned so
-  #     remotes only builds pure-R/light sources, never a GDAL/C++ dep) ===
-  - r-ff                     # eddy4R.base; CRAN ffbase links against it
+  # === ff + ffbase as PRECOMPILED r42 binaries (the ffbase fix) + eddy4R bases ===
+  - r-ff
+  - r-ffbase
   - r-signal                 # eddy4R.base
   - r-zoo                    # eddy4R.base
   - r-deming                 # eddy4R.base
   - r-downloader             # eddy4R.base
   - r-polynom                # eddy4R.base
   - r-biocmanager            # eddy4R.base
+  - r-locfit                 # EMD dep (old K&R C -- conda binary avoids gcc-15 compile)
   - r-robustbase             # NEON.gf (only hard dep)
-  - r-raster                 # prism (GDAL/GEOS/PROJ-linked)
-  - r-terra                  # prism -> raster
-  - r-sp                     # prism -> raster
-  - r-rcurl                  # metScanR
-  - r-geosphere              # metScanR
-  - r-leaflet                # metScanR
-  - r-matlab                 # metScanR
   - r-rmisc                  # eddy4R.qaqc
   - r-rcpproll               # eddy4R.qaqc
-  - r-plyr                   # eddy4R.qaqc / metScanR
+  - r-plyr                   # eddy4R.qaqc
