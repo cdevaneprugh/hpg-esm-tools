@@ -462,27 +462,44 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   **converted RH** (RH2M 84.6%) — empirically confirming §8/§9. All three untested
   combos — `1PT`+hillslope, `SROF`+hillslope, `datafiles` override — work. **Four
   integration issues found, each carrying to I6** (see Log). See §8, §9.
-- [ ] **I3. Stand up the pipeline — venue, raw-data access, and R environment.**
-  Decide where to run `flow.api.clm.R`. **Recommended: process on a personal
-  machine** — it isn't behind the `/data/` block (§7) and can run NEON's Docker
-  image for the R env, sidestepping the HiPerGator block, the conda/renv build,
-  and home-storage limits in one move; produce files there and SFTP the ~13 MB
-  output. **Alternative: HiPerGator** — resolve the `/data/` 403 (NEON API token,
-  portal bulk download, or SFTP raw data in) and build the dedicated conda env +
-  `renv::restore()` (195 pkgs, R 4.0.5; reconcile the script's ad-hoc
-  `install.packages()` vs `renv.lock`). Either way the raw download is GB-scale
-  (dominated by the EC bundle); `zipsByProduct` reports the exact size before
-  pulling. See Research notes §3, §7. **Local-processing handoff:**
-  `docs/neon-forcing-download-guide.md` — a self-contained brief for a Claude
-  instance on a personal machine (why-local, products/years, released-only
-  enforcement, Docker env, the two runs, sanity checks, what to hand back).
-- [ ] **I4. Reproduce-v4 validation — the go/no-go gate.** Run the pipeline for
-  **2018–2024** (its default range = v4's), changing only `Site="OSBS"` and
-  `MethOut="local"`, then diff the output against the v4 files from I2. Pass =
-  bit-for-bit (if the R environment matches exactly) or numerically comparable
-  within a tight tolerance (define it; small diffs from library/compression
-  versions are expected). If it reproduces v4, the pipeline is trusted. See
-  Research notes §5, §9.
+- [ ] **I3. Stand up the pipeline — HiPerGator venue, raw-data access, R
+  environment.** **Venue decided (2026-07-29): build and run on HiPerGator** (for
+  reproducibility, PI access, and output next to CTSM); the raw download is the one
+  necessary off-HPG step — NEON IP-blocks `/data/` from HPG (§7), so pull raw zips
+  on a non-blocked machine (`zipsByProduct`, released-only) and Globus them in.
+  Environment = **conda-first hybrid**: conda-forge + bioconda supply 185/195
+  packages (r-base, the HDF5/NetCDF stack, `eddy4R.qaqc` deps, `devtools`/`remotes`,
+  and conda-forge compilers — *not* lmod gcc, for ABI match with conda's R); the
+  remaining ~10 leaves install from source (`REddyProc` + `solartime`/`bigleaf`;
+  `eddy4R.base`/`eddy4R.qaqc` via `install_github ref=898a72d`; `eddy4R.base` deps
+  `DataCombine`/`EMD`/`robfilter`; standalone `metScanR`/`prism`) plus the local
+  `NEON.gf`. Point the offline script at the transferred cache via the `DirDnld`
+  seam + a `doDnld` flag (EC bundle already split; met products swap
+  `loadByProduct` → `stackByTable`; `MethOut="local"`). **Sub-decision resolved (2026-07-29): conda-current versions + tolerance**
+  (accepting a newer `r-base` than 4.0.5 — the 4.0.5 + 2023-pin combo is likely
+  unsolvable on conda). Run 1 is validated against v4 by the **fqc-partitioned
+  comparison** (I4), not bit-for-bit; `renv::restore()` pinned is the fallback
+  *only if* that comparison fails to clear the reference band. Full plan: `docs/neon-forcing-pipeline-hipergator.md`. See
+  Research notes §3, §7.
+- [ ] **I4. Reproduce-v4 validation — go/no-go gate (fqc-partitioned comparison).**
+  Run the pipeline for **2018–2024** (its default range = v4's), then compare the
+  output against the v4 files from I2. Same generator + range → identical
+  grids/vars/units → clean element-wise diff (no regrid/time-align). **Partition
+  each timestep by its `<VAR>_fqc` flag:**
+  - **Measured (fqc=0):** same raw data + deterministic conversions → must match v4
+    to ~machine precision *regardless of library versions*. Proves the pipeline
+    logic (units/structure/time/conversions) is faithful; a units bug surfaces here
+    (cf. Issue #34).
+  - **Gap-filled (fqc>0):** the only place library-version drift lives → the
+    *tolerance* applies here, and only here.
+  **Reference band** (acceptable filled-point drift) = the I2 v4-vs-v3 sanity check:
+  RMS Δ TBOT 0.17 K, PSRF 9 Pa, FSDS 0.07 W/m², RH 0.21 %, WIND 0.025 m/s. Filled
+  drift ≤ that band, measured points far below. **Tools:** CPRNC
+  (`CTSM_CPRNC_Deterministic_Analysis.md`), NCO `ncdiff`, or xarray. **Deliver as a
+  committed regression script** — the forcing analog of `merit_regression.py`
+  (a `neon_v4_regression` with pass/fail, re-runnable after any env change or record
+  extension). **Pass** = measured near-exact + gap-filled within the band → pipeline
+  trusted; **fail** → fall back to the renv-pinned build. See Research notes §5, §9.
 - [ ] **I5. Produce the full dataset.** Once I4 passes, run the pipeline over the
   full record (via the `METHPARAFLOW` env-var path, no source edits) into the
   curated dir. **Usable start is 2016-08** — all 7 core variables are real there;
@@ -583,7 +600,63 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 
 ## Log
 
-### 2026-07-26 — I3 prep: local-download handoff guide written
+### 2026-07-29 — Fidelity fork resolved: conda-current + tolerance; I4 = fqc-partitioned v4 comparison
+
+PI accepted the tolerance path — **conda-current package versions, not renv
+bit-for-bit** — conditioned on a solid way to compare our output to the pre-built
+v4. Resolved this session:
+
+- **Decision:** build with conda-current versions (accept a newer `r-base` than
+  4.0.5, since 4.0.5 + the 2023 pins is likely an unsolvable conda solve).
+  `renv::restore()` pinned stays as the fallback *only if* the v4 comparison fails.
+- **I4 method — fqc-partitioned comparison.** Run 1 and v4 share the
+  generator/range, so it's a clean element-wise diff. Split each timestep by
+  `<VAR>_fqc`: measured (fqc=0) must match to ~machine precision (validates the
+  pipeline logic independent of library versions); gap-filled (fqc>0) carries the
+  tolerance (the only place library drift lives). More diagnostic than bit-for-bit —
+  separates "is the code correct?" from "how much does the gap-fill drift?"
+- **Reference band** = the I2 v4-vs-v3 RMS Δ (TBOT 0.17 K, PSRF 9 Pa, FSDS
+  0.07 W/m², RH 0.21 %, WIND 0.025 m/s).
+- **Deliverable:** a committed `neon_v4_regression` script — the forcing analog of
+  `merit_regression.py` — reporting the fqc-partitioned per-variable stats with a
+  pass/fail, re-runnable after any env change.
+
+I3 sub-decision marked resolved; I4 rewritten with the method; pipeline doc
+(Stage 5 + Friction) updated to match. Doc only; no build/script yet.
+
+### 2026-07-29 — I3 venue decision: build on HiPerGator (conda-hybrid); guide repurposed
+
+Reversed the 2026-07-26 "process on a personal machine" lean: **the pipeline will
+be built and run on HiPerGator** (PI direction — reproducibility, PI access, output
+next to CTSM). Only the raw NEON download stays off-HPG (the `/data/` IP block is
+unchanged), transferred in via Globus; the environment build and all processing run
+on HPG.
+
+Environment strategy settled as a **conda-first hybrid**, grounded in a verified
+dependency sweep (renv.lock parsed programmatically + eddy4R/REddyProc DESCRIPTIONs
++ anaconda.org availability checks):
+- **195 packages** in the lock (189 CRAN-mirror + 4 Bioconductor + 2 GitHub), R
+  4.0.5. **Conda covers 185** (conda-forge `r-*` + bioconda `rhdf5` family);
+  **10 must come from source** — `REddyProc` (the gap-fill engine is *not* on any
+  conda channel) + `solartime`/`bigleaf`; `eddy4R.base` + `DataCombine`/`EMD`/
+  `robfilter`; `eddy4R.qaqc`; standalone `metScanR`/`prism` — plus the local
+  `NEON.gf`.
+- **Compilers: conda-forge, not lmod gcc** — the source builds load into conda's R
+  and must be ABI-matched; lmod gcc 14.2 vs conda's older `libstdc++` risks GLIBCXX
+  failures. (Opposite of CTSM, where lmod gcc is correct.)
+- **NetCDF is portable** — the pipeline env is fully decoupled from CTSM's netcdf; no
+  cross-env library matching (unlike CTSM's linked executable).
+- **Open fork:** conda-current versions (likely, since `r-base=4.0.5` + 2023 pins is
+  probably unsolvable → newer R + drift → I4 tolerance-pass) vs `renv::restore()`
+  pinned (bit-for-bit, more friction). To be decided before building.
+
+Repurposed the local-download guide and **renamed
+`docs/neon-forcing-download-guide.md` → `docs/neon-forcing-pipeline-hipergator.md`**
+(raw-download-off-HPG + conda env on HPG + the `DirDnld`/`doDnld` script edits + the
+two runs + friction/open risks). I3 rewritten to the HiPerGator venue. No
+`environment.yml` yet (still planning). Doc only.
+
+### 2026-07-26 — I3 prep: local-download handoff guide written (superseded 2026-07-29)
 
 Decided the pipeline venue: **process on a personal machine** (the `/data/` 403 is
 a HiPerGator-IP block — confirmed still active, rejected at NEON's Google edge with
@@ -593,7 +666,8 @@ on standard nodes), there is no proxy to route around a *remote* provider's bloc
 and their endorsed pattern for exactly this case is "download off-cluster, bring it
 in via Globus" — so the transfer-in route is the sanctioned one.
 
-Wrote `docs/neon-forcing-download-guide.md`: a self-contained brief for a Claude
+Wrote `docs/neon-forcing-download-guide.md` (renamed 2026-07-29 →
+`neon-forcing-pipeline-hipergator.md`): a self-contained brief for a Claude
 instance on a laptop to run NEON's `flow.api.clm.R` and produce the OSBS forcing.
 Covers why-local, the deliverable/format, the exact NEON products pulled (with the
 verified DP table), the `flow.api.clm.R` parameter surface (Site/dates/`MethOut=local`
