@@ -427,6 +427,190 @@ extends beyond that, override the active `NEON.$SITE` stream's `datafiles` in
 `user_nl_datm_streams`" caveat was only about *adding* a stream or flipping
 `datamode`), and set `DATM_YR_START/END` to span the fuller range.
 
+### 10. Offline script modifications + repository strategy (2026-07-31)
+
+**Re-verified against the on-disk clone this session**
+(`$NCAR_NEON_DIR/TowerTools_ForcingData/flow.api.clm.R`, 1,480 lines). Records
+(a) where the modified script lives and under what license, and (b) the exact
+edits that take the stock auto-downloading script offline.
+
+#### 10.1 Repository strategy — fork, do not vendor
+
+The offline behavior *requires* editing `flow.api.clm.R` (the `doDnld` guards
+below can't be applied from outside), so we produce a **modified derivative of
+NEON's code**. Where it can live is fixed by license:
+
+| Repo | License | Verified |
+|---|---|---|
+| NCAR-NEON (incl. `flow.api.clm.R`, `NEON.gf`) | **AGPL-3.0** | top-level `LICENSE` = GNU AGPL v3; `NEON.gf/DESCRIPTION` declares AGPL-3 |
+| `eddy4R` (`898a72d`) | AGPL-family (NEON) | second external dep, GitHub-only |
+| hpg-esm-tools | **MIT**, public | `LICENSE` = MIT © 2026; `git@github.com:cdevaneprugh/hpg-esm-tools.git` |
+
+**AGPL → MIT is a one-way door** — AGPL code cannot be redistributed inside an MIT
+repo under MIT terms. So **vendoring the modified script into hpg-esm-tools is
+rejected**: it would either violate AGPL or force AGPL onto the MIT tools repo.
+
+**Decision: fork NCAR-NEON.** Fork to the user's personal GitHub for now (eventual
+transfer to the PI or a joint repo is undecided; the user remains on the project).
+Branch it; make the offline edits on the branch. `$BLUE/ncar-neon` becomes the
+working clone of the fork (`build_env.sh` already reads `$NCAR_NEON_DIR`). This
+also serves the durability goal — a fork is a controlled, downloadable copy that
+survives upstream reorganizations — and matches the project's existing "fork
+upstream, reference by env var" pattern (`ctsm5.3`, `pysheds_fork`).
+
+**Bright-line rule for where code lives:**
+- **Modified NEON source** (`flow.api.clm.R`, any of their files we edit) → **the
+  fork** (AGPL).
+- **Our new code** (`run_*.sh` SLURM wrapper, laptop-side `download_raw.R`, the
+  conda recipe) → **hpg-esm-tools** (MIT). Invoking an AGPL program from a separate
+  wrapper does **not** make the wrapper a derivative — the copyleft boundary is
+  copying/editing their source, not calling it as a separate process.
+
+**Mechanics (verified):** `gh` is not on PATH but is available via
+`module load github-cli/2.40.1`; SSH to GitHub authenticates as `cdevaneprugh`.
+The clone's `origin` is currently `NEONScience/NCAR-NEON` (HTTPS); fork setup
+re-points `origin` → the fork (SSH) and keeps `upstream` → NEON. Working tree is
+clean on `main`.
+
+**Residual external dependency:** `eddy4R` (`898a72d`) is a second AGPL repo the
+env build pulls from GitHub. Pinned by SHA; fork it too for full durability if
+desired (not required now).
+
+#### 10.2 Offline modification map — `flow.api.clm.R` (line numbers verified 2026-07-31)
+
+The stock script auto-downloads via `neonUtilities` at **six** call sites and
+wipes `DirDnld` mid-run. The download surface is **not** a single seam — the EC
+bundle is separable, the met/precip products are not.
+
+| # | Line(s) | Stock behavior | Edit | Risk |
+|---|---|---|---|---|
+| 1 | 26; 29–34 | `packReq` auto-install loop: `require()` → if FALSE, `install.packages()` from live CRAN | Replace loop body with `requireNamespace()` + `stop()`; keep `library()` load | none — env pre-satisfies all 14 (incl. `mlegp`) |
+| 2 | 195 | `zipsByProduct` (EC bundle `DP4.00200.001`) → `DirDnld/filesToStack00200/` | Guard behind `if (doDnld)`; pre-stage zips offline | low — separable |
+| 3 | 251, 256, 331, 332 | `stackEddy` on `DirDnld/filesToStack00200/` | keep as-is — already offline | none |
+| 4 | 487; 489 | `file.remove` wipes `DirExtr` (487) and **`DirDnld` (489)** | Gate both behind `if (doDnld)` — cleanup only when we downloaded | **HIGH if unguarded** — 489 deletes pre-staged met/precip zips before step 5 reads them |
+| 5 | 527 | `loadByProduct` (met products, `lapply` over `listDpNum`) — download **+** stack | Swap → `stackByTable` on pre-staged zips; reconcile return shape (`loadByProduct` returns a named list) | MEDIUM — behavior |
+| 6 | 539 | `getProductInfo("DP1.00044.001")` — API query for the primary-precip site list | Hardcode `sitePrecip <- Site` (OSBS has the weighing gauge — verified I1) | low |
+| 7 | 547 | `loadByProduct` (primary precip `DP1.00044.001`) — download **+** stack | Same swap as #5 | MEDIUM — behavior |
+| — | 56 | `MethOut <- c("local","gcs")[2]` — **defaults to uploading to NEON's GCS bucket** (the `# CHANGE ME` marker) | Set `[1]` `"local"` (GCS upload at 1330–1363, 1466 is `if(MethOut=="gcs")`-gated) | low |
+
+**Corrections to earlier in-chat claims** (found by this re-verification): the
+auto-install loop is lines **29–34** (vector at 26), not "27–38"; the wipe is
+lines **487 + 489**, not "489–490."
+
+#### 10.3 Solution sketches
+
+**packReq hard-stop (edit #1)** — load-or-halt, no network, no version drift:
+
+```r
+invisible(lapply(packReq, function(x) {
+  if (!requireNamespace(x, quietly = TRUE))
+    stop("Package not in env (build_env.sh should have installed it): ", x)
+  library(x, character.only = TRUE)
+}))
+```
+
+Better than commenting the loop out: a genuinely-missing package halts loudly
+instead of silently pulling a fidelity-breaking modern version from live CRAN.
+
+**`doDnld` switch (edits #2, #4)** — keep the script *switchable*, not gutted.
+Define `doDnld <- FALSE` near the top; wrap the EC `zipsByProduct` and both
+`file.remove` wipes in `if (doDnld) { ... }`. `TRUE` = online (a non-blocked
+machine), `FALSE` = offline on HPG. Defaults preserve online behavior.
+
+**`loadByProduct` → `stackByTable` (edits #5, #7)** — the only behavior-risk edits.
+`loadByProduct` ≡ `zipsByProduct` + `stackByTable`, and only `stackByTable` is
+offline. Point it at the pre-staged `filesToStack<dpID>/` dirs. Must reconcile the
+return-shape difference (downstream `dataMet` expects the `loadByProduct`
+named-list shape). **Test this edit in isolation.**
+
+**Sequencing suggestion:** land the low-risk edits (#1 packReq, #2/#4 `doDnld`
+guards, #6 `getProductInfo`, line-56 `MethOut`) as the first commits on the fork
+branch — they preserve correctness and online behavior. Treat #5/#7
+(`loadByProduct` swap) as a separate, reviewed, tested commit.
+
+**Invocation contract (verified):** the script has **no `setwd`/`getwd`/`source()`
+of siblings** — cwd is irrelevant; run it by absolute path. Config enters via env
+vars **only if `METHPARAFLOW` is set** (then `SITE`, `DATEBGN`, `DATEEND`,
+`DIROUT`, `LOWMEM`); otherwise it falls to hardcoded defaults (`Site="TOOL"`).
+Drive it from a **committed `run_*.sh` SLURM wrapper** that sets `METHPARAFLOW=1` +
+the knobs, `module load conda`, `conda activate neon-forcing`, then
+`Rscript <abs path>` — **not** persistent/global env vars (they leak into every
+shell/job) and **not** ad-hoc command line (not reproducible). The wrapper is our
+code → hpg-esm-tools (MIT).
+
+### 11. Raw-data download — verified OSBS availability + Stage 1 artifacts (2026-07-31)
+
+**Verified against the live NEON API this session** (metadata endpoints; the
+`/data/` size endpoint stays 403 from HPG). This is **Stage 1** of the offline
+pull — the laptop-side download of the raw NEON products the pipeline consumes.
+
+#### 11.1 Verified OSBS product availability (RELEASE-2026, released only)
+
+| Product | Feeds | First month | Months |
+|---|---|---|---|
+| DP1.00003.001 | TBOT | 2014-08 | 131 |
+| DP1.00001.001 | WIND (2D sensor) | 2014-08 | 131 |
+| DP1.00004.001 | PSRF | 2014-08 | 131 |
+| DP1.00023.001 | FSDS + FLDS | 2014-08 | 131 |
+| DP1.00024.001 | PAR (gap-fill) | 2014-08 | 131 |
+| DP1.00014.001 | dir/dif SW (gap-fill) | 2014-08 | 131 |
+| DP1.00098.001 | RH | 2015-06 | 121 |
+| DP1.00045.001 | precip — tipping (OSBS secondary) | 2016-08 | 107 |
+| DP1.00044.001 | precip — weighing (primary) | 2016-09 | 106 |
+| DP4.00200.001 | EC bundle (supplementary) | 2017-02 | 101 |
+| DP1.00006.001 | (stock script's secondary precip) | **NONE** | 0 |
+
+**Three corrections this forces:**
+1. **The record goes back to 2016, not 2017.** An earlier draft capped it at
+   2017-02; that is the **EC bundle** (a *supplementary* source), not a forcing
+   variable. The CRUNCEP-replacement variables reach 2014–2015; **precipitation is
+   the binding constraint** at 2016-08 (tipping) / 2016-09 (weighing). Confirms
+   I5's 2016-08 target.
+2. **`DP1.00006.001` does not exist at OSBS** (0 months, any release) — the stock
+   script's coded secondary precip. OSBS has only the weighing (DP1.00044.001) and
+   tipping (DP1.00045.001) gauges; the download uses the **tipping bucket** in its
+   place.
+3. **`DP1.00023.001` is pulled once** though the stock script requests it twice.
+
+Definitive download list = **10 products** (the 8 non-precip/gap-fill + weighing +
+tipping); the EC bundle is included (needed to reproduce v4 in I4).
+
+#### 11.2 Download size
+
+**≈ 11 GB** (basic package), range 6–18 GB, **EC bundle ~7 GB (~60 %)**; ~1,170
+site-months. Exact size is unverifiable from HPG (the `/data/` size endpoint is
+blocked); the laptop confirms via `check.size` / `du`.
+
+#### 11.3 Stage 1 artifacts (built 2026-07-31)
+
+Both MIT, in hpg-esm-tools (our code — they *call* neonUtilities, they do not
+modify NEON source):
+
+- **`scripts/neon_forcing/download_raw.R`** — `zipsByProduct` per product, OSBS,
+  2016-08 → 2025-06, `release="RELEASE-2026"` + `include.provisional=FALSE`
+  (overriding the stock script's provisional-on default), `basic`, optional
+  `NEON_TOKEN`. Writes `DirDnld/filesToStack<dpID>/` — the layout the HPG-side
+  `stackEddy` (EC) / `stackByTable` (DP1) expect. Syntax-checked under R 4.6.1.
+- **`docs/neon-raw-download-runbook.md`** — self-contained runbook for the user's
+  Linux-laptop Claude Code (no root): explicit human-action pause points (install
+  R; system-dev-lib fallback; Globus), Posit-PPM binary install to a user library,
+  verify, Globus to `swenson/data/neon/met/DirDnld/`.
+
+Download runs off-HPG (laptop → Globus); the transferred cache feeds the §10
+offline pipeline run + the I4 validation.
+
+#### 11.4 Two downstream decisions surfaced (not resolved here)
+
+- **OSBS precip source.** The script's `DP1.00006.001` is absent → repoint the
+  secondary-precip DP to the tipping bucket (DP1.00045.001, 2016-08) or run
+  weighing-only (DP1.00044.001, 2016-09). A §10 script edit; one month of front-end
+  coverage rides on it.
+- **Pre-2017-02 WIND.** The EC bundle (the stock script's WIND-primary) starts
+  2017-02 and the stock script errors for EC-absent months. To reach
+  2016-08/09 → 2017-01, source WIND from DP1.00001.001 (2D, available 2014-08) — a
+  §10 script edit with mixed-provenance implications — or start the EC-clean record
+  at 2017-02. An I5 / PI call. The download grabs everything regardless.
+
 ## Tasks
 
 **Single linear track (reworked 2026-07-15).** No pre-built-vs-custom split: v4
@@ -479,8 +663,11 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   (accepting a newer `r-base` than 4.0.5 — the 4.0.5 + 2023-pin combo is likely
   unsolvable on conda). Run 1 is validated against v4 by the **fqc-partitioned
   comparison** (I4), not bit-for-bit; `renv::restore()` pinned is the fallback
-  *only if* that comparison fails to clear the reference band. Full plan: `docs/neon-forcing-pipeline-hipergator.md`. See
-  Research notes §3, §7.
+  *only if* that comparison fails to clear the reference band. Full plan: `docs/neon-forcing-pipeline-hipergator.md`. **Offline
+  script edits + fork/repository strategy: Research note §10.** **Stage 1 raw-data
+  download built (2026-07-31): `scripts/neon_forcing/download_raw.R` +
+  `docs/neon-raw-download-runbook.md`; verified OSBS availability + list in
+  Research note §11.** See also Research notes §3, §7.
 - [ ] **I4. Reproduce-v4 validation — go/no-go gate (fqc-partitioned comparison).**
   Run the pipeline for **2018–2024** (its default range = v4's), then compare the
   output against the v4 files from I2. Same generator + range → identical
@@ -502,8 +689,11 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   trusted; **fail** → fall back to the renv-pinned build. See Research notes §5, §9.
 - [ ] **I5. Produce the full dataset.** Once I4 passes, run the pipeline over the
   full record (via the `METHPARAFLOW` env-var path, no source edits) into the
-  curated dir. **Usable start is 2016-08** — all 7 core variables are real there;
-  do **not** placeholder pre-2016 precip/RH (they can't be invented; a reanalysis
+  curated dir. **Usable start is 2016-08** — all 7 core variables are real there
+  (verified per-product table in **§11**: precip binds — tipping 2016-08 / weighing
+  2016-09 — other vars reach 2014–2015; the EC bundle starts 2017-02, so producing
+  2016-09 → 2017-01 needs the DP1 2D-wind source, §11.4).
+  Do **not** placeholder pre-2016 precip/RH (they can't be invented; a reanalysis
   blend for pre-2016 would be a separate PI decision). **End date = 2025-06 — PI
   decision: released data only.** The RELEASE-2026 cut ends 2025-06 (frozen,
   citable, EC reprocessed); the PI does **not** want the provisional
@@ -599,6 +789,61 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-07-31 — Raw-data download: verified OSBS availability + Stage 1 artifacts (Research §11)
+
+Planned and built the off-HPG raw-download stage; recorded the verified NEON
+availability. Added as **Research note §11** with I3/I5 pointers.
+
+- **Data-availability correction (verified against the NEON API).** The
+  CRUNCEP-replacement variables go back to **2016** (2014–2015 for most; precip
+  binds at 2016-08 tipping / 2016-09 weighing) — an earlier draft's 2017-02 cap was
+  the **EC bundle** (supplementary), not a forcing variable. Confirms I5's 2016-08
+  target. (Caught by the user challenging the availability claim.)
+- **`DP1.00006.001` (the script's secondary precip) does not exist at OSBS** (0
+  months, any release) → the download uses the tipping bucket **DP1.00045.001**;
+  `DP1.00023.001` is pulled once (the stock script requests it twice). Definitive
+  list = **10 products**.
+- **Size ≈ 11 GB** (basic; EC ~7 GB / 60 %). Exact size unverifiable from HPG (the
+  size endpoint 403s); the laptop confirms.
+- **Stage 1 artifacts built** (both MIT, hpg-esm-tools; syntax-checked R 4.6.1):
+  `scripts/neon_forcing/download_raw.R` (zipsByProduct, released-only, writes the
+  `filesToStack<dpID>/` layout) + `docs/neon-raw-download-runbook.md`
+  (self-contained runbook for the laptop's Claude Code — Linux, no-root pause
+  points, Posit-PPM binary install, Globus transfer).
+- **Two downstream decisions surfaced** (§11.4): OSBS precip source (tipping vs
+  weighing); pre-2017-02 WIND (2D-sensor, mixed provenance) vs an EC-clean 2017-02
+  start — an I5 / PI call. Neither blocks the download.
+
+Download runs off-HPG (user's laptop → Globus); the cache feeds the §10 offline
+pipeline run + I4.
+
+### 2026-07-31 — Fork decision + offline modification map recorded (Research §10)
+
+Recorded the two decisions from this session that were previously only in
+conversation; added as **Research note §10** with an I3 pointer.
+
+- **Fork, not vendor.** NCAR-NEON and `NEON.gf` are **AGPL-3.0** (verified: top-level
+  `LICENSE`, `NEON.gf/DESCRIPTION`); hpg-esm-tools is **MIT** and public — so the
+  modified `flow.api.clm.R` cannot be vendored into hpg-esm-tools (AGPL→MIT is
+  one-way). **Fork NCAR-NEON** (personal GitHub for now; transfer to PI/joint
+  later), branch, edit on the branch; `$BLUE/ncar-neon` becomes the working clone.
+  Bright-line: modified NEON files → fork (AGPL); our new code (wrapper,
+  `download_raw.R`, recipe) → hpg-esm-tools (MIT). `eddy4R` `898a72d` is a second
+  external AGPL dep. `gh` via `module load github-cli/2.40.1`; SSH auth works.
+- **Offline modification map** — re-verified line numbers in the 1,480-line script.
+  The download surface is **six `neonUtilities` calls + a mid-run `DirDnld` wipe**,
+  not one seam: EC bundle (`zipsByProduct` 195 → `stackEddy`) is separable;
+  met/precip (`loadByProduct` 527/547) need a `stackByTable` swap; the wipe
+  (487/489) must be gated behind `doDnld` or it deletes staged data;
+  `getProductInfo` (539) hardcoded for OSBS; `packReq` loop (29–34) → hard-stop;
+  `MethOut` (56) → local. Full table + solution sketches (packReq hard-stop,
+  `doDnld` switch, `loadByProduct`→`stackByTable`, commit sequencing, invocation
+  contract / `run_*.sh` wrapper) in §10.
+
+Two earlier in-chat line-number claims corrected on re-verification (loop **29–34**
+not 27–38; wipe **487+489** not 489–490). Doc only — no fork created and no script
+edits made yet.
 
 ### 2026-07-29 — Fidelity fork resolved: conda-current + tolerance; I4 = fqc-partitioned v4 comparison
 
