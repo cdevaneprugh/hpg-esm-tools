@@ -40,6 +40,7 @@ affecting decision was made.
 | Our pysheds fork | `$BLUE/pysheds_fork` |
 | pysheds documentation | https://mattbartos.com/pysheds/ |
 | NEON v4 forcing (Phase I) | `data/datm/neon_OSBS/v4/OSBS/` (12 MB, 2018–2024; see `data/datm/neon_OSBS/README.md`) |
+| NEON API token (Phase I) | `~/.neon_token` (mode 600, private, **NOT in repo** — lifts the `/data/` 403 on HPG; read via `$NEON_TOKEN`; see `phases/I-neon-forcing.md` §12) |
 
 ## Standard Test Data
 
@@ -93,6 +94,7 @@ swenson/
 │   ├── lake-column-ctsm-audit.md       # Canonical lake-column params + CTSM source investigation
 │   ├── data-acquisition-dates.md       # NEON LIDAR, NWI, Lee 2023 vintage notes
 │   ├── neon-data-products.md           # NEON DP catalog: atmospheric forcing (primary) + vegetation/soil/AOP (secondary)
+│   ├── neon-forcing-pipeline-hipergator.md  # Phase I: on-HPG NEON→DATM pipeline plan (conda env + raw download + flow.api.clm.R edits)
 │   └── pysheds-utm-walkthrough.md      # UTM CRS support walkthrough (historical)
 │   (Superseded docs — hillslope-binning-rationale.md, ns-aspect-bug.md,
 │    water-masking-and-lake-representation.md, synthetic_lake_bottoms.md
@@ -131,6 +133,12 @@ swenson/
     │   ├── spatial_scale.py      # Co-located copy of osbs/ module (kept manually in sync)
     │   ├── hillslope_params.py   # Co-located copy of osbs/ module (kept manually in sync)
     │   └── output/               # results.json, summary.txt, SLURM logs
+    ├── neon_forcing/             # Phase I: NEON atmospheric forcing (conda env recipe + raw download)
+    │   ├── build_env.sh          # Build the `neon-forcing` conda env (R 4.2.3 + source pkgs)
+    │   ├── environment.yml       # conda spec for the env
+    │   ├── install_source_pkgs.R # Off-conda R pkgs (eddy4R / REddyProc / NEON.gf)
+    │   ├── Makevars.conda        # R source-build flags (conda gcc, -std=gnu17)
+    │   └── download_raw.R        # Raw NEON tower download — on-HPG via API token (phases/I §12)
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay

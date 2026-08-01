@@ -197,9 +197,9 @@ a SLURM wrapper with **no source edits**. Prefer this over editing the script.
 
 **Decision (user, 2026-07-15): a dedicated environment**, not the project `ctsm`
 env — this is an R 4.0.5-era stack and would pollute the Python dev env. **Venue
-(I3):** processing on a personal machine via NEON's Docker image is now the
-recommended path — it sidesteps both this env build and the `/data/` block (§7);
-the HiPerGator conda + `renv` build below is the alternative.
+(I3): build and run on HiPerGator** (decided 2026-07-29; the `/data/` block is
+resolved on-HPG by an API token, §12). The personal-machine/Docker path below is
+a superseded alternative.
 
 Verified 2026-07-15:
 
@@ -306,9 +306,11 @@ under `$DIN_LOC_ROOT/atm/datm7/CO2/` when it matters. Note also that the NEON
 usermods set `CCSM_CO2_PPMV=408.83` (present-day) — see the I6 config-vs-weather
 caution.
 
-### 7. Raw-data access from HiPerGator — the gating unknown (verify first)
+### 7. Raw-data access from HiPerGator — RESOLVED 2026-08-01 (see §12)
 
-**Found 2026-07-15; not yet resolved.** The pipeline pulls raw tower data with
+**Found 2026-07-15; RESOLVED 2026-08-01 — a NEON API token lifts the 403 from
+HPG (§12); the download runs on a compute node, no off-HPG step. Diagnosis
+retained below as the record.** The pipeline pulls raw tower data with
 `neonUtilities` (`zipsByProduct` / `loadByProduct`), which calls NEON's REST
 `/data/{DP}/{site}/{month}` endpoint. **That endpoint returns HTTP 403 "Access
 Denied" from HiPerGator** (login node). Diagnosis:
@@ -461,8 +463,8 @@ upstream, reference by env var" pattern (`ctsm5.3`, `pysheds_fork`).
 **Bright-line rule for where code lives:**
 - **Modified NEON source** (`flow.api.clm.R`, any of their files we edit) → **the
   fork** (AGPL).
-- **Our new code** (`run_*.sh` SLURM wrapper, laptop-side `download_raw.R`, the
-  conda recipe) → **hpg-esm-tools** (MIT). Invoking an AGPL program from a separate
+- **Our new code** (`run_*.sh` SLURM wrapper, `download_raw.R` (on-HPG since §12),
+  the conda recipe) → **hpg-esm-tools** (MIT). Invoking an AGPL program from a separate
   wrapper does **not** make the wrapper a derivative — the copyleft boundary is
   copying/editing their source, not calling it as a separate process.
 
@@ -544,6 +546,11 @@ code → hpg-esm-tools (MIT).
 `/data/` size endpoint stays 403 from HPG). This is **Stage 1** of the offline
 pull — the laptop-side download of the raw NEON products the pipeline consumes.
 
+> **Superseded in part 2026-08-01 (§12).** A NEON API token lifts the `/data/`
+> block, so the download runs **on-HPG (compute node)**, not off-HPG. The
+> availability table (§11.1) and downstream decisions (§11.4) stand; the Stage-1
+> laptop/Globus framing (§11.3) is retired and the laptop runbook removed.
+
 #### 11.1 Verified OSBS product availability (RELEASE-2026, released only)
 
 | Product | Feeds | First month | Months |
@@ -578,26 +585,26 @@ tipping); the EC bundle is included (needed to reproduce v4 in I4).
 #### 11.2 Download size
 
 **≈ 11 GB** (basic package), range 6–18 GB, **EC bundle ~7 GB (~60 %)**; ~1,170
-site-months. Exact size is unverifiable from HPG (the `/data/` size endpoint is
-blocked); the laptop confirms via `check.size` / `du`.
+site-months. **Update 2026-08-01:** the size endpoint is no longer blocked (token,
+§12) — the **exact-size manifest (§12.4 rung 2)** replaces this estimate. Original
+estimate retained for reference.
 
-#### 11.3 Stage 1 artifacts (built 2026-07-31)
+#### 11.3 Stage 1 artifacts
 
-Both MIT, in hpg-esm-tools (our code — they *call* neonUtilities, they do not
-modify NEON source):
+- **`scripts/neon_forcing/download_raw.R`** (MIT, hpg-esm-tools — our code; it
+  *calls* neonUtilities, does not modify NEON source) — `zipsByProduct` per
+  product, OSBS, 2016-08 → 2025-06, `release="RELEASE-2026"` +
+  `include.provisional=FALSE` (overriding the stock script's provisional-on
+  default), `basic`, `NEON_TOKEN`. Writes `DirDnld/filesToStack<dpID>/` — the
+  layout the `stackEddy` (EC) / `stackByTable` (DP1) steps expect. **Repurposed
+  2026-08-01 for on-HPG use** (run in the `neon-forcing` env with the token; land
+  in `/blue`); the `zipsByProduct` loop is venue-independent.
+- ~~`docs/neon-raw-download-runbook.md`~~ — **removed 2026-08-01.** It was a laptop
+  (off-HPG, no-root) runbook; the token (§12) makes the on-HPG compute-node path
+  the plan, so the laptop hand-off is obsolete.
 
-- **`scripts/neon_forcing/download_raw.R`** — `zipsByProduct` per product, OSBS,
-  2016-08 → 2025-06, `release="RELEASE-2026"` + `include.provisional=FALSE`
-  (overriding the stock script's provisional-on default), `basic`, optional
-  `NEON_TOKEN`. Writes `DirDnld/filesToStack<dpID>/` — the layout the HPG-side
-  `stackEddy` (EC) / `stackByTable` (DP1) expect. Syntax-checked under R 4.6.1.
-- **`docs/neon-raw-download-runbook.md`** — self-contained runbook for the user's
-  Linux-laptop Claude Code (no root): explicit human-action pause points (install
-  R; system-dev-lib fallback; Globus), Posit-PPM binary install to a user library,
-  verify, Globus to `swenson/data/neon/met/DirDnld/`.
-
-Download runs off-HPG (laptop → Globus); the transferred cache feeds the §10
-offline pipeline run + the I4 validation.
+Download runs **on-HPG** (compute node, token; §12) — the local `/blue` cache
+feeds the §10 offline pipeline run + the I4 validation.
 
 #### 11.4 Two downstream decisions surfaced (not resolved here)
 
@@ -610,6 +617,81 @@ offline pipeline run + the I4 validation.
   2016-08/09 → 2017-01, source WIND from DP1.00001.001 (2D, available 2014-08) — a
   §10 script edit with mixed-provenance implications — or start the EC-clean record
   at 2017-02. An I5 / PI call. The download grabs everything regardless.
+
+### 12. Raw-data access RESOLVED — a NEON API token lifts the `/data/` block from HiPerGator (2026-08-01)
+
+**Verified empirically from a HiPerGator login node this session.** The §7
+gating unknown is resolved and §11's off-HPG framing is retired: **a free NEON
+API token lifts the 403.** The raw download runs **on HiPerGator** — no laptop,
+no Globus. This is exactly resolution option (1) §7 itself listed ("register a
+token … test whether it lifts the 403").
+
+#### 12.1 Evidence
+
+Token scope `rate:public` (JWT `sub = cdevaneprugh@ufl.edu`). From `login11.ufhpc`
+(outbound 128.227.78.10):
+
+| Layer | Anonymous | With token |
+|---|---|---|
+| Metadata (`/api/v0/products/…`) | 200 | 200 (never blocked) |
+| **Data listing (`/api/v0/data/DP1.00003.001/OSBS/2020-06`)** | **403** (3×) | **200** (3×) |
+| File bytes (`storage.googleapis.com`, presigned) | 200 — downloads fine, no token needed | 200 |
+| **`neonUtilities::zipsByProduct`** (the pipeline's real call) | — | **downloaded the RELEASE-2026 zip → `filesToStack00003/`** |
+
+End-to-end: `zipsByProduct(dpID="DP1.00003.001", site="OSBS",
+startdate=enddate="2020-06", release="RELEASE-2026", include.provisional=FALSE,
+token=…)` in the `neon-forcing` env (neonUtilities 2.4.0) found + downloaded the
+month's zip (902 KB) into the exact `filesToStack00003/` layout the HPG-side
+stacking consumes.
+
+#### 12.2 What the block actually was
+
+Not an IP ban, not a WAF, not the storage host, not rate-limiting (the 403
+carries a full rate quota, §7). NEON gates **anonymous** requests to the `/data/`
+*listing* endpoint from datacenter/HPC IP ranges; the token — identity-bearing,
+`rate:public` — clears that gate. The data bytes live on GCS via presigned URLs
+and were **never** blocked (that is also how pre-built v4 was fetched). §7's "a
+token is untested" is now tested: **the token is the fix.**
+
+#### 12.3 Consequence — the download moves on-HPG
+
+- **Off-HPG laptop + Globus path retired.** §11's Stage-1 laptop framing is
+  superseded; the laptop runbook `docs/neon-raw-download-runbook.md` is **removed**.
+- **`download_raw.R` repurposed** from a laptop/no-conda driver to on-HPG: run in
+  the `neon-forcing` env (neonUtilities 2.4.0 already present), pass the token,
+  land in `/blue` (`data/neon/met/DirDnld/`, gitignored). The `zipsByProduct` loop
+  is venue-independent — same `filesToStack<dpID>/` output either way.
+- **§11.1 availability + §11.4 downstream decisions stand** — API facts,
+  venue-independent. Only *where we run it* changes. Feeds §10 + I4 as before, now
+  from a local `/blue` cache.
+
+#### 12.4 Compute-node download — test ladder (before the full run)
+
+**Rung 0 (connectivity gate) is unnecessary — HiPerGator compute nodes have
+outbound internet (confirmed 2026-08-01), so the ladder starts at rung 1.** The
+remaining rungs settle the rest cheapest-first, each gating the next. Header
+convention: `--partition=hpg-default --account=gerber --qos=gerber-b`,
+`module load conda && conda activate neon-forcing`.
+
+| Rung | Job | De-risks |
+|---|---|---|
+| ~~0. Connectivity gate~~ | **Skipped** — compute nodes have outbound internet (confirmed 2026-08-01). | Was the make-or-break unknown; now resolved. Token-from-compute is exercised anyway by rung 1. |
+| **1. Real-tool smoke** | 1 core, 10 min. `zipsByProduct` one DP1 product, one month, in the activated env. | conda activates in batch, token flows through the real tool, `filesToStack…/` lands, no interactive `check.size` hang. Foldable into rung 0. |
+| **2. Exact-size manifest** | 1 core, ~15 min. Token now unblocks it: query `/data/<dpID>/OSBS/<month>?package=basic&release=RELEASE-2026` for all 10 products × every in-window month; sum `data.files[].size`. | **The ACTUAL full download size** (replaces the ~11 GB estimate, §11.2) + a per-product month manifest (confirms §11.1; catches any product returning 0). Pure metadata, no file bytes. Sets full-run disk + walltime budget. |
+| **3. EC probe** | 1 core, 30 min. `zipsByProduct` DP4.00200.001 (EC), one month. | EC is ~60% of the batch, HDF5, a heavier path than the DP1 CSVs — likeliest to behave differently. Measures per-EC-month size + time. |
+| **4. Sustained / timing** | 1 core, ~2 hr. One full product over 2016-08→2025-06 (or one year × all 10). | Throughput + any `rate:public` throttling over many sequential requests; whether a re-run **skips existing files** (resumability). Measured MB/s → full-run walltime. |
+| **Full run** | walltime from rung 4, **`--qos=gerber`** (non-burst — no preemption). Per-product `tryCatch` loop (already in `download_raw.R`). | The full pull into `/blue`. |
+
+Cross-cutting: **non-burst `--qos=gerber` for the full run** (burst can be
+preempted mid-download); **token** — lives at **`~/.neon_token`** (mode 600,
+in the user's home, deliberately **outside the public repo** — not committed;
+each user creates their own from a free NEON API token). The SLURM wrapper reads
+it with `export NEON_TOKEN=$(cat ~/.neon_token)`; `download_raw.R` then reads
+`Sys.getenv("NEON_TOKEN")`. Never echo it; keep it out of git and the SLURM `.out`;
+**resumability** — the per-product loop already keeps products 1..N−1 on a
+failure at N; **disk** — /blue has 1.9 TB free, ≫ the batch; **resources** —
+1 core, ~4 GB RAM, inside the `cpu=10 / 80 GB` QoS (no special approval).
+Walltime is the one genuine unknown → rung 4.
 
 ## Tasks
 
@@ -648,16 +730,17 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   integration issues found, each carrying to I6** (see Log). See §8, §9.
 - [ ] **I3. Stand up the pipeline — HiPerGator venue, raw-data access, R
   environment.** **Venue decided (2026-07-29): build and run on HiPerGator** (for
-  reproducibility, PI access, and output next to CTSM); the raw download is the one
-  necessary off-HPG step — NEON IP-blocks `/data/` from HPG (§7), so pull raw zips
-  on a non-blocked machine (`zipsByProduct`, released-only) and Globus them in.
+  reproducibility, PI access, and output next to CTSM); the raw download **also
+  runs on HPG** — a NEON API token lifts the `/data/` 403 (§12, resolving §7), so
+  `zipsByProduct` (released-only, token) runs on a compute node, no off-HPG step.
+  Run the §12.4 test ladder before the full pull.
   Environment = **conda-first hybrid**: conda-forge + bioconda supply 185/195
   packages (r-base, the HDF5/NetCDF stack, `eddy4R.qaqc` deps, `devtools`/`remotes`,
   and conda-forge compilers — *not* lmod gcc, for ABI match with conda's R); the
   remaining ~10 leaves install from source (`REddyProc` + `solartime`/`bigleaf`;
   `eddy4R.base`/`eddy4R.qaqc` via `install_github ref=898a72d`; `eddy4R.base` deps
   `DataCombine`/`EMD`/`robfilter`; standalone `metScanR`/`prism`) plus the local
-  `NEON.gf`. Point the offline script at the transferred cache via the `DirDnld`
+  `NEON.gf`. Point the offline script at the local `/blue` cache via the `DirDnld`
   seam + a `doDnld` flag (EC bundle already split; met products swap
   `loadByProduct` → `stackByTable`; `MethOut="local"`). **Sub-decision resolved (2026-07-29): conda-current versions + tolerance**
   (accepting a newer `r-base` than 4.0.5 — the 4.0.5 + 2023-pin combo is likely
@@ -665,9 +748,10 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   comparison** (I4), not bit-for-bit; `renv::restore()` pinned is the fallback
   *only if* that comparison fails to clear the reference band. Full plan: `docs/neon-forcing-pipeline-hipergator.md`. **Offline
   script edits + fork/repository strategy: Research note §10.** **Stage 1 raw-data
-  download built (2026-07-31): `scripts/neon_forcing/download_raw.R` +
-  `docs/neon-raw-download-runbook.md`; verified OSBS availability + list in
-  Research note §11.** See also Research notes §3, §7.
+  download built: `scripts/neon_forcing/download_raw.R`; verified OSBS availability
+  + list in §11. Access resolved on-HPG via token (§12); download runs on a compute
+  node (test ladder §12.4); the laptop runbook was removed.** See also Research
+  notes §3, §7.
 - [ ] **I4. Reproduce-v4 validation — go/no-go gate (fqc-partitioned comparison).**
   Run the pipeline for **2018–2024** (its default range = v4's), then compare the
   output against the v4 files from I2. Same generator + range → identical
@@ -789,6 +873,31 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-01 — Raw-data access RESOLVED: NEON API token lifts the `/data/` block; download moves on-HPG (Research §12)
+
+The §7 gating unknown is resolved. A free NEON API token (scope `rate:public`,
+the user's) lifts the `/data/` 403 from HiPerGator — verified empirically from
+login11: the `/data/` listing endpoint returns 403 anonymous / **200 with the
+token** (3× each), the GCS file bytes were never blocked, and
+`neonUtilities::zipsByProduct` (in the `neon-forcing` env, neonUtilities 2.4.0)
+downloaded a RELEASE-2026 month end-to-end into the `filesToStack…/` layout. The
+block was an **anonymous-request gate** on `/data/` from HPC IP ranges — not an
+IP ban / WAF / storage block / rate-limit — exactly §7's resolution option (1).
+
+Consequences (Research §12 added; §7, §11, §10.1, §3-venue, I3 reconciled):
+- **Download moves on-HPG** (compute node). The off-HPG laptop + Globus path is
+  retired; **`docs/neon-raw-download-runbook.md` removed**; `download_raw.R`
+  repurposed for on-HPG use (neon-forcing env + token; land in `/blue`; the
+  `zipsByProduct` loop is unchanged).
+- **Compute-node test ladder defined** (§12.4) before committing the full pull.
+  The make-or-break rung is whether `hpg-default` nodes have outbound internet at
+  all — both existing SLURM wrappers only touch local data, so it is untested.
+  Rungs: connectivity gate → real-tool smoke → **exact-size manifest** (the actual
+  full download size, now that the size endpoint is unblocked) → EC probe →
+  sustained/timing → full run (non-burst qos).
+
+Doc + one script-header change only; no compute-node job run yet.
 
 ### 2026-07-31 — Raw-data download: verified OSBS availability + Stage 1 artifacts (Research §11)
 

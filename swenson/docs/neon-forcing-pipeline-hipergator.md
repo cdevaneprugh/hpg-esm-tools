@@ -12,6 +12,16 @@ where the PI and future work can re-run it, and the output lands where CTSM uses
 it. Everything runs on HiPerGator except the one step that cannot: the raw NEON
 data pull.
 
+> **Superseded in part 2026-08-01 — the raw download is NOT off-HPG.** A NEON API
+> token lifts the `/data/` 403 from HiPerGator (verified empirically: 403
+> anonymous / 200 with token, 3×; `zipsByProduct` downloaded a RELEASE-2026 month
+> end-to-end). The Section 1 claim that "an API token does not help" is
+> **refuted** — the raw download now runs **on an HPG compute node**. See
+> `phases/I-neon-forcing.md` Research §12 for the evidence + the compute-node test
+> ladder. Sections 1, 2, and 4 below still describe the off-HPG/Globus path and are
+> pending a rewrite; the environment/pipeline content (Sections 3, 5+) is
+> unaffected.
+
 ---
 
 ## 1. The one unavoidable off-HPG step

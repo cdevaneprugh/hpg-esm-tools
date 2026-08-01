@@ -1,6 +1,6 @@
 # STATUS — Swenson Hillslope for OSBS
 
-**Updated:** 2026-07-15
+**Updated:** 2026-08-01
 
 ## Project context
 
@@ -141,7 +141,7 @@ are the canonical record.
 | F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19. Convergence PASS; TAI signal ABSENT; lake stable. PI investigating TAI / bridge-zone. Plots at `output/2026-05-19_osbs.swenson.spinup_timeseries/` |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
 | H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
-| I | NEON atmospheric forcing | **In progress (I1–I2.5 done)** | Single linear plan: fetch v4 → build + validate our own pipeline → full 2016–2026 dataset → CTSM integration (PI-gated tail). Claims verified; NEON not a drop-in for CRUNCEP (§8); integration smoke test PASSED (v4 forcing + hillslope run cleanly). Input-quality upgrade, independent of routing on/off |
+| I | NEON atmospheric forcing | **In progress (I1–I2.5 done)** | Single linear plan: fetch v4 → build + validate our own pipeline → full 2016–2026 dataset → CTSM integration (PI-gated tail). Claims verified; NEON not a drop-in for CRUNCEP (§8); integration smoke test PASSED (v4 forcing + hillslope run cleanly). Raw-data `/data/` block RESOLVED (2026-08-01 — API token lifts it from HPG); download runs on a compute node (off-HPG path retired; test ladder in phase §12.4). Input-quality upgrade, independent of routing on/off |
 
 ## Roadmap
 
@@ -246,6 +246,7 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-08-01** — Phase I raw-data access **RESOLVED**: a free NEON API token (scope `rate:public`) lifts the `/data/` 403 from HiPerGator — verified from login11 (403 anonymous / 200 with token, 3×; `neonUtilities::zipsByProduct` downloaded a RELEASE-2026 month end-to-end in the `neon-forcing` env). The block was an anonymous-request gate on `/data/` from HPC IP ranges, not an IP ban / storage block / rate-limit. **Consequence:** the raw download **moves on-HPG** (compute node) — the off-HPG laptop + Globus path is retired, `docs/neon-raw-download-runbook.md` **removed**, `download_raw.R` repurposed for on-HPG use. A **compute-node test ladder** (real-tool smoke → exact-size manifest → EC probe → sustained/timing → full run) is defined before the full pull; the connectivity gate is unnecessary — compute nodes have outbound internet (confirmed 2026-08-01). See `phases/I-neon-forcing.md` Research §12.
 - **2026-07-15** — PI decisions folded into Phase I: (1) **released data only** — the custom dataset targets 2016-08 → 2025-06 (RELEASE-2026 cut), excluding the provisional 2025-07 → 2026-06 tail (I5 / I8(c) resolved); (2) **production hillslope file no longer frozen** — PI proceeding with the existing file via soil-value adjustments (some concerns remain, in the PI's wheelhouse), so Phase I adoption (I8) is not freeze-blocked. See `phases/I-neon-forcing.md`.
 - **2026-07-15** — Phase I task **I2.5 done — integration smoke test PASSED**. Built + ran a cold-start `1PT` + hillslope case (`$CASES/osbs.swenson.neon-v4-smoke`) on the v4 forcing via a `user_nl_datm_streams` `datafiles` override: 2-yr run completed, 26 hillslope columns active, forcing ingested (measured FLDS, CDEPS-converted RH) — §8/§9 confirmed end-to-end. Found 4 integration issues that carry to I6: force `MPILIB=openmpi`; the operative case's 6-file hydrology SourceMod set (needed for `spillheight`); surfdata-vs-NEON coordinate mismatch (~120 m → set `PTS_LAT/LON` to surfdata coords); walltime budget. See `phases/I-neon-forcing.md`.
 - **2026-07-15** — Phase I task **I2 done** — fetched pre-built NCAR-NEON v4 forcing (84 files, 2018-01 → 2024-12, 12.08 MB) to `swenson/data/datm/neon_OSBS/v4/OSBS/` (`*.nc` gitignored; provenance README alongside). Integrity 84/84; v3 sanity check PASS (v4 is a full reprocessing, differences reprocessing-scale — RMS Δ TBOT 0.17 K, PSRF 9 Pa). First operational Phase I step. See `phases/I-neon-forcing.md`.

@@ -1,33 +1,35 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# download_raw.R -- off-HPG raw NEON tower download for the OSBS forcing pipeline
-# (Phase I, Stage 1). Runs on a NON-HiPerGator machine (the user's laptop): NEON
-# IP-blocks the /data/ API from HiPerGator, so the raw pull happens off-cluster
-# and the resulting DirDnld/ is Globus-transferred to HPG for offline processing
-# by flow.api.clm.R.
+# download_raw.R -- raw NEON tower download for the OSBS forcing pipeline
+# (Phase I, Stage 1). Runs ON HiPerGator: a NEON API token lifts the /data/ 403
+# from HPG (phases/I-neon-forcing.md Research note 12), so the raw pull runs on a
+# compute node -- no off-HPG laptop, no Globus. The resulting DirDnld/ is read in
+# place by the offline flow.api.clm.R run.
 #
 # License: MIT (hpg-esm-tools). Our own driver code -- it only *calls* NEON's
 # neonUtilities package; it does not copy or modify NEON (AGPL) source.
 #
-# Requires: R + the neonUtilities package. NO conda, NO pip. See the runbook
-#   swenson/docs/neon-raw-download-runbook.md for install steps + the no-root
-#   human-action pause points.
+# Requires: the `neon-forcing` conda env (neonUtilities >= 2.4.0) + a NEON API
+#   token in $NEON_TOKEN. Invoke from a SLURM wrapper that does
+#   `module load conda && conda activate neon-forcing`.
 #
-# Usage (laptop, neonUtilities already installed):
-#   Rscript download_raw.R
-# Edit the CONFIG block first (at minimum DIRDNLD). Expect ~11 GB; ~20 GB free.
+# Before the full pull, run the phases/I-neon-forcing.md 12.4 test ladder
+#   (connectivity gate -> real-tool smoke -> exact-size manifest -> EC probe ->
+#   timing). Expect ~11 GB (confirm the exact size via the 12.4 manifest); /blue
+#   has the space.
 # =============================================================================
 
 ## ---- CONFIG (edit these) --------------------------------------------------
 SITE     <- "OSBS"                                # NEON site (domain D03)
-DIRDNLD  <- path.expand("~/neon_osbs_dirdnld")    # download root -> becomes DirDnld on HPG
+DIRDNLD  <- Sys.getenv("NEON_DIRDNLD",            # on-HPG root (gitignored /blue); wrapper may override
+  "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/neon/met/DirDnld")
 START    <- "2016-08"                             # first month (precip-limited full record)
 END      <- "2025-06"                             # last month (RELEASE-2026 released cut)
 RELEASE  <- "RELEASE-2026"                        # released data only ...
 PROVIS   <- FALSE                                 # ... exclude provisional (a moving target)
 PACK     <- "basic"                               # matches flow.api.clm.R  Pack <- "basic"
-TOKEN    <- Sys.getenv("NEON_TOKEN", "")          # optional free NEON API token -> higher
-                                                  #   rate limits; export NEON_TOKEN to use it
+TOKEN    <- Sys.getenv("NEON_TOKEN", "")          # NEON API token -- REQUIRED on HPG: lifts the
+                                                  #   /data/ 403 (phases/I 12). export NEON_TOKEN.
 
 # The products flow.api.clm.R consumes, CORRECTED for verified OSBS availability:
 #   - DP1.00006.001 (the script's coded secondary precip) DROPPED: 0 months at OSBS.
@@ -48,8 +50,8 @@ PRODUCTS <- c(
 ## ---------------------------------------------------------------------------
 
 if (!requireNamespace("neonUtilities", quietly = TRUE)) {
-  stop("neonUtilities is not installed. See swenson/docs/neon-raw-download-runbook.md\n",
-       "  Install into a USER library (no root needed via the Posit PPM binary repo).")
+  stop("neonUtilities not found. Activate the `neon-forcing` conda env first\n",
+       "  (see scripts/neon_forcing/build_env.sh); neonUtilities 2.4.0 is provided there.")
 }
 
 if (!dir.exists(DIRDNLD)) dir.create(DIRDNLD, recursive = TRUE)
