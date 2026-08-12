@@ -429,18 +429,34 @@ extends beyond that, override the active `NEON.$SITE` stream's `datafiles` in
 `user_nl_datm_streams`" caveat was only about *adding* a stream or flipping
 `datamode`), and set `DATM_YR_START/END` to span the fuller range.
 
-### 10. Offline script modifications + repository strategy (2026-07-31)
+### 10. Script modifications + repository strategy (2026-07-31; architecture decided 2026-08-12)
 
-**Re-verified against the on-disk clone this session**
+**Re-verified + audited against the on-disk clone this session**
 (`$NCAR_NEON_DIR/TowerTools_ForcingData/flow.api.clm.R`, 1,480 lines). Records
-(a) where the modified script lives and under what license, and (b) the exact
-edits that take the stock auto-downloading script offline.
+(a) where the modified script lives and under what license, (b) the code audit,
+and (c) the exact Option B edit list.
+
+> **Architecture DECIDED 2026-08-12 — Option B (download-once, then offline).**
+> The approach was revisited twice and is now settled. **v1** offline conversion →
+> **v2** self-download (since a token lets the script download on HPG, just inject
+> the token and let it pull each run) → **v3 / Option B (chosen):**
+> `download_raw.R` pulls **all** products once (authenticated `zipsByProduct`) into
+> a persistent shared archive on `/blue`, and `flow.api.clm.R` runs **fully
+> offline** against it. Rationale (user, across this session): (1) **limit
+> downloads** — pull once, process many times; (2) **persist a complete raw
+> archive** at `/blue/gerber/earth_models/shared.neon.data-raw` (self-download
+> can't — `loadByProduct` discards met/precip to tempdir, §10.2); (3) **keep
+> transient files off the shared node `/tmp`**. Consequence: **the token lives in
+> `download_raw.R`, not in `flow.api.clm.R`** (which no longer downloads). §10.2
+> (audit) + §10.3 (Option B edits + sketches) supersede the v2 self-download map.
 
 #### 10.1 Repository strategy — fork, do not vendor
 
-The offline behavior *requires* editing `flow.api.clm.R` (the `doDnld` guards
-below can't be applied from outside), so we produce a **modified derivative of
-NEON's code**. Where it can live is fixed by license:
+Running on HPG *requires* editing `flow.api.clm.R` — taking it offline (guard its
+downloads, swap `loadByProduct`→`stackByTable`, repoint `DirDnld`, set
+`MethOut="local"`), none of which can be done from outside the script — so we
+produce a **modified derivative of NEON's code**. Where it can live is fixed by
+license:
 
 | Repo | License | Verified |
 |---|---|---|
@@ -468,77 +484,120 @@ upstream, reference by env var" pattern (`ctsm5.3`, `pysheds_fork`).
   wrapper does **not** make the wrapper a derivative — the copyleft boundary is
   copying/editing their source, not calling it as a separate process.
 
-**Mechanics (verified):** `gh` is not on PATH but is available via
-`module load github-cli/2.40.1`; SSH to GitHub authenticates as `cdevaneprugh`.
-The clone's `origin` is currently `NEONScience/NCAR-NEON` (HTTPS); fork setup
-re-points `origin` → the fork (SSH) and keeps `upstream` → NEON. Working tree is
-clean on `main`.
+**Mechanics (done 2026-08-12):** the fork exists at
+`github.com/cdevaneprugh/NCAR-NEON` (created via the web UI — `gh` is
+unauthenticated; SSH authenticates as `cdevaneprugh`). The clone `$NCAR_NEON_DIR`
+now has `origin` → the fork (SSH) + `upstream` → NEON (HTTPS), all mains in sync at
+`43a0cf4`; edits go on the **`uf-osbs`** branch (off the fork's main), with `main`
+kept as a clean upstream mirror.
 
 **Residual external dependency:** `eddy4R` (`898a72d`) is a second AGPL repo the
 env build pulls from GitHub. Pinned by SHA; fork it too for full durability if
 desired (not required now).
 
-#### 10.2 Offline modification map — `flow.api.clm.R` (line numbers verified 2026-07-31)
+#### 10.2 Code audit + Option B edit list (2026-08-12)
 
-The stock script auto-downloads via `neonUtilities` at **six** call sites and
-wipes `DirDnld` mid-run. The download surface is **not** a single seam — the EC
-bundle is separable, the met/precip products are not.
+Full audit of `flow.api.clm.R` and the surrounding repo before running unfamiliar
+research code. Two structural facts shrink the blast radius:
 
-| # | Line(s) | Stock behavior | Edit | Risk |
-|---|---|---|---|---|
-| 1 | 26; 29–34 | `packReq` auto-install loop: `require()` → if FALSE, `install.packages()` from live CRAN | Replace loop body with `requireNamespace()` + `stop()`; keep `library()` load | none — env pre-satisfies all 14 (incl. `mlegp`) |
-| 2 | 195 | `zipsByProduct` (EC bundle `DP4.00200.001`) → `DirDnld/filesToStack00200/` | Guard behind `if (doDnld)`; pre-stage zips offline | low — separable |
-| 3 | 251, 256, 331, 332 | `stackEddy` on `DirDnld/filesToStack00200/` | keep as-is — already offline | none |
-| 4 | 487; 489 | `file.remove` wipes `DirExtr` (487) and **`DirDnld` (489)** | Gate both behind `if (doDnld)` — cleanup only when we downloaded | **HIGH if unguarded** — 489 deletes pre-staged met/precip zips before step 5 reads them |
-| 5 | 527 | `loadByProduct` (met products, `lapply` over `listDpNum`) — download **+** stack | Swap → `stackByTable` on pre-staged zips; reconcile return shape (`loadByProduct` returns a named list) | MEDIUM — behavior |
-| 6 | 539 | `getProductInfo("DP1.00044.001")` — API query for the primary-precip site list | Hardcode `sitePrecip <- Site` (OSBS has the weighing gauge — verified I1) | low |
-| 7 | 547 | `loadByProduct` (primary precip `DP1.00044.001`) — download **+** stack | Same swap as #5 | MEDIUM — behavior |
-| — | 56 | `MethOut <- c("local","gcs")[2]` — **defaults to uploading to NEON's GCS bucket** (the `# CHANGE ME` marker) | Set `[1]` `"local"` (GCS upload at 1330–1363, 1466 is `if(MethOut=="gcs")`-gated) | low |
+- **`flow.api.clm.R` is self-contained — no `source()` calls**; gap-filling runs
+  through the installed `NEON.gf` / `REddyProc` / `eddy4R` packages. So every
+  personal path in the *other* repo scripts is **dead code for our run**:
+  `flow.gf.precip.R` (`/home/ddurden/...`), `flow.gf.amf.mod.R`
+  (`C:/Users/csturtevant/...`), `create.surface.data.R` (`/Users/sweintraub/...`),
+  `Filled_makeNetCDF.R` (`/Users/wwieder/...`), `flow.renv.init.rstr.R`.
+- **The env is complete for our path.** Of the ~25 packages the script references,
+  only `devtools` / `aws.s3` / `accs` are missing — and **every call site for those
+  is commented out and/or inside the `if(MethOut=="gcs")` block**. All 14 `packReq`
+  packages are present, so the auto-install loop no-ops.
 
-**Corrections to earlier in-chat claims** (found by this re-verification): the
-auto-install loop is lines **29–34** (vector at 26), not "27–38"; the wipe is
-lines **487 + 489**, not "489–490."
+Findings by severity:
 
-#### 10.3 Solution sketches
+| Sev | Line(s) | Finding |
+|---|---|---|
+| **BREAKER** | 113 | `DirDnld = "/home/ddurden/eddy/tmp/CLM"` — author's home dir, not writable on HPG, **not** overridden by `METHPARAFLOW` → `dir.create`/read fails |
+| **BREAKER** | 487, 489 | end-of-EC `file.remove` wipes `DirExtr`/`DirDnld` — if `DirDnld` = our shared archive, this **deletes the archive** |
+| **FRAGILE** | 505, ~523 | secondary precip `DP1.00006.001` absent at OSBS; author hardcodes a per-site kludge (`TOOL`→`TOOK`) — proof it isn't universal. OSBS has no patch → returns empty |
+| quirk | 508 | `WS_MDS` carries a HARV-specific comment + 2D-wind/sonic redundancy — runtime-verify for OSBS |
+| quirk | 152 | `dateBgn` shifted back 1 day ("neonUtilities a month behind") — intentional |
+| dead | 68; 159–188; 1330–1367 | GCS credential + the S3/GCS pre-download check (commented) + the upload block (`if(MethOut=="gcs")`) — all sidestepped by `MethOut="local"` |
+| cosmetic | 24, 38–46 | commented install scars (`remove.packages`, `detach(rlang)`, `devtools::install_github`) |
 
-**packReq hard-stop (edit #1)** — load-or-halt, no network, no version drift:
+**tempdir (informs the architecture):** `loadByProduct` (527, 547) downloads to R's
+`tempdir()`, stacks in-memory, and **discards** — a function default, not a design
+choice (EC uses `zipsByProduct`→`stackEddy` because HDF5 requires it). This is *why*
+self-download can't persist met/precip, and part of why Option B wins.
 
+**Option B edits — `flow.api.clm.R` (on `uf-osbs`).** `download_raw.R` pre-stages
+all products into the shared archive; the script reads them offline — **no token,
+no `release`/`provisional` args in the script** (those live in `download_raw.R`):
+
+| # | Line(s) | Edit | Risk |
+|---|---|---|---|
+| **D** | 113 | `DirDnld` → `/blue/gerber/earth_models/shared.neon.data-raw` (base; line 131 appends `/OSBS`) | low |
+| **G** | 195 | guard the EC `zipsByProduct` behind `if(doDnld)` (`doDnld <- FALSE`) — data pre-staged, skip the download | low |
+| **S** | 527, 547 | `loadByProduct` → `stackByTable` on the pre-staged `filesToStack<num>/` dirs; reconcile the return shape (`dataMet` / `P` expect the `loadByProduct` named-list) | **MEDIUM — behavior** |
+| **W** | 487, 489 | gate both `file.remove` wipes behind `if(doDnld)` — else they delete the shared archive | low (HIGH if skipped) |
+| **M** | 56 | `MethOut` `[2]` → `[1]` (`"local"`) | low |
+| **Pr** | 505 | secondary precip `DP1.00006.001` → `DP1.00045.001` (tipping; OSBS has it, and it's what the archive holds) | low |
+
+Optional: **getProductInfo hardcode** (539) — metadata call; works on the networked
+compute node, but `sitePrecip <- Site` (OSBS verified to have primary precip
+`DP1.00044.001`) removes the last network dependency. **packReq hard-stop** (29–34)
+— safety vs live-CRAN; no-ops (env complete).
+
+**`download_raw.R` (hpg-esm-tools):** point `DIRDNLD` at
+`/blue/gerber/earth_models/shared.neon.data-raw/OSBS` so its `filesToStack<num>/`
+land where the script's `DirDnld/OSBS/` expects (mind line 131's `/Site` append). It
+already carries the token, `release="RELEASE-2026"`, `include.provisional=FALSE`, and
+the 10-product list.
+
+#### 10.3 Solution sketches + the two-step run
+
+Option B splits into two committed steps, each its own SLURM wrapper:
+
+**Step 1 — `download_raw.R` (authenticated, once).** Wrapper exports
+`NEON_TOKEN=$(cat ~/.neon_token)` + `TMPDIR=$BLUE/.tmp/...`, activates
+`neon-forcing`, runs `download_raw.R` → the shared archive fills with
+`filesToStack<num>/` for all 10 products (released-only). Re-runs skip present files.
+
+**Step 2 — `flow.api.clm.R` offline (many times, cheap).** Wrapper sets
+`METHPARAFLOW=1` + `SITE/DATEBGN/DATEEND/DIROUT/LOWMEM` + `TMPDIR`, activates
+`neon-forcing`, `Rscript`s the forked script. **No token** — it doesn't download.
+Reads the archive → gap-fills → `OSBS_atm_*.nc` in `DIROUT`.
+
+Edit sketches:
+
+**`doDnld` guard (G, W)** — `doDnld <- FALSE` near the top; wrap the EC
+`zipsByProduct` (195) and both `file.remove` wipes (487, 489) in `if(doDnld){...}`.
+Keeps the script switchable and protects the archive.
+
+**`loadByProduct` → `stackByTable` (S — the only risky edit)** — `loadByProduct` ≡
+`zipsByProduct` + `stackByTable`; offline we call only
+`stackByTable(filepath=<DirDnld>/filesToStack<num>, savepath="envt")` and reshape to
+the `loadByProduct` named-list `dataMet` / the primary-precip `P` expect. **Test in
+isolation** on one product before wiring the whole `lapply`.
+
+**D / M / Pr** — one-liners (`DirDnld` path, `MethOut="local"`, precip DP repoint).
+
+**packReq hard-stop (optional):**
 ```r
 invisible(lapply(packReq, function(x) {
-  if (!requireNamespace(x, quietly = TRUE))
-    stop("Package not in env (build_env.sh should have installed it): ", x)
+  if (!requireNamespace(x, quietly = TRUE)) stop("Missing from env: ", x)
   library(x, character.only = TRUE)
 }))
 ```
 
-Better than commenting the loop out: a genuinely-missing package halts loudly
-instead of silently pulling a fidelity-breaking modern version from live CRAN.
-
-**`doDnld` switch (edits #2, #4)** — keep the script *switchable*, not gutted.
-Define `doDnld <- FALSE` near the top; wrap the EC `zipsByProduct` and both
-`file.remove` wipes in `if (doDnld) { ... }`. `TRUE` = online (a non-blocked
-machine), `FALSE` = offline on HPG. Defaults preserve online behavior.
-
-**`loadByProduct` → `stackByTable` (edits #5, #7)** — the only behavior-risk edits.
-`loadByProduct` ≡ `zipsByProduct` + `stackByTable`, and only `stackByTable` is
-offline. Point it at the pre-staged `filesToStack<dpID>/` dirs. Must reconcile the
-return-shape difference (downstream `dataMet` expects the `loadByProduct`
-named-list shape). **Test this edit in isolation.**
-
-**Sequencing suggestion:** land the low-risk edits (#1 packReq, #2/#4 `doDnld`
-guards, #6 `getProductInfo`, line-56 `MethOut`) as the first commits on the fork
-branch — they preserve correctness and online behavior. Treat #5/#7
-(`loadByProduct` swap) as a separate, reviewed, tested commit.
-
 **Invocation contract (verified):** the script has **no `setwd`/`getwd`/`source()`
-of siblings** — cwd is irrelevant; run it by absolute path. Config enters via env
-vars **only if `METHPARAFLOW` is set** (then `SITE`, `DATEBGN`, `DATEEND`,
-`DIROUT`, `LOWMEM`); otherwise it falls to hardcoded defaults (`Site="TOOL"`).
-Drive it from a **committed `run_*.sh` SLURM wrapper** that sets `METHPARAFLOW=1` +
-the knobs, `module load conda`, `conda activate neon-forcing`, then
-`Rscript <abs path>` — **not** persistent/global env vars (they leak into every
-shell/job) and **not** ad-hoc command line (not reproducible). The wrapper is our
-code → hpg-esm-tools (MIT).
+of siblings** — run it by absolute path. Config enters via env vars **only if
+`METHPARAFLOW` is set** (`SITE`, `DATEBGN`, `DATEEND`, `DIROUT`, `LOWMEM`).
+`DirDnld` and `TMPDIR` are **not** in that block — `DirDnld` is edit D (hardcoded to
+the shared archive), `TMPDIR` is a wrapper export (keeps temp off shared `/tmp`).
+Both wrappers are our code → hpg-esm-tools (MIT).
+
+**Sequencing:** land D/G/W/M/Pr (mechanical) as one commit; treat S (`stackByTable`)
+as a separate, tested commit. Smoke-test Step 2 on a 1-month window (pre-staged by a
+1-month Step 1) before the full run.
 
 ### 11. Raw-data download — verified OSBS availability + Stage 1 artifacts (2026-07-31)
 
@@ -658,9 +717,10 @@ token is untested" is now tested: **the token is the fix.**
 - **Off-HPG laptop + Globus path retired.** §11's Stage-1 laptop framing is
   superseded; the laptop runbook `docs/neon-raw-download-runbook.md` is **removed**.
 - **`download_raw.R` repurposed** from a laptop/no-conda driver to on-HPG: run in
-  the `neon-forcing` env (neonUtilities 2.4.0 already present), pass the token,
-  land in `/blue` (`data/neon/met/DirDnld/`, gitignored). The `zipsByProduct` loop
-  is venue-independent — same `filesToStack<dpID>/` output either way.
+  the `neon-forcing` env (neonUtilities 2.4.0 already present), pass the token. Under
+  **Option B (§10)** it is the **required Step 1** and lands in the shared archive
+  `/blue/gerber/earth_models/shared.neon.data-raw/OSBS`. The `zipsByProduct` loop is
+  venue-independent — same `filesToStack<dpID>/` output either way.
 - **§11.1 availability + §11.4 downstream decisions stand** — API facts,
   venue-independent. Only *where we run it* changes. Feeds §10 + I4 as before, now
   from a local `/blue` cache.
@@ -740,9 +800,9 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   remaining ~10 leaves install from source (`REddyProc` + `solartime`/`bigleaf`;
   `eddy4R.base`/`eddy4R.qaqc` via `install_github ref=898a72d`; `eddy4R.base` deps
   `DataCombine`/`EMD`/`robfilter`; standalone `metScanR`/`prism`) plus the local
-  `NEON.gf`. Point the offline script at the local `/blue` cache via the `DirDnld`
-  seam + a `doDnld` flag (EC bundle already split; met products swap
-  `loadByProduct` → `stackByTable`; `MethOut="local"`). **Sub-decision resolved (2026-07-29): conda-current versions + tolerance**
+  `NEON.gf`. **Option B (decided 2026-08-12):** `download_raw.R` pulls all products
+  once into the shared archive; the forked script runs **offline** against it —
+  edits D/G/S/W/M/Pr (§10.2/§10.3), token in the downloader not the script. **Sub-decision resolved (2026-07-29): conda-current versions + tolerance**
   (accepting a newer `r-base` than 4.0.5 — the 4.0.5 + 2023-pin combo is likely
   unsolvable on conda). Run 1 is validated against v4 by the **fqc-partitioned
   comparison** (I4), not bit-for-bit; `renv::restore()` pinned is the fallback
@@ -873,6 +933,59 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-12 — Architecture DECIDED: Option B (download-once + offline); NCAR-NEON code audited; fork set up
+
+Superseding the self-download plan from earlier today. After auditing the code and
+weighing the user's constraints (limit downloads, persist a complete raw archive,
+keep temp off shared `/tmp`), the pipeline is **Option B**: `download_raw.R` pulls
+all 10 products once (authenticated) into
+`/blue/gerber/earth_models/shared.neon.data-raw`, and the forked `flow.api.clm.R`
+runs **fully offline** against it (token in the downloader, not the script).
+
+- **Code audit** (§10.2): `flow.api.clm.R` is self-contained (no `source()`),
+  gap-fills via installed packages → every personal path in the *other* repo scripts
+  (`/home/ddurden`, `C:/Users/csturtevant`, `/Users/{wwieder,sweintraub}`) is dead.
+  Env complete (missing `devtools`/`aws.s3`/`accs` are all commented/gcs-gated).
+  **Two breakers:** `DirDnld` hardcoded to the author's home (113); the end-of-EC
+  `file.remove` wipe (487/489) that would delete our archive. Precip `DP1.00006.001`
+  absent at OSBS (author kludges `TOOL`→`TOOK`) — fragile.
+- **Option B edits** (§10.2/§10.3): **D** DirDnld→shared archive, **G** guard EC
+  download, **S** `loadByProduct`→`stackByTable` (the one MEDIUM-risk edit), **W**
+  guard the wipe, **M** `MethOut="local"`, **Pr** precip DP→`DP1.00045.001`
+  (tipping); optional getProductInfo-hardcode + packReq. `download_raw.R` `DIRDNLD`
+  → the shared archive. Wrapper exports `TMPDIR=$BLUE/.tmp/...` (temp off `/tmp`).
+- **tempdir finding:** `loadByProduct` downloads to R `tempdir()` and discards — a
+  function default, which is *why* self-download can't persist met/precip. Verified
+  R honors `$TMPDIR` (→ `/blue`).
+- **Fork set up:** `origin`→`cdevaneprugh/NCAR-NEON` (SSH), `upstream`→NEON, branch
+  **`uf-osbs`** off `43a0cf4`; `main` kept as upstream mirror.
+
+Doc only — **no script edits made yet** (`flow.api.clm.R` + `download_raw.R`
+`DIRDNLD` are the next step, pending greenlight). §10 rewritten; I3 + §12.3 updated.
+
+### 2026-08-12 — §10 edit list slashed: downloads work → inject the token, don't disable them (Research §10 revised)
+
+Since §12 (a token lifts the `/data/` 403 on HPG), the offline-conversion approach
+is dropped. The script downloads its own data; we only authenticate it and
+redirect output. Verified this session: neonUtilities 2.4.0 does **not** auto-read
+`NEON_TOKEN` (env var set, no `token=` arg → "No files found" / 403, 0 zips), and
+the stock script's 3 data calls (195, 527, 547) pass no token — so a token edit is
+required, but it **replaces** the 5 offline edits rather than adding to them.
+
+- **Required:** inject `token = Sys.getenv("NEON_TOKEN")` into the 3 data calls;
+  set `MethOut="local"` (line 56 — else it uploads output to NEON's GCS bucket).
+- **Dropped:** the `doDnld` guards (#2/#4), the `loadByProduct`→`stackByTable`
+  swaps (#5/#7 — both MEDIUM-risk), the `getProductInfo` hardcode (#6). All were
+  offline-only.
+- **Optional:** `packReq` hard-stop (#1) — safety vs live-CRAN drift.
+- **Consequence:** `download_raw.R` + the pre-download test ladder become
+  **optional** (the script self-downloads); the smoke test is now "run the script
+  for one month." §10.2 / §10.3 rewritten to the minimal set; the offline map kept
+  as "dropped" for the reasoning; the I3 task sentence updated.
+
+Doc only — **no fork created, no script edits made** (per user: make the doc
+edits, wait to start the fork).
 
 ### 2026-08-01 — Raw-data access RESOLVED: NEON API token lifts the `/data/` block; download moves on-HPG (Research §12)
 
