@@ -21,10 +21,10 @@
 
 ## ---- CONFIG (edit these) --------------------------------------------------
 SITE     <- "OSBS"                                # NEON site (domain D03)
-DIRDNLD  <- Sys.getenv("NEON_DIRDNLD",            # on-HPG root (gitignored /blue); wrapper may override
-  "/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/data/neon/met/DirDnld")
-START    <- "2016-08"                             # first month (precip-limited full record)
-END      <- "2025-06"                             # last month (RELEASE-2026 released cut)
+DIRDNLD  <- Sys.getenv("NEON_DIRDNLD",            # shared on-HPG archive (Option B); wrapper may override
+  "/blue/gerber/earth_models/neon/raw/OSBS")      #   flow.api.clm.R reads filesToStack<num>/ in place
+START    <- Sys.getenv("NEON_START", "2016-08")   # first month (precip-limited full record); wrapper may scope
+END      <- Sys.getenv("NEON_END",   "2025-06")   # last month (RELEASE-2026 released cut); wrapper may scope
 RELEASE  <- "RELEASE-2026"                        # released data only ...
 PROVIS   <- FALSE                                 # ... exclude provisional (a moving target)
 PACK     <- "basic"                               # matches flow.api.clm.R  Pack <- "basic"
@@ -91,4 +91,5 @@ sz <- tryCatch(system(paste("du -sh", shQuote(DIRDNLD), "| cut -f1"), intern = T
 message("\nTotal in ", DIRDNLD, ": ", sz, "  (expected ~11 GB)")
 message("Note: 0 zips for a product means it is unavailable at ", SITE,
         " for this window/release -- expected only if a product was mis-listed.")
-message("Next: Globus ", DIRDNLD, " to HiPerGator (see the runbook).")
+message("Next: run flow.api.clm.R offline against ", DIRDNLD,
+        " (Option B; see phases/I-neon-forcing.md §10).")
