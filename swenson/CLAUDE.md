@@ -138,7 +138,10 @@ swenson/
     │   ├── environment.yml       # conda spec for the env
     │   ├── install_source_pkgs.R # Off-conda R pkgs (eddy4R / REddyProc / NEON.gf)
     │   ├── Makevars.conda        # R source-build flags (conda gcc, -std=gnu17)
-    │   └── download_raw.R        # Raw NEON tower download — on-HPG via API token (phases/I §12)
+    │   ├── download_raw.R        # Raw NEON tower download — on-HPG via API token (phases/I §12)
+    │   ├── run_download.sh       # Step 1 SLURM wrapper (auth download → shared archive; scope via NEON_START/END)
+    │   ├── run_forcing.sh        # Step 2 SLURM wrapper (offline flow.api.clm.R → DATM forcing; no token)
+    │   └── size_manifest.R       # Full-pull size probe (metadata-only; 22.6 GB basic, phases/I §12.4)
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay

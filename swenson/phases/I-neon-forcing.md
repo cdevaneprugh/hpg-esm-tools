@@ -497,6 +497,13 @@ desired (not required now).
 
 #### 10.2 Code audit + Option B edit list (2026-08-12)
 
+> **IMPLEMENTED + smoke-tested 2026-08-12 — the table below is the *planned* set.**
+> The *final* set = this table **plus two edits testing forced** (**C** tempdir
+> isolation so `stackByTable` can't consume the archive; **P2** non-fatal CO₂
+> partition), with **S** upgraded to a per-call copy and **T** to a POSIXct period-end
+> clip. Full narrative + the five issues that surfaced: the `2026-08-12 (impl)` Log
+> entry. Paths also changed: archive `neon/raw/OSBS`, `DIROUT` `…/custom`.
+
 Full audit of `flow.api.clm.R` and the surrounding repo before running unfamiliar
 research code. Two structural facts shrink the blast radius:
 
@@ -933,6 +940,72 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-12 (impl) — Option B implemented + smoke-validated end-to-end
+
+Executed the plan. `flow.api.clm.R` (fork `uf-osbs`) now runs **fully offline**
+against the shared archive; a **Mar–Jun 2018 smoke run produced 4 atm + 4 eval
+NetCDFs** whose atm output **matches the pre-built v4** (FLDS/FSDS/RH/PSRF identical;
+TBOT/WIND/PRECT within reprocessing scale). **Paths (user-chosen this session):** raw
+archive `/blue/gerber/earth_models/neon/raw/OSBS` (a `neon/` parent, *not*
+`shared.neon.data-raw`); `DIROUT` `swenson/data/datm/neon_OSBS/custom` →
+`custom/OSBS/{atm,eval}/OSBS_atm_YYYY-MM.nc`.
+
+**Commits (all local, unpushed):** fork `uf-osbs` `2d30ebb` (mechanical) + `07786dd`
+(behavior, tested); hpg-esm-tools `ba4d922` (download_raw.R DIRDNLD + `run_download.sh`
+/ `run_forcing.sh` wrappers) + `cac3be9` (`size_manifest.R`).
+
+**Final edit set** (supersedes the planned D/G/S/W/M/Pr list):
+- Mechanical (`2d30ebb`): **D** DirDnld base→`neon/raw`, **G** guard EC `zipsByProduct`,
+  **W** guard both `file.remove` wipes, **M** `MethOut="local"`, **getProductInfo**→
+  `sitePrecip<-"OSBS"`, **packReq** fail-fast; all keyed off `doDnld<-FALSE`.
+- Behavior, tested (`07786dd`): **S** `loadByProduct`→`stackByTable`, **Pr** precip→
+  `DP1.00045.001`, **T** flux date-clip — plus **C** and **non-fatal partition (P2)**,
+  two edits that only surfaced under testing.
+
+**Five issues surfaced by testing (none visible in static analysis — the reason S/T
+were gated behind a test):**
+1. `stackByTable`/`stackEddy` **mutate — and `stackByTable` DELETES — their input
+   zips**, so stacking the archive in place consumes it. → **edit C**: offline runs
+   copy the archive zips to a per-session `tempdir()` and stack there; the archive
+   stays zips-only (verified across every subsequent run: 0 non-zip files).
+2. `FLDS_MDS` + `Rg` both map to **DP1.00023.001**; the first stack deletes the copy,
+   the second returns a `try`-error → table-selector crash. → **edit S** copies each
+   product to a **fresh per-call `tempfile()` dir**.
+3. **REddyProc requires ≥ 90 days** of flux (`fCheckHHTimeSeries`); a 1-month smoke
+   fails "60 days missing". Sub-window runs must be ≥ 3 months (v4 was built from long
+   runs); re-scoped the smoke to Mar–Jun (122 days).
+4. **Edit T boundary**: an `as.Date` clip mis-aligns REddyProc's period-end day
+   convention (drops the closing `00:00` record) → switched to a POSIXct
+   `(dateBgn+1 00:00, dateEnd+1 00:00]` clip.
+5. **OSBS EC CO₂ flux (NEE/FC) is absent at the NEON source** — raw
+   `data.fluxCo2.nsae.flux` all-NA, its own `qfqm.fluxCo2.nsae.qfFinl` all-bad, CO₂
+   mixing ratio all-NA (direct dp04/dp01 inspection of 2018-06). The script's mask flag
+   (`qfTurbCo2Finl`) is mostly *good*, so this is a genuine **IRGA/data gap, not a
+   masking artifact**; energy fluxes (LE 824/1440, H 1360/1440) are fine. REddyProc
+   flux partitioning therefore cannot run. → **P2**: `sMRFluxPartition`/
+   `sGLFluxPartition` made **non-fatal** (`try`) + NaN-fill the CO₂-derived eval columns
+   (NEE/FC/GPP/GPP_DT/Reco_DT + NEE_fqc), extending the author's GPP_f fallback (:992).
+   Reproduces how v4 (which exists for OSBS) must have been built. **PI note: no
+   CO₂-flux validation is possible for OSBS 2018** — the eval file carries NaN CO₂;
+   whether OSBS has usable CO₂ in other years is a full-run question.
+
+**Full-pull size** (`size_manifest.R`): **22.6 GB**, 8492 files, RELEASE-2026 basic —
+EC `DP4.00200.001` 13.1 GB (≈58%); the basic package ships 1-min tables alongside
+30-min (~2× a 30-min-only estimate). `/blue` (~1.9 TB free) has the space.
+
+**Cosmetic (non-fatal):** the QA-plot step (`methPlot=TRUE`, hardcoded :106) errors on
+the all-NaN CO₂/GPP facet; the job still exits 0 and all NetCDFs write. Set
+`methPlot<-FALSE` for clean logs if desired (a candidate follow-up edit).
+
+**Test artifacts on disk:** archive `neon/raw/OSBS` holds Mar–Jun 2018 (10 products ×
+4 months, staged via three scoped `run_download.sh` pulls — a strict subset of the
+eventual full pull, so nothing is re-downloaded later). Smoke output at
+`swenson/data/datm/neon_OSBS/custom/OSBS/{atm,eval}/`.
+
+**Next (downstream / PI-gated):** I4 reproduce-v4 in full (fqc-partitioned diff over the
+v4 window), I5 full 2016-08→2025-06 pull + generate (`--qos=gerber`, `LOWMEM=TRUE`),
+I6–I8 CTSM integration (per the 2026-07-15 I2.5 smoke-test notes).
 
 ### 2026-08-12 — Architecture DECIDED: Option B (download-once + offline); NCAR-NEON code audited; fork set up
 
