@@ -5,8 +5,9 @@
 # NEON /data/ API per product per in-window month and sums data.files[].size. No
 # file bytes are downloaded, so it is safe to run before committing to the full pull.
 #
-# Mirrors download_raw.R (same products / window / release / package) so the total
-# is the actual RELEASE-2026 basic-package footprint of the full pull.
+# Mirrors download_raw.R (same products / window / release / package). NOTE: this sums
+# UNCOMPRESSED individual /data/ files, which is ~2x the actual zipped download (measured
+# 2026-08-14: 22.6 GB uncompressed here -> 11 GB of zips for the full 2016-08..2025-06 pull).
 #
 # Requires: the `neon-forcing` conda env (httr + jsonlite, pulled in by neonUtilities)
 #   and a NEON API token in $NEON_TOKEN (lifts the /data/ 403 from HPG).
@@ -72,5 +73,5 @@ cat("\n==================== SIZE MANIFEST ====================\n")
 print(out, row.names = FALSE)
 cat(sprintf("\nTOTAL: %.2f GB across %d files (RELEASE-2026 basic, %s .. %s)\n",
             sum(out$GB), sum(out$files), START, END))
-cat("Note: sum of /data/ file sizes (data zips + readme/variables/EML) ~ the full",
-    "zipsByProduct footprint.\n")
+cat("Note: this sums UNCOMPRESSED /data/ files; the actual zipped download is ~half",
+    "(measured 22.6 GB here -> 11 GB of zips for the full 2016-08..2025-06 pull).\n")

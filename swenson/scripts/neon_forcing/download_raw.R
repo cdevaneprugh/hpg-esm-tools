@@ -15,8 +15,8 @@
 #
 # Before the full pull, run the phases/I-neon-forcing.md 12.4 test ladder
 #   (connectivity gate -> real-tool smoke -> exact-size manifest -> EC probe ->
-#   timing). Expect ~11 GB (confirm the exact size via the 12.4 manifest); /blue
-#   has the space.
+#   timing). The zipped download is ~11 GB (confirmed 2026-08-14; the 12.4 manifest's
+#   22.6 GB is the UNCOMPRESSED /data/ sum, ~2x the zips). /blue has the space.
 # =============================================================================
 
 ## ---- CONFIG (edit these) --------------------------------------------------

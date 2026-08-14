@@ -941,6 +941,29 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 
 ## Log
 
+### 2026-08-14 — I5 full production raw pull COMPLETE (11 GB compressed, all months)
+
+The full **2016-08 → 2025-06** raw download finished (job `39397006`, **COMPLETED**,
+32.5 min, `--qos=gerber` non-burst). Archive `/blue/gerber/earth_models/neon/raw/OSBS`
+is **complete**: all 10 products at their full available spans — **1063 zips, 0 short**
+(107 mo for the DP1 met products, 106 for weighing precip `00044`, **101 for EC `00200`,
+which starts 2017-02** at OSBS). Zip integrity spot-checked (EC + DP1, first & last
+months) — all valid; no SKIP/error in the log.
+
+**Size = 11 GB (compressed zips), NOT the 22.6 GB the manifest reported.** The manifest
+sums UNCOMPRESSED individual `/data/` files; the download stores compressed zips — ~2×
+smaller (EC 13.1 → 8.5 GB; DP1 CSVs compress ~3-4×). So 11 GB is *complete*, not a
+shortfall, and matches the original ~11 GB estimate (§11.2). EC is 8.5 GB of the 11.
+
+**Coverage note (a data-availability fact, not a download gap):** EC (flux) exists only
+from **2017-02**; DP1 meteorology goes back to **2016-08**. So 2016-08 → 2017-01 has met
+but no EC — a **generation-time start-date decision**: start the record at 2017-02 for
+uniform EC/sonic-wind provenance, or keep 2016-08 with the 2D-wind product and no flux
+for that stretch. Flagged in I1.
+
+Next (I5 tail): generate the full-record forcing (`run_forcing.sh` over the whole window,
+`LOWMEM=TRUE` — the one untested code path) once the start-date decision is made.
+
 ### 2026-08-14 — I4 reproduce-v4 (2018) PASS: measured data bit-identical to v4
 
 Ran the offline pipeline over full **2018** and compared the atm forcing to the pre-built
@@ -1021,9 +1044,10 @@ were gated behind a test):**
    CO₂-flux validation is possible for OSBS 2018** — the eval file carries NaN CO₂;
    whether OSBS has usable CO₂ in other years is a full-run question.
 
-**Full-pull size** (`size_manifest.R`): **22.6 GB**, 8492 files, RELEASE-2026 basic —
-EC `DP4.00200.001` 13.1 GB (≈58%); the basic package ships 1-min tables alongside
-30-min (~2× a 30-min-only estimate). `/blue` (~1.9 TB free) has the space.
+**Full-pull size** (`size_manifest.R`): **22.6 GB *uncompressed*** (8492 files,
+RELEASE-2026 basic; EC `DP4.00200.001` 13.1 GB ≈58%; basic ships 1-min alongside 30-min).
+This sums individual `/data/` file sizes; the actual **zipped download is ~11 GB**
+(confirmed by the completed I5 pull, 2026-08-14). `/blue` (~1.9 TB free) has the space.
 
 **Cosmetic (non-fatal):** the QA-plot step (`methPlot=TRUE`, hardcoded :106) errors on
 the all-NaN CO₂/GPP facet; the job still exits 0 and all NetCDFs write. Set
