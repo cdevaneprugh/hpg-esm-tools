@@ -941,6 +941,37 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 
 ## Log
 
+### 2026-08-14 — I4 reproduce-v4 (2018) PASS: measured data bit-identical to v4
+
+Ran the offline pipeline over full **2018** and compared the atm forcing to the pre-built
+v4 (12 months) via a new `scripts/neon_forcing/neon_v4_regression.py` (Python/xarray,
+ctsm env — the "forcing analog of `merit_regression.py`"; `results.json` + `summary.txt`
++ PASS/FAIL + **fqc-partitioned** metrics + plots). **RESULT: PASS.**
+
+Headline finding (via the fqc-partition): **`RMS.meas` — both-measured points (custom
+`fqc==0` AND v4 `fqc==0`) — is ~0 for ALL 7 physical vars** (FSDS/FLDS/RH/PSRF/TBOT
+exactly 0; PRECT 4e-7, WIND 5e-6). Where both datasets carry a real measurement, our
+pipeline reproduces v4 to **machine precision** — the measured data is *bit-identical*,
+not merely reprocessing-scale. **All** divergence lives in gap-filled timesteps
+(`RMS.gap`: FLDS 5.9 W/m², PSRF 44 Pa, TBOT 0.74 K, …), which differ because gap-fill
+depends on the release + surrounding window. Bulk corr 0.86 (PRECT, gap-fill-noisy) →
+1.0 (FSDS); precip annual total custom 1810 vs v4 1759 mm (+2.9%, all from gap-fill). The
+scatter plot shows measured (blue) exactly on the 1:1 line for every var; only gap-filled
+(orange) scatters.
+
+**Interpretation:** pipeline fidelity to v4 is confirmed at the strongest level (identical
+measured data). Corollary: NEON's RELEASE-2026 measured values for OSBS-2018 equal v4's
+source-release values — the release difference surfaces only through gap-fill, not the raw
+measurements. The verdict uses generous physical-scale thresholds (a hard I2-band pass/fail
+would false-fail; here it's moot since measured RMS is 0).
+
+**Data / artifacts:** archive `neon/raw/OSBS` now holds all 12 months of 2018 (a subset of
+the eventual full pull — nothing re-downloads). 2018 forcing at
+`custom/OSBS/atm/OSBS_atm_2018-{01..12}.nc` (12 files, per-month ntime correct, NaN=0,
+archive stayed zips-only; generate job 39396057, 6:14, 1.7 GB). Comparison outputs
+(gitignored): `scripts/neon_forcing/output/{results.json,summary.txt}` +
+`output/osbs/2026-08-14_v4_reproduce_2018/*.png`. Script committed (hpg-esm-tools `20905da`).
+
 ### 2026-08-12 (impl) — Option B implemented + smoke-validated end-to-end
 
 Executed the plan. `flow.api.clm.R` (fork `uf-osbs`) now runs **fully offline**
