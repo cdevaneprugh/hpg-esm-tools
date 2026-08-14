@@ -8,7 +8,9 @@
 set -euo pipefail
 
 ENV_NAME="neon-forcing"
-PROJ_DIR="/blue/gerber/cdevaneprugh/hpg-esm-tools/swenson/scripts/neon_forcing"
+# self-locating: environment.yml / install_source_pkgs.R / Makevars.conda are siblings
+# of this script (scripts/neon_forcing/setup/), so derive the dir from the script path.
+PROJ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_YML="${PROJ_DIR}/environment.yml"
 INSTALL_R="${PROJ_DIR}/install_source_pkgs.R"
 export NCAR_NEON_DIR="${NCAR_NEON_DIR:-/blue/gerber/cdevaneprugh/ncar-neon}"

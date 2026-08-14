@@ -51,7 +51,7 @@ PRODUCTS <- c(
 
 if (!requireNamespace("neonUtilities", quietly = TRUE)) {
   stop("neonUtilities not found. Activate the `neon-forcing` conda env first\n",
-       "  (see scripts/neon_forcing/build_env.sh); neonUtilities 2.4.0 is provided there.")
+       "  (see scripts/neon_forcing/setup/build_env.sh); neonUtilities 2.4.0 is provided there.")
 }
 
 if (!dir.exists(DIRDNLD)) dir.create(DIRDNLD, recursive = TRUE)

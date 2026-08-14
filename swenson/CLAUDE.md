@@ -133,15 +133,17 @@ swenson/
     │   ├── spatial_scale.py      # Co-located copy of osbs/ module (kept manually in sync)
     │   ├── hillslope_params.py   # Co-located copy of osbs/ module (kept manually in sync)
     │   └── output/               # results.json, summary.txt, SLURM logs
-    ├── neon_forcing/             # Phase I: NEON atmospheric forcing (conda env recipe + raw download)
-    │   ├── build_env.sh          # Build the `neon-forcing` conda env (R 4.2.3 + source pkgs)
-    │   ├── environment.yml       # conda spec for the env
-    │   ├── install_source_pkgs.R # Off-conda R pkgs (eddy4R / REddyProc / NEON.gf)
-    │   ├── Makevars.conda        # R source-build flags (conda gcc, -std=gnu17)
-    │   ├── download_raw.R        # Raw NEON tower download — on-HPG via API token (phases/I §12)
+    ├── neon_forcing/             # Phase I: NEON atmospheric forcing (offline download→DATM pipeline)
+    │   ├── setup/                # one-time conda-env build (the neon-forcing env)
+    │   │   ├── build_env.sh          # Build the env (R 4.2.3 + source pkgs): conda solve → source-install → smoke test
+    │   │   ├── environment.yml       # conda spec for the env
+    │   │   ├── install_source_pkgs.R # Off-conda R pkgs (eddy4R / REddyProc / NEON.gf)
+    │   │   └── Makevars.conda        # R source-build flags (conda gcc, -std=gnu17)
+    │   ├── download_raw.R        # Step 1 downloader — on-HPG via API token (phases/I §12)
     │   ├── run_download.sh       # Step 1 SLURM wrapper (auth download → shared archive; scope via NEON_START/END)
     │   ├── run_forcing.sh        # Step 2 SLURM wrapper (offline flow.api.clm.R → DATM forcing; no token)
-    │   └── size_manifest.R       # Full-pull size probe (metadata-only; 22.6 GB uncompressed ≈ 11 GB zipped, phases/I §12.4)
+    │   ├── size_manifest.R       # Full-pull size probe (metadata-only; 22.6 GB uncompressed ≈ 11 GB zipped, phases/I §12.4)
+    │   └── neon_v4_regression.py # I4 reproduce-v4 check (custom vs v4; fqc-partitioned; ctsm env)
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay

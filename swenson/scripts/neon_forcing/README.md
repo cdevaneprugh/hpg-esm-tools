@@ -2,26 +2,33 @@
 
 Builds site-specific NEON atmospheric forcing for OSBS by running NEON's
 NCAR-NEON generator (`flow.api.clm.R`) on HiPerGator, to replace the coarse
-CRUNCEPv7 reanalysis in the operative CTSM case. The raw NEON download runs
-**off**-HiPerGator (NEON IP-blocks the `/data/` API from the cluster); the conda
-environment and all processing run **here**.
+CRUNCEPv7 reanalysis in the operative CTSM case. The raw NEON download **and** all
+processing run **on** HiPerGator — a NEON API token lifts the `/data/` block from the
+cluster (see `../../phases/I-neon-forcing.md` §12).
 
 See `../../docs/neon-forcing-pipeline-hipergator.md` for the full plan and
 `../../phases/I-neon-forcing.md` for phase tracking.
 
 ## Files
 
+**`setup/`** — one-time conda-env build:
+
 | File | Purpose |
 |------|---------|
-| `environment.yml` | conda spec for the `neon-forcing` env (r-base **4.2** + conda-satisfiable packages + toolchain; source-only packages built by `install_source_pkgs.R`) |
-| `build_env.sh` | Build the env — conda solve → source-install → smoke test (audits compiler ABI) |
-| `install_source_pkgs.R` | Installs the R packages on no conda channel (`neonUtilities`, `REddyProc`, `eddy4R.base`/`qaqc` @898a72d, `NEON.gf`) from the v4-era CRAN snapshots |
-| `Makevars.conda` | Lenient C flags (`-std=gnu17` …) so old snapshot packages compile with conda's modern gcc; wired in via `R_MAKEVARS_USER` |
-| `output/` | Results from the later `neon_v4_regression` comparison (gitignored) |
+| `setup/environment.yml` | conda spec for the `neon-forcing` env (r-base **4.2** + conda-satisfiable packages + toolchain; source-only packages built by `install_source_pkgs.R`) |
+| `setup/build_env.sh` | Build the env — conda solve → source-install → smoke test (audits compiler ABI) |
+| `setup/install_source_pkgs.R` | Installs the R packages on no conda channel (`neonUtilities`, `REddyProc`, `eddy4R.base`/`qaqc` @898a72d, `NEON.gf`) from the v4-era CRAN snapshots |
+| `setup/Makevars.conda` | Lenient C flags (`-std=gnu17` …) so old snapshot packages compile with conda's modern gcc; wired in via `R_MAKEVARS_USER` |
 
-Planned, not yet added: `download_raw.R` (laptop-side `zipsByProduct`),
-`run_pipeline.sh` (SLURM offline run), `neon_v4_regression.py` (fqc-partitioned
-v4 comparison).
+**Pipeline** — run repeatedly (in the `neon-forcing` env):
+
+| File | Purpose |
+|------|---------|
+| `download_raw.R` + `run_download.sh` | **Step 1**: authenticated raw pull → shared archive `/blue/gerber/earth_models/neon/raw/OSBS` (idempotent; scope via `NEON_START`/`NEON_END`) |
+| `run_forcing.sh` | **Step 2**: offline `flow.api.clm.R` (the fork) → DATM forcing NetCDFs under `data/datm/neon_OSBS/custom/` |
+| `size_manifest.R` | full-pull size probe (metadata-only) |
+| `neon_v4_regression.py` | validation vs pre-built v4 (fqc-partitioned; run in the `ctsm` env) |
+| `output/` | comparison results — `results.json`, `summary.txt`, scatter PNG (gitignored) |
 
 **Environment note:** this is a **reconstruction of NEON's v4-era stack** (2021), not
 a modern build. `r-base` is pinned to **4.2** because `ffbase` (a hard `eddy4R.base`
@@ -37,7 +44,7 @@ forcing (the I4 comparison target). Full rationale in the plan doc. **Built + sm
 # from an interactive dev session with internet egress + CPU headroom, e.g.
 #   srun --partition=hpg-dev --cpus-per-task=4 --mem=16gb --time=02:00:00 --pty bash
 cd $SWENSON
-bash scripts/neon_forcing/build_env.sh
+bash scripts/neon_forcing/setup/build_env.sh
 ```
 
 Prerequisite: the NCAR-NEON repo cloned at `/blue/gerber/cdevaneprugh/ncar-neon`
