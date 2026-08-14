@@ -4,7 +4,8 @@ neon_v4_regression.py -- reproduce-v4 fidelity check for the OSBS NEON->DATM pip
 (Phase I, task I4). Compares our offline-generated "custom" atm forcing against the
 pre-built NCAR-NEON "v4" forcing for one calendar year (default 2018), per physical
 variable: bulk RMS / max-delta / correlation / bias, plus the sanctioned fqc-partitioned
-split (both-measured vs gap-filled). Writes results.json + summary.txt and plots.
+split (both-measured vs gap-filled). Writes results.json + summary.txt + a scatter plot,
+all to one output dir (default scripts/neon_forcing/output/).
 
 Framing: an exact match is NOT expected -- v4 is a late-2025 NEON release (provisional
 on); we use RELEASE-2026, released-only. This is a *methodology-fidelity* check. The I2
@@ -249,7 +250,7 @@ def write_results(res, meta, out_dir):
 
 def make_plots(arrs, res, plot_dir, year):
     os.makedirs(plot_dir, exist_ok=True)
-    # Fig 1: scatter grid, all points colored measured (on 1:1) vs gap-filled (diverge).
+    # Scatter grid: all points colored measured (on 1:1) vs gap-filled (diverge).
     fig, axes = plt.subplots(2, 4, figsize=(16, 8))
     for ax, var in zip(axes.ravel(), PHYS_VARS):
         c, v = arrs[var]["c"], arrs[var]["v"]
@@ -299,49 +300,6 @@ def make_plots(arrs, res, plot_dir, year):
     plt.close(fig)
     print(f"Saved {p1}")
 
-    # Fig 2: RMS delta -- bulk & gap-filled vs the I2 reference band (log). Both-measured
-    # RMS is ~0 (measured data is bit-identical) so it is off the log axis by design.
-    fig, ax = plt.subplots(figsize=(11, 6))
-    x = np.arange(len(PHYS_VARS))
-    ax.bar(
-        x - 0.27,
-        [res[v]["bulk"]["rms"] for v in PHYS_VARS],
-        0.27,
-        label="custom-vs-v4 bulk",
-        color="#1f77b4",
-    )
-    ax.bar(
-        x,
-        [res[v]["gap_filled"]["rms"] for v in PHYS_VARS],
-        0.27,
-        label="custom-vs-v4 gap-filled",
-        color="#E08A1E",
-    )
-    ax.bar(
-        x + 0.27,
-        [REF_BAND[v] for v in PHYS_VARS],
-        0.27,
-        label="I2 v3-vs-v4 reference",
-        color="#A6C8DB",
-    )
-    ax.set_yscale("log")
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"{v}\n[{UNITS[v]}]" for v in PHYS_VARS], fontsize=9)
-    ax.set_ylabel("RMS delta (native units, log)", fontsize=12)
-    ax.set_title(
-        f"OSBS {year}: RMS delta vs reference "
-        "(both-measured RMS ~0 for all vars, off-scale)",
-        fontsize=12,
-        fontweight="bold",
-    )
-    ax.legend()
-    ax.grid(True, alpha=0.3, linestyle="--", axis="y")
-    plt.tight_layout()
-    p2 = os.path.join(plot_dir, f"rms_vs_reference_{year}.png")
-    fig.savefig(p2, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved {p2}")
-
 
 def main():
     ap = argparse.ArgumentParser(
@@ -353,10 +311,6 @@ def main():
     )
     ap.add_argument("--v4-dir", default=str(SWENSON / "data/datm/neon_OSBS/v4/OSBS"))
     ap.add_argument("--out-dir", default=str(SCRIPT_DIR / "output"))
-    ap.add_argument(
-        "--plot-dir",
-        default=str(SWENSON / f"output/osbs/2026-08-14_v4_reproduce_{2018}"),
-    )
     ap.add_argument("--no-plots", action="store_true")
     a = ap.parse_args()
 
@@ -373,7 +327,7 @@ def main():
     }
     overall = write_results(res, meta, a.out_dir)
     if not a.no_plots:
-        make_plots(arrs, res, a.plot_dir, a.year)
+        make_plots(arrs, res, a.out_dir, a.year)
     sys.exit(0 if overall == "PASS" else 1)
 
 

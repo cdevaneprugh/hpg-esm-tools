@@ -969,8 +969,8 @@ would false-fail; here it's moot since measured RMS is 0).
 the eventual full pull — nothing re-downloads). 2018 forcing at
 `custom/OSBS/atm/OSBS_atm_2018-{01..12}.nc` (12 files, per-month ntime correct, NaN=0,
 archive stayed zips-only; generate job 39396057, 6:14, 1.7 GB). Comparison outputs
-(gitignored): `scripts/neon_forcing/output/{results.json,summary.txt}` +
-`output/osbs/2026-08-14_v4_reproduce_2018/*.png`. Script committed (hpg-esm-tools `20905da`).
+(gitignored, co-located with the code): `scripts/neon_forcing/output/{results.json,
+summary.txt, scatter_custom_vs_v4_2018.png}`. Script committed (hpg-esm-tools `20905da`).
 
 ### 2026-08-12 (impl) — Option B implemented + smoke-validated end-to-end
 
