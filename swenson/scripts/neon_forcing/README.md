@@ -30,6 +30,7 @@ See `../../docs/neon-forcing-pipeline-hipergator.md` for the full plan and
 | `neon_v4_regression.py` | validation vs pre-built v4 (fqc-partitioned; run in the `ctsm` env) |
 | `neon_forcing_qc.py` | **I5** whole-record QC — structural / gap-fill / physical-sanity / climatology → `results.json` + `summary.txt` + PASS/FAIL + plots (`ctsm` env) |
 | `splice_2017_precip.py` | **I5** 2017 precip recovery — splices the secondary tipping-bucket gauge (DP1.00045) into the six 2017 gap months when the primary was down (post-processing, no source edit; flags `PRECTmms_fqc=5`) |
+| `smoke_compare_v4.py` | **I6/I7** ingestion-smoke output check — CLM h0a output of the custom-forcing smoke vs the v4 smoke over their 2018-2019 overlap (forcing-driven fields must match; prognostic differ by spinup) → 6-panel PNG (`ctsm` env) |
 | `output/` | comparison results — `results.json`, `summary.txt`, scatter PNG (gitignored) |
 
 **Environment note:** this is a **reconstruction of NEON's v4-era stack** (2021), not

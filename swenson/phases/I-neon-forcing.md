@@ -1,13 +1,15 @@
 # Phase I: NEON Atmospheric Forcing
 
-Status: **In progress — I1–I5 DONE (dataset produced, QC-clean, CTSM-ready); I6–I8 (integration) remain.**
+Status: **In progress — I1–I5 DONE (dataset produced, QC-clean, CTSM-ready); full-dataset ingestion smoke PASSED (2026-08-15); I6 (production integration) + I8 (adoption) remain.**
 Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
 NEON→DATM pipeline and validate against v4 → produce the full 2017–2025 dataset (released) →
 full CTSM integration (PI-gated tail). **Deliverable in hand: 101 monthly NetCDFs,
 2017-02 → 2025-06 (a strict superset of v4), all QC-clean — the one data gap (2017
 primary-gauge precip outage) recovered from the secondary tipping bucket.** I1–I5
 complete (verification, v4 fetch + integration smoke, offline pipeline, reproduce-v4
-PASS, full-record generation + QC + 2017 splice); I6 (full CTSM integration) next.
+PASS, full-record generation + QC + 2017 splice). **Full-dataset ingestion smoke PASSED
+(2026-08-15)** — the custom stream ingests and drives CTSM end-to-end, v4-comparable; the
+production compset integration (I6) + adoption (I8) remain.
 Depends on: — (independent of the hillslope track A–H)
 Blocks: — (input-quality upgrade; does not gate routing on/off decisions)
 
@@ -868,12 +870,22 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   (`CCSM_CO2_PPMV=284.7`, `DATM_PRESAERO/NDEP/O3=clim_1850`, `DATM_CO2_TSERIES=none`,
   `CLM_NML_USE_CASE=1850_control`) unless the PI wants present-day. Note `1Pt`
   compsets use `SROF`, not `MOSART`. Also verify `ZBOT` matches the OSBS instrument
-  height. See §8, §9.
+  height. See §8, §9. **Ingestion + wiring already proven** by the 2026-08-15 full-dataset
+  smoke (`osbs.swenson.neon-custom-smoke`); what remains here is the production config
+  (1850 knobs + the 6-file hydrology SourceMod set). **Required in
+  `user_nl_datm_streams`: `NEON.OSBS:dtlimit = -1` and
+  `NEON.NEON_PRECIP.OSBS:dtlimit = -1`** — the cycled spinup wraps the finite 2017-2025
+  window at every cycle boundary and crashes on a stock CDEPS `dtlimit` bug
+  (`dshr_strdata_mod.F90:1050`) without it (see 2026-08-15 Log).
 - [ ] **I7. Run + validate the case.** Build + run a short (≈5-yr) NEON-forced
   case; confirm from `datm.log`/`lnd.log` that `OSBS_atm_*.nc` are the active
   streams, FLDS is measured (not derived), RH is ingested; sanity-compare
   TBOT/PRECT/FLDS against the CRUNCEP baseline (reuse `case.analyzer` /
-  `/case-check`).
+  `/case-check`). **Ingestion validated 2026-08-15** — the full 101-month run completes
+  clean (with `dtlimit=-1`); over the 2018-2019 v4 overlap, forcing-driven fields match v4
+  to ≤0.03% (precip ~3%, the I4 gap-fill difference) and prognostic fields differ only by
+  the expected cold-start spinup offset. See the 2026-08-15 Log and
+  `scripts/neon_forcing/smoke_compare_v4.py`.
 - [ ] **I8. PI decisions.** (a) **Cycle vs blend** for the 600-yr spinup — cycle
   the NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
   final transient/evaluation run, as successive cases). (b) **Adoption** — whether
@@ -944,6 +956,66 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-15 — Full-dataset CTSM ingestion smoke PASSED (+ dtlimit=-1 requirement)
+
+Wired the full 101-file custom stream into a real CTSM case and ran it end-to-end.
+The custom NEON forcing is now validated for ingestion: it builds, drives the land
+model over the whole 2017-02 → 2025-06 record, and reproduces the pre-built v4
+smoke's land-surface behaviour where it should.
+
+**Case `$CASES/osbs.swenson.neon-custom-smoke`** — cloned from the I2.5 v4-smoke
+recipe (`I1PtClm60Bgc`, `CLM_USRDAT`, NEON/OSBS usermod, cold-start, `MPILIB=openmpi`,
+surfdata coords `29.689282/278.006569`, `use_hillslope=.true.` + production hillslope
+surfdata), holding the case config identical and changing **only** the forcing: both
+NEON streams (`NEON.OSBS` + `NEON.NEON_PRECIP.OSBS`) repointed at the 101 custom files,
+`year_first/last/align = 2017/2025/2017`, `RUN_STARTDATE=2017-02-01`, `STOP_N=101 nmonths`.
+This is a **wiring/ingestion smoke** (present-day knobs, stock physics) — **not** the I6
+production integration (1850 knobs + hydrology SourceMods still to do).
+
+**First run FAILED at the final timestep — a stock CDEPS bug, not our data.** To advance
+the last timestep DATM needs a record after 2025-06-30 23:30; with `taxmode=cycle` it
+wraps to 2017-02-01, which spikes the record-spacing ratio past the default `dtlimit=1.5`
+(`dshr_strdata_mod.F90:1048`). CDEPS then tries to *print* the error via a **buggy write**
+(`:1050`, format `(a,i8)` with three args, the 2nd a string) → `Expected INTEGER... got
+CHARACTER` → hard abort at 1:20 (not OOM: 5.4 GB peak; not walltime). It had ingested 100
+of 101 months fully and read the 101st to its last record. Unmodified fork file — the bug
+is upstream CDEPS.
+
+**Fix — `dtlimit = -1` on both NEON streams (namelist-only, no rebuild).** Lines 1037-1041
+are CDEPS's own escape hatch: `dtlimit == -1` sets `override_annual_cycle` and *skips* the
+dt-uniformity check for streams not cycling on January boundaries — exactly our 2017-02 →
+2025-06 window. Verified it's a runtime stream field (header line 13), that `BUILD_COMPLETE`
+stayed `TRUE` across the edit, and that `case.submit` ran only `buildnml` (no compile).
+The re-run **COMPLETED clean**: `case.run success` + `st_archive success`, 101 h0a/h0i files
+(2017-02 → 2025-06) + 3070 daily h1a, all archived.
+
+**v4 comparison over the 2018-2019 overlap** (`scripts/neon_forcing/smoke_compare_v4.py`;
+plot `output/osbs/2026-08-15_neon-custom-smoke/`, gitignored). The two categories split
+exactly as expected:
+- **Forcing-driven fields essentially identical** — TBOT −0.011% (0.03 K), FSDS −0.025%,
+  FLDS −0.011%, TSA −0.015%; the v4/custom traces sit on top of each other. Precip −3.3%,
+  which is *not* an anomaly — it's the gap-fill-window difference I4 already documented
+  (measured timesteps bit-identical; divergence confined to gap-filled steps; ~3% on precip
+  totals). This is the real proof the custom stream is ingested the same way v4 is.
+- **Prognostic fields differ by spinup offset, not forcing error** — TWS +58%, H2OSOI +26%,
+  ELAI +23%, GPP +6%, FSH +9%, LH −3%, TSOI +0.6%. Fully explained by the different
+  cold-start: custom started 2017-02 and ran through the **2017 wet season (incl. Hurricane
+  Irma)** before 2018, entering the window already wet; v4 cold-started dry in 2018-01. The
+  H2OSOI panel shows it unmistakably — v4 ramping up from a dry 0.175 cold-start while custom
+  is already equilibrated at ~0.33 from month 0. Forcing precip is actually *drier* in custom
+  (−3.3%) yet the state is wetter → rules out a wet-forcing bias, confirms spinup-driven.
+
+**Production implication — `dtlimit=-1` is required for the cycled spinup, not just this
+smoke.** The 600-yr spinup cycles the finite 2017-2025 window (`DATM_YR_ALIGN` maps many
+sim-years onto it), so the stream wraps at *every* cycle boundary and would hit the identical
+crash. Both NEON streams need `dtlimit=-1` in the operative case's `user_nl_datm_streams`
+whenever this forcing is adopted (I6/I8).
+
+**Verdict:** ingestion validated end-to-end; custom dataset behaves like v4 where it should
+(forcing) and differs where it should (spinup state). **Remaining: I6** (production compset
+integration — 1850 knob overrides + the 6-file hydrology SourceMod set) **and I8** (PI
+adoption / cycle-vs-blend).
 
 ### 2026-08-14 — I5 full-record dataset COMPLETE: chunked generation + QC + 2017 precip splice
 

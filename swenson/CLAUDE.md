@@ -146,7 +146,8 @@ swenson/
     │   ├── size_manifest.R       # Full-pull size probe (metadata-only; 22.6 GB uncompressed ≈ 11 GB zipped, phases/I §12.4)
     │   ├── neon_v4_regression.py # I4 reproduce-v4 check (custom vs v4; fqc-partitioned; ctsm env)
     │   ├── neon_forcing_qc.py    # I5 whole-record QC (structural/gap-fill/sanity/climatology; PASS/FAIL; ctsm env)
-    │   └── splice_2017_precip.py # I5 2017 precip splice (secondary tipping bucket → gap months; post-proc, no source edit)
+    │   ├── splice_2017_precip.py # I5 2017 precip splice (secondary tipping bucket → gap months; post-proc, no source edit)
+    │   └── smoke_compare_v4.py   # I6/I7 ingestion-smoke output check (custom vs v4 smoke, 2018-2019 overlap; ctsm env)
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay
