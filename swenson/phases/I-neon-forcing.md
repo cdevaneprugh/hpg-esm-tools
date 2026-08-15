@@ -878,8 +878,12 @@ target. Ingestion is already proven (2026-08-15 smoke); these tasks build on it.
   coords, the hillslope `user_nl_clm` block, the operative case's 6-file hydrology
   SourceMods, and a **lean monthly hist config** (drop the daily h1a — ~halves wall-time).
   Keep whatever chemistry knobs the compset/NEON usermod default (the PI's to change).
-  - **I6a — calibration smoke (~1 hr):** run the first ~10 yr of the AD case, measure
-    min/sim-yr, project the 200+200 wall-clock. Doubles as the AD start (no wasted work).
+  - **I6a — calibration smoke — DONE 2026-08-15.** Ran the first 10 yr of the AD case
+    (`osbs.swenson.neon-custom-spinup`, lean annual output, cold-start, cycled). Completed
+    clean in **55:26 → 5.54 min/sim-yr**; output sensible (carbon building, SOM AD burn-down
+    then stable, no NaN); `dtlimit=-1` held through the wrap in the accelerated-spinup path.
+    **200+200 (400 yr) ≈ 36–37 hr compute (~1.5 days)** as a resubmit chain. Doubles as the
+    AD start. Surfaced the partial-year wrap discontinuity (see the 2026-08-15 Log entry).
   - **I6b — AD spinup (200 yr, `CLM_ACCELERATED_SPINUP=on`):** cold-start, RESUBMIT chain.
   - **I6c — post-AD (200 yr, `=off`):** branch/hybrid from the AD restart; confirm the
     **AD→post-AD transition** clears the known N-state crash
@@ -895,6 +899,10 @@ target. Ingestion is already proven (2026-08-15 smoke); these tasks build on it.
   2026-08-15 Log, `scripts/neon_forcing/smoke_compare_v4.py`.)
 - [ ] **I8. PI adoption (PI-gated; science).** Whether to drive the production respin
   with the custom dataset, plus all experiment knobs. Cycle-vs-blend: **PI chose cycle.**
+  New sub-choice (2026-08-15 calibration): **clean cycle 2018–2024** (= the v4 range, clean
+  Dec→Jan wrap, no discontinuity) **vs. full-record cycle 2017-2025** (all custom data incl.
+  the 2017 spliced precip, but ~24 seasonal jolt-years over 200 yr; the path the calibration
+  validated). A clean cycle is effectively v4-equivalent — see the 2026-08-15 Log.
   End date **RESOLVED (PI): released only → 2025-06** (provisional 2025-07 → 2026-06
   excluded). The production hillslope file is **no longer frozen** — the PI is proceeding
   via soil-value adjustments (in the PI's wheelhouse), so adoption is not freeze-blocked.
@@ -959,6 +967,41 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-15 — I6a calibration done + partial-year wrap discontinuity
+
+Ran the 10-yr AD calibration (`osbs.swenson.neon-custom-spinup`, cloned `--keepexe` from
+the ingestion-smoke build, accelerated `spinup_state=2`, lean annual h0 only, cold-start,
+cycling the full custom record with `dtlimit=-1`). **Completed clean in 55:26 → 5.54
+min/sim-yr; 200+200 (400 yr) ≈ 36–37 hr compute (~1.5 days)** as a resubmit chain.
+
+**Output sensible.** Annual h0 monitors move the right way for an AD spinup from cold:
+TOTECOSYSC 1318 → 3195, TOTVEGC 462 → 1884 (building), TOTSOMC 811 → ~580 (accelerated
+decomposition burns down initial SOM then stabilizes — correct AD behaviour), TWS 1790 →
+4200 (soil/lake filling), TLAI 1.5 → ~5.3, GPP ramping; **no NaN** anywhere. Still far
+from equilibrium at 10 yr — as expected, hence the 200 AD years.
+
+**Discontinuity — the partial-year wrap.** Year 9 shows a transient GPP/NPP/LAI dip. This
+is the **forcing wrap**, not a defect: cycling the *partial-year* record (2017-02 → 2025-06)
+wraps **Jun → Feb**, so at model-year 8.4 the run jumps ~8 months out of phase (winter
+forcing where summer should be) for one cycle. It recovers by year 10, and `dtlimit=-1`
+carried the wrap without crashing (the thing that was to be proven). Over a 200-yr spinup
+(~24 cycles) that's ~24 jolt-years — benign for equilibrium but noisy.
+
+**The clean-cycle alternative = the v4 range.** Removing the discontinuity means cycling
+only **complete calendar years** — and the custom record's complete years are exactly
+**2018–2024 (84 months)**, which is **month-for-month the v4 pre-built range**
+(`2018-01 → 2024-12`). So a clean Dec→Jan wrap discards precisely the two partial years
+(2017 with the spliced precip, 2025 H1) that are the custom set's value-add over v4 — and
+over 2018–2024 the custom data is measured-bit-identical to v4 (I4; gap-fill-window
+differences only). **Consequence: a clean-boundary spinup is effectively v4-equivalent** —
+it could run on the pre-built v4 files. The partials can't be salvaged into clean years
+(completing 2017 needs the declined EC-decouple source edit; completing 2025 needs the
+PI-excluded provisional tail), so 2018–2024 is the hard cap — same as v4.
+
+**Fork for the PI (an I8 cycle-choice):** **clean cycle 2018–2024** (≈ v4, no jolt,
+simplest) **vs. full-record cycle 2017-2025** (all custom data, ~24 jolt-years). The
+calibration validated the *full-record* path end-to-end; a clean cycle is strictly easier.
 
 ### 2026-08-15 — Remaining work re-scoped: mechanical spinup + recipe (science → PI)
 
