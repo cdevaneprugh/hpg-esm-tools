@@ -1,6 +1,6 @@
 # Phase I: NEON Atmospheric Forcing
 
-Status: **In progress — I1–I5 DONE (dataset produced, QC-clean, CTSM-ready); full-dataset ingestion smoke PASSED (2026-08-15); I6 (production integration) + I8 (adoption) remain.**
+Status: **In progress — I1–I5 DONE (dataset produced, QC-clean, CTSM-ready); full-dataset ingestion smoke PASSED (2026-08-15); remaining is engineering only — I6 mechanical spinup (200 AD + 200 post-AD, cycled) + I7 config recipe; I8 adoption + all experiment knobs are the PI's.**
 Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
 NEON→DATM pipeline and validate against v4 → produce the full 2017–2025 dataset (released) →
 full CTSM integration (PI-gated tail). **Deliverable in hand: 101 monthly NetCDFs,
@@ -8,8 +8,9 @@ full CTSM integration (PI-gated tail). **Deliverable in hand: 101 monthly NetCDF
 primary-gauge precip outage) recovered from the secondary tipping bucket.** I1–I5
 complete (verification, v4 fetch + integration smoke, offline pipeline, reproduce-v4
 PASS, full-record generation + QC + 2017 splice). **Full-dataset ingestion smoke PASSED
-(2026-08-15)** — the custom stream ingests and drives CTSM end-to-end, v4-comparable; the
-production compset integration (I6) + adoption (I8) remain.
+(2026-08-15)** — the custom stream ingests and drives CTSM end-to-end, v4-comparable.
+**Remaining is engineering only** — I6 mechanical spinup (200 AD + 200 post-AD, cycled) +
+I7 config recipe; the experiment knobs and adoption (I8) are the PI's.
 Depends on: — (independent of the hillslope track A–H)
 Blocks: — (input-quality upgrade; does not gate routing on/off decisions)
 
@@ -857,44 +858,46 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   2025-07 → 2026-06 tail (a moving target NEON revises without notice, not citable,
   EC not pre-release-reprocessed). Target record: **2016-08 → 2025-06**. See §9.
 
-### Integration tail — downstream (needs the dataset first; PI-gated; pairs with the respin)
+### Integration tail — mechanical validation + PI handoff
 
-- [ ] **I6. Integrate into a CTSM case (Approach B), keeping our hillslope
-  surfdata.** Per Research notes §8, a **compset change**, not a stream-swap in the
-  existing spinup case: build `I1PtClm60Bgc` + NEON usermods; re-assert `fsurdat` +
-  `hillslope_file` + `use_hillslope=.true.` in `user_nl_clm`; **point the NEON
-  stream at our curated files via a `user_nl_datm_streams` `datafiles` override**
-  (this is where the old buildnml-version task folded in — no auto-discovery, no v4
-  cap). RH→shum conversion and measured FLDS are automatic. **Swap the weather, not
-  the experiment** — override the NEON usermods' present-day knobs back to 1850
-  (`CCSM_CO2_PPMV=284.7`, `DATM_PRESAERO/NDEP/O3=clim_1850`, `DATM_CO2_TSERIES=none`,
-  `CLM_NML_USE_CASE=1850_control`) unless the PI wants present-day. Note `1Pt`
-  compsets use `SROF`, not `MOSART`. Also verify `ZBOT` matches the OSBS instrument
-  height. See §8, §9. **Ingestion + wiring already proven** by the 2026-08-15 full-dataset
-  smoke (`osbs.swenson.neon-custom-smoke`); what remains here is the production config
-  (1850 knobs + the 6-file hydrology SourceMod set). **Required in
-  `user_nl_datm_streams`: `NEON.OSBS:dtlimit = -1` and
-  `NEON.NEON_PRECIP.OSBS:dtlimit = -1`** — the cycled spinup wraps the finite 2017-2025
-  window at every cycle boundary and crashes on a stock CDEPS `dtlimit` bug
-  (`dshr_strdata_mod.F90:1050`) without it (see 2026-08-15 Log).
-- [ ] **I7. Run + validate the case.** Build + run a short (≈5-yr) NEON-forced
-  case; confirm from `datm.log`/`lnd.log` that `OSBS_atm_*.nc` are the active
-  streams, FLDS is measured (not derived), RH is ingested; sanity-compare
-  TBOT/PRECT/FLDS against the CRUNCEP baseline (reuse `case.analyzer` /
-  `/case-check`). **Ingestion validated 2026-08-15** — the full 101-month run completes
-  clean (with `dtlimit=-1`); over the 2018-2019 v4 overlap, forcing-driven fields match v4
-  to ≤0.03% (precip ~3%, the I4 gap-fill difference) and prognostic fields differ only by
-  the expected cold-start spinup offset. See the 2026-08-15 Log and
-  `scripts/neon_forcing/smoke_compare_v4.py`.
-- [ ] **I8. PI decisions.** (a) **Cycle vs blend** for the 600-yr spinup — cycle
-  the NEON block, or blend (long reanalysis for AD/post-AD spinup, NEON for the
-  final transient/evaluation run, as successive cases). (b) **Adoption** — whether
-  to drive the production respin with the full custom dataset. (c) **End date —
-  RESOLVED (PI): released data only**, so the dataset ends **2025-06**; the
-  provisional 2025-07 → 2026-06 tail is excluded. Note: the production hillslope
-  file is **no longer frozen** — the PI is proceeding with the existing file via
-  soil-value adjustments (some concerns remain; left in the PI's wheelhouse), so
-  adoption is not freeze-blocked.
+**Scope split (2026-08-15):** the remaining work is **engineering only** — prove the
+custom dataset drives a full spinup workflow, and hand the PI a verified config recipe.
+The **experiment configuration is the PI's**; we neither set nor reason about it —
+CO₂/aerosol/N-dep/use-case knobs, `MOSART`-vs-`SROF`, present-day-vs-1850, cycle-vs-blend.
+The PI has chosen to **cycle the NEON block** (simplest) with a **200 AD + 200 post-AD**
+target. Ingestion is already proven (2026-08-15 smoke); these tasks build on it.
+
+- [ ] **I6. Mechanical spinup validation (200 AD + 200 post-AD, cycled).** Build a
+  fresh 1PT case (Approach B — compset change to the NEON DATM machinery, §8) from the
+  proven ingestion-smoke recipe and run the standard BGC spinup workflow on the cycled
+  custom dataset. Config that MUST be present (from the smoke + operative case): the
+  two-stream `datafiles` override, `year_first/last/align = 2017/2025/2017`,
+  `DATM_YR_START/END/ALIGN = 2017/2025/2017`, `taxmode=cycle`, **`dtlimit=-1` on both
+  NEON streams** (else the cycle wrap crashes on the stock CDEPS bug
+  `dshr_strdata_mod.F90:1050`; 2026-08-15 Log), `MPILIB=openmpi`, cold-start, surfdata
+  coords, the hillslope `user_nl_clm` block, the operative case's 6-file hydrology
+  SourceMods, and a **lean monthly hist config** (drop the daily h1a — ~halves wall-time).
+  Keep whatever chemistry knobs the compset/NEON usermod default (the PI's to change).
+  - **I6a — calibration smoke (~1 hr):** run the first ~10 yr of the AD case, measure
+    min/sim-yr, project the 200+200 wall-clock. Doubles as the AD start (no wasted work).
+  - **I6b — AD spinup (200 yr, `CLM_ACCELERATED_SPINUP=on`):** cold-start, RESUBMIT chain.
+  - **I6c — post-AD (200 yr, `=off`):** branch/hybrid from the AD restart; confirm the
+    **AD→post-AD transition** clears the known N-state crash
+    (`SoilBiogeochemNitrogenStateType.F90:874`) and the run is stable.
+  Success = the full AD→post-AD workflow completes clean on the custom dataset — a
+  capability proof, not a converged science run.
+- [ ] **I7. Config recipe for the PI.** Capture — from the working I6 case — every
+  `xmlchange` and `user_nl_*` edit required to drive a case with the custom dataset, as
+  a drop-in checklist: the two NEON streams' `datafiles` / `year_*` / `taxmode` /
+  **`dtlimit=-1`**, `DATM_YR_*`, `MPILIB=openmpi`, cold-start, surfdata coords, the
+  hillslope `user_nl_clm` block, and the accelerated-spinup flags. The engineering
+  hand-off the PI picks up. (Ingestion + the v4-comparability check are already done —
+  2026-08-15 Log, `scripts/neon_forcing/smoke_compare_v4.py`.)
+- [ ] **I8. PI adoption (PI-gated; science).** Whether to drive the production respin
+  with the custom dataset, plus all experiment knobs. Cycle-vs-blend: **PI chose cycle.**
+  End date **RESOLVED (PI): released only → 2025-06** (provisional 2025-07 → 2026-06
+  excluded). The production hillslope file is **no longer frozen** — the PI is proceeding
+  via soil-value adjustments (in the PI's wheelhouse), so adoption is not freeze-blocked.
 
 ### Claims-to-verify checklist (for I1)
 
@@ -956,6 +959,21 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-15 — Remaining work re-scoped: mechanical spinup + recipe (science → PI)
+
+PI direction: the remaining Phase I work is **engineering only** — prove the custom
+dataset drives a full AD→post-AD spinup and hand over a verified config recipe. The
+experiment configuration (CO₂/aerosol/N-dep/use-case, `MOSART`-vs-`SROF`,
+present-day-vs-1850) is the PI's; we neither set nor reason about it. Decisions locked:
+**cycle the NEON block** (not blend), **200 AD + 200 post-AD** target (down from the
+600+200 discussed — textbook CTSM-BGC is ~200+200, OSBS is subtropical so it converges
+faster than the arctic worst case, and the operative case's 600-yr AD was conservative
+margin, not a floor). Approach: a **~1-hr calibration smoke** (first ~10 yr of the AD
+case, lean monthly hist config) measures min/sim-yr and projects the 200+200 wall-clock
+before committing the multi-day resubmit chain — and doubles as the AD start. I6/I7/I8
+rewritten accordingly (I6 = mechanical AD+post-AD spinup, I7 = config recipe, I8 = PI
+adoption).
 
 ### 2026-08-15 — Full-dataset CTSM ingestion smoke PASSED (+ dtlimit=-1 requirement)
 
