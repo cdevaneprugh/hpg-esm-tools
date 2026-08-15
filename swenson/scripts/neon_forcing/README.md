@@ -28,6 +28,8 @@ See `../../docs/neon-forcing-pipeline-hipergator.md` for the full plan and
 | `run_forcing.sh` | **Step 2**: offline `flow.api.clm.R` (the fork) → DATM forcing NetCDFs under `data/datm/neon_OSBS/custom/` |
 | `size_manifest.R` | full-pull size probe (metadata-only) |
 | `neon_v4_regression.py` | validation vs pre-built v4 (fqc-partitioned; run in the `ctsm` env) |
+| `neon_forcing_qc.py` | **I5** whole-record QC — structural / gap-fill / physical-sanity / climatology → `results.json` + `summary.txt` + PASS/FAIL + plots (`ctsm` env) |
+| `splice_2017_precip.py` | **I5** 2017 precip recovery — splices the secondary tipping-bucket gauge (DP1.00045) into the six 2017 gap months when the primary was down (post-processing, no source edit; flags `PRECTmms_fqc=5`) |
 | `output/` | comparison results — `results.json`, `summary.txt`, scatter PNG (gitignored) |
 
 **Environment note:** this is a **reconstruction of NEON's v4-era stack** (2021), not

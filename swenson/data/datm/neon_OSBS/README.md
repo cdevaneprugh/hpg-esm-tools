@@ -1,15 +1,20 @@
-# NEON pre-built DATM forcing — OSBS
+# NEON DATM forcing — OSBS
 
-CTSM-ready, gap-filled NEON tower atmospheric forcing for OSBS, produced by the
-external **NCAR-NEON** pipeline (`flow.api.clm.R`, David Durden; gap-fill via
-ReddyProc) and downloaded from NEON's object store. Phase I task **I2**.
+CTSM-ready, gap-filled NEON tower atmospheric forcing for OSBS. Two sets live here:
+**`v4/`** — the pre-built NCAR-NEON product (Phase I **I2**), the temporary starting
+forcing and validation reference; **`custom/`** — **our own full-record dataset**
+(Phase I **I5**, the deliverable), produced by running the same NCAR-NEON generator
+(`flow.api.clm.R`, David Durden; gap-fill via ReddyProc) over the full raw archive on
+HiPerGator. The sections below document the v4 reference; the **Custom dataset** section
+(end) documents the deliverable.
 
 ## Contents
 
 ```
 neon_OSBS/
 ├── README.md          # this file (tracked in git)
-└── v4/OSBS/           # OSBS_atm_YYYY-MM.nc — *.nc gitignored (not committed)
+├── v4/OSBS/           # pre-built v4 reference — OSBS_atm_YYYY-MM.nc (*.nc gitignored)
+└── custom/OSBS/       # OUR full dataset (Phase I I5) — atm/ (deliverable, 101 files) + eval/ (fluxes); *.nc gitignored
 ```
 
 | Field | Value |
@@ -63,4 +68,50 @@ BASE=https://storage.neonscience.org/neon-ncar/NEON/atm/cdeps/v4/OSBS
 for y in 2018 2019 2020 2021 2022 2023 2024; do for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
   curl -fsSL --retry 3 "$BASE/OSBS_atm_${y}-${m}.nc" -o "$TARGET/OSBS_atm_${y}-${m}.nc"
 done; done
+```
+
+## Custom dataset (Phase I I5) — the deliverable
+
+`custom/OSBS/atm/` — **our full-record forcing**, produced by the forked NCAR-NEON
+generator run offline on HiPerGator against the shared raw archive
+`/blue/gerber/earth_models/neon/raw/OSBS`. Same file format as v4 (above).
+
+| Field | Value |
+|---|---|
+| Coverage | **2017-02 → 2025-06**, 101 monthly files (~15 MB) |
+| Relation to v4 | **strict superset** — v4's 2018–2024 span + 11 mo earlier (2017) + 6 later (2025 H1) |
+| Start bound | 2017-02, set by EC-flux availability (the generator anchors its output time grid to EC); reaching 2016-08 would need a declined source edit |
+| End bound | 2025-06 — RELEASE-2026 released cut (no provisional, per PI) |
+| Data basis | RELEASE-2026 throughout |
+| Fidelity | reproduces v4 to machine precision on measured timesteps (I4 PASS) |
+| QC | passes `scripts/neon_forcing/neon_forcing_qc.py` — 0 NaN, physical ranges OK |
+| `eval/` sibling | flux NetCDFs (`OSBS_eval_*.nc`) — not forcing; CO₂ carries NaN at OSBS (no usable EC CO₂) |
+
+### 2017 precipitation provenance (the one non-standard field)
+
+`PRECTmms` for **2017-07 → 2017-12** comes from the **secondary tipping-bucket gauge
+(DP1.00045)**, not the primary weighing gauge (DP1.00044) used everywhere else: the
+primary was physically down that stretch (raw all-NA, NEON `finalQF=1`), so the generator
+wrote `-9999`. The tipping bucket recorded the precipitation completely (`finalQF=0`,
+incl. **Hurricane Irma, Sep 2017**). Spliced in post-hoc by
+`scripts/neon_forcing/splice_2017_precip.py` (**no source edit**): `precipBulk`/1800 → mm/s,
+only the fill positions overwritten, flagged **`PRECTmms_fqc = 5`**
+(`5=secondary_gauge_substitution`, code-map attribute extended). Validated: the two gauges
+agree **r=0.96 / ~2 % on totals** (35 mutually-complete months); spliced values bit-match
+the raw at the same UTC timestamp; the heaviest Sep-2017 rain lands on 2017-09-10 (Irma's
+landfall date). Pristine pre-splice originals: `custom/OSBS/atm/pre_splice_backup/`.
+
+### Re-generate
+
+Requires the raw archive (`scripts/neon_forcing/run_download.sh`) and the `neon-forcing`
+env. Generate per year (**LOWMEM=FALSE, ~42 GB/yr on the burst QOS** — LOWMEM=TRUE is
+broken):
+
+```bash
+for y in 2017 2018 2019 2020 2021 2022 2023 2024 2025; do
+  DATEBGN=${y}-01-01 DATEEND=${y}-12-31 LOWMEM=FALSE \
+    sbatch --qos=gerber-b --mem=64gb scripts/neon_forcing/run_forcing.sh
+done   # 2017 auto-starts 2017-02 (EC), 2025 auto-stops 2025-06 (archive)
+python scripts/neon_forcing/splice_2017_precip.py --apply   # re-apply the 2017 precip splice
+python scripts/neon_forcing/neon_forcing_qc.py              # verify: 0 NaN, PASS
 ```

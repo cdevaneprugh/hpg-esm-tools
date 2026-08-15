@@ -40,6 +40,7 @@ affecting decision was made.
 | Our pysheds fork | `$BLUE/pysheds_fork` |
 | pysheds documentation | https://mattbartos.com/pysheds/ |
 | NEON v4 forcing (Phase I) | `data/datm/neon_OSBS/v4/OSBS/` (12 MB, 2018–2024; see `data/datm/neon_OSBS/README.md`) |
+| Custom NEON forcing (Phase I) | `data/datm/neon_OSBS/custom/OSBS/atm/` (101 monthly NetCDFs, 2017-02 → 2025-06, QC-clean, CTSM-ready; superset of v4) |
 | NEON API token (Phase I) | `~/.neon_token` (mode 600, private, **NOT in repo** — lifts the `/data/` 403 on HPG; read via `$NEON_TOKEN`; see `phases/I-neon-forcing.md` §12) |
 
 ## Standard Test Data
@@ -143,7 +144,9 @@ swenson/
     │   ├── run_download.sh       # Step 1 SLURM wrapper (auth download → shared archive; scope via NEON_START/END)
     │   ├── run_forcing.sh        # Step 2 SLURM wrapper (offline flow.api.clm.R → DATM forcing; no token)
     │   ├── size_manifest.R       # Full-pull size probe (metadata-only; 22.6 GB uncompressed ≈ 11 GB zipped, phases/I §12.4)
-    │   └── neon_v4_regression.py # I4 reproduce-v4 check (custom vs v4; fqc-partitioned; ctsm env)
+    │   ├── neon_v4_regression.py # I4 reproduce-v4 check (custom vs v4; fqc-partitioned; ctsm env)
+    │   ├── neon_forcing_qc.py    # I5 whole-record QC (structural/gap-fill/sanity/climatology; PASS/FAIL; ctsm env)
+    │   └── splice_2017_precip.py # I5 2017 precip splice (secondary tipping bucket → gap months; post-proc, no source edit)
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay

@@ -1,6 +1,6 @@
 # STATUS — Swenson Hillslope for OSBS
 
-**Updated:** 2026-08-01
+**Updated:** 2026-08-14
 
 ## Project context
 
@@ -57,6 +57,7 @@ consultation.
 | Per-rep rescaling | nhill_implicit ≈ 533; lake `wtlunit` 12.3% | 2026-05-05 | Phase E.5 |
 | SPILLHEIGHT | 0.0 (namelist override; SourceMod inert) | 2026-04-30 (PI) | Phase E.5 |
 | Routing config (Phase F) | use_hillslope_routing = .false. | inherited from osbs2 | Phase F |
+| 2017 precip source (NEON forcing) | Secondary tipping bucket (DP1.00045) — primary weighing gauge down 2017 Jul–Dec; gauges agree r=0.96 / ~2% | 2026-08-14 | Phase I I5 |
 
 ## Open questions
 
@@ -141,7 +142,7 @@ are the canonical record.
 | F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19. Convergence PASS; TAI signal ABSENT; lake stable. PI investigating TAI / bridge-zone. Plots at `output/2026-05-19_osbs.swenson.spinup_timeseries/` |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
 | H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
-| I | NEON atmospheric forcing | **In progress (I1–I5 pull done)** | **Reproduces v4 to machine precision (I4 PASS); full 2016–2025 raw archive downloaded (I5, 11 GB compressed, 2026-08-14).** Single linear plan: fetch v4 → build + validate our own pipeline → full 2016–2026 dataset → CTSM integration (PI-gated tail). Claims verified; NEON not a drop-in for CRUNCEP (§8); integration smoke test PASSED (v4 forcing + hillslope run cleanly). Raw-data `/data/` block RESOLVED (2026-08-01 — API token lifts it from HPG); download runs on a compute node (off-HPG path retired; test ladder in phase §12.4). Input-quality upgrade, independent of routing on/off |
+| I | NEON atmospheric forcing | **Dataset COMPLETE (I1–I5); integration (I6–I8) remains** | **Full custom forcing produced: 101 monthly NetCDFs, 2017-02 → 2025-06, QC-clean, CTSM-ready — a strict superset of pre-built v4** (v4's 2018–2024 span + 11 mo earlier + 6 later, RELEASE-2026 throughout). Reproduces v4 to machine precision (I4 PASS). Generated in **annual chunks on the burst QOS** (LOWMEM=TRUE broken; LOWMEM=FALSE ~3.5 GB/mo). Whole-record QC via new `neon_forcing_qc.py`. The one data gap — 2017 primary weighing-gauge precip outage — recovered from the secondary tipping bucket (validated r=0.96 / ~2% totals; `splice_2017_precip.py`, fqc=5, no source edit). Start 2017-02 (EC-anchored; earlier needs a declined source edit); end 2025-06 (released-only). Input-quality upgrade, independent of routing on/off |
 
 ## Roadmap
 
@@ -152,7 +153,7 @@ are the canonical record.
 4. Long spinup with lateral flow F + G Stage 1     ─ IN PROGRESS (lateral flow active under use_hillslope=.true.)
 5. Stream-coupling (routing-on)  H                 ─ Track A done; Tracks B/C on hold; may not be pursued
 6. Post-AD continuation          (optional)        ─ Future
-7. Site-specific inputs (NEON)   I                 ─ IN PROGRESS (I1–I2.5 done; atmospheric forcing; NEON soil/PFT are future siblings)
+7. Site-specific inputs (NEON)   I                 ─ IN PROGRESS (I1–I5 done — forcing dataset complete + QC-clean; I6–I8 integration remain; NEON soil/PFT future siblings)
 ```
 
 Phases run sequentially within each track. F + G Stage 1 share the
@@ -168,9 +169,12 @@ depends on what Phase F shows.
 
 ## What's running now
 
-Nothing actively running. The Phase I **full NEON raw pull completed 2026-08-14**
-(job 39397006; 11 GB at `/blue/gerber/earth_models/neon/raw/OSBS`, all 10 products,
-1063 zips) — the archive is ready for full-record forcing generation. `osbs.swenson.spinup` 600-yr accelerated
+Nothing actively running. The Phase I **full custom forcing dataset is COMPLETE**
+(2026-08-14): **101 monthly NetCDFs, 2017-02 → 2025-06**, at
+`data/datm/neon_OSBS/custom/OSBS/atm/`, QC-clean and CTSM-ready (the 2017 primary-gauge
+precip outage recovered from the secondary tipping bucket). Generated in annual chunks on
+the burst QOS from the 11 GB raw archive at `/blue/gerber/earth_models/neon/raw/OSBS`.
+`osbs.swenson.spinup` 600-yr accelerated
 AD spinup completed 2026-05-14 and was analyzed 2026-05-19 (plots at
 `output/2026-05-19_osbs.swenson.spinup_timeseries/`). `osbs.swenson.post-ad`
 hit an N-state crash on first attempt 2026-05-19, recovered by
@@ -244,10 +248,12 @@ through the UTM code path.
 | Production NetCDF | `output/osbs/2026-05-05_production/hillslopes_osbs_production_c260505.nc` | Current operative hillslope file |
 | Operative case | `$CASES/osbs.swenson.spinup` | Current 600-yr accelerated AD spinup |
 | NEON v4 forcing | `swenson/data/datm/neon_OSBS/v4/OSBS/` | Pre-built NCAR-NEON forcing (2018–2024, 84 files, 12 MB; Phase I I2) |
+| Custom NEON forcing (Phase I I5) | `swenson/data/datm/neon_OSBS/custom/OSBS/atm/` | Full custom dataset — 101 monthly NetCDFs, 2017-02 → 2025-06, QC-clean, CTSM-ready (deliverable) |
 | MERIT regression | `scripts/merit_validation/merit_regression.py` | Pysheds-fork validation test |
 
 ## Change log
 
+- **2026-08-14** — Phase I **I5 full-record dataset COMPLETE** — the custom NEON forcing is produced, QC-clean, and CTSM-ready: **101 monthly NetCDFs, 2017-02 → 2025-06** (`data/datm/neon_OSBS/custom/OSBS/atm/`), a strict superset of v4. Generated in **annual chunks on the burst QOS** (LOWMEM=TRUE is broken — crashes at `flow.api.clm.R:883`, upstream of the atm write; LOWMEM=FALSE ~3.5 GB/mo → 9 one-year runs at 64 GB each; two `gerber`-QOS attempts OOM'd). New whole-record QC (`scripts/neon_forcing/neon_forcing_qc.py`, the sniff-test analog of `neon_v4_regression.py`) caught the one defect: **2017 Jul–Dec precip missing** because NEON's **primary weighing gauge (DP1.00044) was physically down** (raw all-NA, finalQF=1 — likely why v4 starts at 2018). Recovered from the **secondary tipping bucket (DP1.00045)** via `scripts/neon_forcing/splice_2017_precip.py` (post-processing, **no source edit**; flags `PRECTmms_fqc=5`, backup first). Validated substitution: gauges agree **r=0.96 / ~2% on totals** (35 months); spliced values bit-match the raw at the same UTC timestamp; heaviest Sep-2017 rain lands on 2017-09-10 (**Hurricane Irma**), confirming alignment; only `PRECTmms`+`_fqc` changed. **Full record now passes QC (0 NaN).** New scientific decision locked (2017 precip source). Scripts + docs unpushed. Remaining: I6–I8 (CTSM ingestion smoke + PI adoption). See `phases/I-neon-forcing.md` `2026-08-14 — I5 full-record dataset COMPLETE`.
 - **2026-08-14** — Phase I **I5 raw pull COMPLETE** (job `39397006`, 32.5 min, `--qos=gerber`). Full 2016-08 → 2025-06 archive at `/blue/gerber/earth_models/neon/raw/OSBS`: all 10 products at full span (**1063 zips, 0 short**; EC `00200` 101 mo from 2017-02, DP1 met 107 mo from 2016-08), zips integrity-checked. **Size 11 GB compressed — NOT 22.6 GB**: the manifest sums UNCOMPRESSED `/data/` files (~2× the zips); 11 GB is complete and matches the original estimate. Coverage: EC exists only from 2017-02, so 2016-08→2017-01 has met but no flux (a generation-time start-date decision). Archive ready for full-record forcing generation (`run_forcing.sh`, `LOWMEM=TRUE`). See `phases/I-neon-forcing.md` `2026-08-14 — I5`.
 - **2026-08-14** — Phase I **I4 done — reproduce-v4 (2018) PASS**. Ran the offline pipeline over full 2018 and compared to pre-built v4 (12 months) via a new `scripts/neon_forcing/neon_v4_regression.py` (fqc-partitioned RMS/corr/bias + plots; the forcing analog of `merit_regression.py`). Headline: **both-measured RMS ≈ 0 for all 7 physical vars** — where both datasets carry a real measurement, our pipeline reproduces v4 to **machine precision** (measured data bit-identical); *all* divergence is in gap-filled timesteps (release + gap-fill-window differences), within/near the I2 reference band. Precip annual total +2.9%. Confirms pipeline fidelity to v4. Archive now holds all of 2018 (subset of the full pull); comparison outputs gitignored; script committed (hpg-esm-tools `20905da`). See `phases/I-neon-forcing.md` `2026-08-14`.
 - **2026-08-12** — Phase I **I3 done — Option B pipeline implemented + smoke-validated**. The forked `flow.api.clm.R` (`uf-osbs`) runs fully offline against a shared raw archive; a Mar–Jun 2018 smoke produced 4 atm + 4 eval NetCDFs whose atm output **matches v4** (FLDS/FSDS/RH/PSRF identical; TBOT/WIND/PRECT within reprocessing scale). Archive `/blue/gerber/earth_models/neon/raw/OSBS`; output `swenson/data/datm/neon_OSBS/custom/OSBS/{atm,eval}/`. Testing forced **two edits beyond the plan** — **C** (copy zips to a per-session `tempdir()` because `stackByTable` *deletes* its inputs → would consume the shared archive) and **P2** (non-fatal REddyProc partition + NaN-fill CO₂ eval columns) — and surfaced the `FLDS_MDS`/`Rg`→`DP1.00023.001` duplicate, REddyProc's **≥90-day** flux minimum, an edit-T period-end boundary fix, and the headline finding: **OSBS EC CO₂ flux (NEE/FC) is absent at the NEON source** (all-NA, own QC flag all-bad — a genuine IRGA gap, *not* the script's mask; energy fluxes fine) → **no CO₂-flux validation is possible for OSBS 2018**. Full-pull size (`size_manifest.R`) = **22.6 GB** uncompressed (EC ≈58%; the zipped download is ~11 GB — see 2026-08-14 I5). Commits (unpushed): fork `2d30ebb`+`07786dd`, hpg-esm-tools `ba4d922`+`cac3be9`. See `phases/I-neon-forcing.md` `2026-08-12 (impl)`.

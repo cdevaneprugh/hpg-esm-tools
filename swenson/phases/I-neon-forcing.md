@@ -1,10 +1,13 @@
 # Phase I: NEON Atmospheric Forcing
 
-Status: **In progress — I1–I2.5 done; single linear plan (reworked 2026-07-15).**
+Status: **In progress — I1–I5 DONE (dataset produced, QC-clean, CTSM-ready); I6–I8 (integration) remain.**
 Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
-NEON→DATM pipeline and validate against v4 → produce the full 2016–2025 dataset (released) →
-full CTSM integration (PI-gated tail). I1 (verification), I2 (v4 fetched), and
-I2.5 (integration smoke test — **PASSED**) complete; I3 (pipeline) next.
+NEON→DATM pipeline and validate against v4 → produce the full 2017–2025 dataset (released) →
+full CTSM integration (PI-gated tail). **Deliverable in hand: 101 monthly NetCDFs,
+2017-02 → 2025-06 (a strict superset of v4), all QC-clean — the one data gap (2017
+primary-gauge precip outage) recovered from the secondary tipping bucket.** I1–I5
+complete (verification, v4 fetch + integration smoke, offline pipeline, reproduce-v4
+PASS, full-record generation + QC + 2017 splice); I6 (full CTSM integration) next.
 Depends on: — (independent of the hillslope track A–H)
 Blocks: — (input-quality upgrade; does not gate routing on/off decisions)
 
@@ -795,8 +798,9 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   **converted RH** (RH2M 84.6%) — empirically confirming §8/§9. All three untested
   combos — `1PT`+hillslope, `SROF`+hillslope, `datafiles` override — work. **Four
   integration issues found, each carrying to I6** (see Log). See §8, §9.
-- [ ] **I3. Stand up the pipeline — HiPerGator venue, raw-data access, R
-  environment.** **Venue decided (2026-07-29): build and run on HiPerGator** (for
+- [x] **I3. Stand up the pipeline — HiPerGator venue, raw-data access, R
+  environment. DONE 2026-08-12 — Option B offline pipeline built + smoke-validated.**
+  **Venue decided (2026-07-29): build and run on HiPerGator** (for
   reproducibility, PI access, and output next to CTSM); the raw download **also
   runs on HPG** — a NEON API token lifts the `/data/` 403 (§12, resolving §7), so
   `zipsByProduct` (released-only, token) runs on a compute node, no off-HPG step.
@@ -819,7 +823,7 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   + list in §11. Access resolved on-HPG via token (§12); download runs on a compute
   node (test ladder §12.4); the laptop runbook was removed.** See also Research
   notes §3, §7.
-- [ ] **I4. Reproduce-v4 validation — go/no-go gate (fqc-partitioned comparison).**
+- [x] **I4. Reproduce-v4 validation — go/no-go gate (fqc-partitioned comparison). DONE 2026-08-14 — PASS.** (2018: measured points bit-identical to v4, all divergence in gap-fill; see Log.)
   Run the pipeline for **2018–2024** (its default range = v4's), then compare the
   output against the v4 files from I2. Same generator + range → identical
   grids/vars/units → clean element-wise diff (no regrid/time-align). **Partition
@@ -838,7 +842,7 @@ pipeline build; the tail (I6–I8) does the full integration (downstream / PI-ga
   (a `neon_v4_regression` with pass/fail, re-runnable after any env change or record
   extension). **Pass** = measured near-exact + gap-filled within the band → pipeline
   trusted; **fail** → fall back to the renv-pinned build. See Research notes §5, §9.
-- [ ] **I5. Produce the full dataset.** Once I4 passes, run the pipeline over the
+- [x] **I5. Produce the full dataset. DONE 2026-08-14 — 101 files 2017-02 → 2025-06, QC-clean; 2017 precip recovered from the secondary gauge.** (Chunked LOWMEM=FALSE on burst — LOWMEM=TRUE is broken; QC + splice in the Log.) Once I4 passes, run the pipeline over the
   full record (via the `METHPARAFLOW` env-var path, no source edits) into the
   curated dir. **Usable start is 2016-08** — all 7 core variables are real there
   (verified per-product table in **§11**: precip binds — tipping 2016-08 / weighing
@@ -940,6 +944,68 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-14 — I5 full-record dataset COMPLETE: chunked generation + QC + 2017 precip splice
+
+The full custom forcing dataset now exists, is QC-clean, and is CTSM-ready:
+**101 monthly NetCDFs, 2017-02 → 2025-06**, at `data/datm/neon_OSBS/custom/OSBS/atm/`
+(`OSBS_atm_YYYY-MM.nc`, gitignored, 15 MB). A **strict superset of pre-built v4**
+(2018-01 → 2024-12): same overlap start, +11 mo earlier (2017), +6 mo later (2025 H1),
+RELEASE-2026 throughout.
+
+**Start date = 2017-02 (EC-anchored).** The generator builds its output time grid from
+the EC flux timestamps (`def.rglr`), and EC begins 2017-02 at OSBS, so the record starts
+there even though the DP1 met inputs reach 2016-08. Extending to 2016-08 would require a
+source edit to decouple the time grid from EC — **declined** (no more source edits).
+End = 2025-06 (released-only, per PI). This resolves the §11.4 / I5 start-date decision:
+**2017-02, uniform EC provenance.**
+
+**Generation — LOWMEM=TRUE is BROKEN; used chunked LOWMEM=FALSE on burst.** The intended
+low-memory path crashes: the lowmem EC branch builds `dataDfFlux` missing ~10 flux columns
+that `varRptFlux` selects at `flow.api.clm.R:883` (`cbind(dataDfFlux[,varRptFlux], …)`),
+~340 lines upstream of the atm write — so **no atm file is ever produced**. Unusable
+without a source edit. LOWMEM=FALSE works but is memory-heavy: a completing 2018 run peaked
+at **41.6 GB (~3.5 GB/month)**, so the whole 101-month record would need ~350 GB / ~11 hr —
+infeasible on the 80 GB `gerber` QOS (two `gerber` scaling attempts OOM'd; the stale
+"2018 = 1.66 GB" figure was ~20× low). Solution: **annual chunks on the burst QOS**
+(`gerber-b`, 720 GB) — 9 one-year runs at 64 GB each, all COMPLETED clean. The generator
+only `dir.create`s the output dir if absent (never wipes), so non-overlapping chunks
+accumulate into the one dir; the shared raw archive stayed zips-only (1063 zips intact).
+
+**QC — new `scripts/neon_forcing/neon_forcing_qc.py`** (Python/xarray, ctsm env; the
+whole-record sniff-test analog of `neon_v4_regression.py`): structural (ntime=days×48,
+`<VAR>_fqc` present, NaN==0, monotonic), gap-fill fractions per var×month, physical-range
+sanity, and climatology plots (gap-fill heatmap, monthly means, diurnal composite) →
+`results.json` + `summary.txt` + PASS/FAIL. Validated on the 84 v4 files (PASS, bounds
+calibrated) and on custom output; the diurnal composite is physically correct (FSDS peaks
+at local solar noon ≈17 UTC, TBOT/RH anti-phased, PSRF semidiurnal tide).
+
+**2017 precip gap + secondary-gauge splice.** The full-record QC caught the one defect:
+`PRECTmms` missing for **2017 Jul–Dec** (6098 `-9999` fill values; Aug–Nov entirely, Jul
+tail, Dec head). Root cause — NEON's **primary weighing gauge (DP1.00044) was physically
+down** that stretch (raw 2017-08: all-NA, `finalQF=1` on every row); the generator uses the
+primary for OSBS and does not fall back, so it wrote fill. (Almost certainly why v4 itself
+starts at 2018.) The **secondary tipping bucket (DP1.00045)** recorded that precip
+completely (`finalQF=0`, sensible totals incl. **Hurricane Irma, Sep 2017**). Substitution
+validated: the two gauges agree **r=0.96, totals within ~2 %** over 35 mutually-complete
+months (2018–2021), both ~1330–1350 mm/yr. Recovered via **new
+`scripts/neon_forcing/splice_2017_precip.py`** — a post-processing patch, **no source
+edit**: reads the six tipping months, converts `precipBulk`/1800 → mm/s, overwrites only
+the fill positions in place (values-only, backup to `atm/pre_splice_backup/` first), flags
+them `PRECTmms_fqc = 5` and extends the code-map attribute with `5=secondary_gauge_substitution`.
+**Independently verified** (raw CSV re-read + time decoded separately from the splice code):
+spliced values bit-match the raw at the same UTC timestamp; the heaviest Sep-2017 rain lands
+on **2017-09-10 (163 mm/day)** — Irma's landfall date, confirming alignment physically; only
+`PRECTmms` + `_fqc` changed vs backup; `fqc==5` appears in only the six gap files; the four
+fully-spliced months reconcile to **±0.000 mm** vs the raw. Locked as a scientific decision
+(STATUS.md). **The full 101-file record now passes QC (0 NaN).** 2017 annual precip 1767 mm
+sits alongside 2018 (1810 mm) — both wet years, sensible.
+
+**Deliverable state:** the monthly stream is the CTSM-native packaging (matches v4; DATM
+ingests a `datafiles` list, not one concatenated file). Two new scripts +
+`splice_2017_precip.py` and the doc updates are **unpushed**. Remaining: **I6–I8** — the
+CTSM ingestion smoke on the 101-file stream (the "runs in a real case" proof) and the PI
+adoption decisions.
 
 ### 2026-08-14 — I5 full production raw pull COMPLETE (11 GB compressed, all months)
 
