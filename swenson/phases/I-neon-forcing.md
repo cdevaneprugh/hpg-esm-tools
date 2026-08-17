@@ -1,6 +1,6 @@
 # Phase I: NEON Atmospheric Forcing
 
-Status: **In progress — I1–I5 DONE (dataset produced, QC-clean, CTSM-ready); full-dataset ingestion smoke PASSED (2026-08-15); remaining is engineering only — I6 mechanical spinup (200 AD + 200 post-AD, cycled) + I7 config recipe; I8 adoption + all experiment knobs are the PI's.**
+Status: **Engineering COMPLETE — I1–I5 dataset produced (QC-clean, CTSM-ready); full-record ingestion smoke PASSED (2026-08-15); cold-start AD spinup CONVERGED on the cycled record (2026-08-17); config recipe delivered (I7 → `docs/neon-forcing-case-recipe.md`). Custom forcing validated mechanically + scientifically and handed to the PI. The formal 200+200/post-AD run was deemed unnecessary (AD converged by ~yr 80). I8 adoption + all experiment knobs are the PI's.**
 Fetch pre-built v4 → smoke-test the CTSM integration with it → build our own
 NEON→DATM pipeline and validate against v4 → produce the full 2017–2025 dataset (released) →
 full CTSM integration (PI-gated tail). **Deliverable in hand: 101 monthly NetCDFs,
@@ -867,36 +867,38 @@ CO₂/aerosol/N-dep/use-case knobs, `MOSART`-vs-`SROF`, present-day-vs-1850, cyc
 The PI has chosen to **cycle the NEON block** (simplest) with a **200 AD + 200 post-AD**
 target. Ingestion is already proven (2026-08-15 smoke); these tasks build on it.
 
-- [ ] **I6. Mechanical spinup validation (200 AD + 200 post-AD, cycled).** Build a
-  fresh 1PT case (Approach B — compset change to the NEON DATM machinery, §8) from the
-  proven ingestion-smoke recipe and run the standard BGC spinup workflow on the cycled
-  custom dataset. Config that MUST be present (from the smoke + operative case): the
-  two-stream `datafiles` override, `year_first/last/align = 2017/2025/2017`,
-  `DATM_YR_START/END/ALIGN = 2017/2025/2017`, `taxmode=cycle`, **`dtlimit=-1` on both
-  NEON streams** (else the cycle wrap crashes on the stock CDEPS bug
-  `dshr_strdata_mod.F90:1050`; 2026-08-15 Log), `MPILIB=openmpi`, cold-start, surfdata
-  coords, the hillslope `user_nl_clm` block, the operative case's 6-file hydrology
-  SourceMods, and a **lean monthly hist config** (drop the daily h1a — ~halves wall-time).
-  Keep whatever chemistry knobs the compset/NEON usermod default (the PI's to change).
+- [x] **I6. Mechanical + scientific validation — SATISFIED 2026-08-17 (via ingestion
+  smoke + AD convergence; formal 200+200/post-AD deemed unnecessary).** The custom
+  dataset's soundness is proven on both axes: the full 101-month record **ingested and
+  drove CTSM end-to-end** (2026-08-15 smoke) and a cold-start accelerated-AD spinup on the
+  cycled record **converged** (2026-08-17 Log). Given both sniff tests pass, the PI takes
+  it from here; the formal 200-yr AD + 200-yr post-AD run was descoped — it would only
+  retrace the already-converged state. Config requirements captured in I7.
   - **I6a — calibration smoke — DONE 2026-08-15.** Ran the first 10 yr of the AD case
     (`osbs.swenson.neon-custom-spinup`, lean annual output, cold-start, cycled). Completed
     clean in **55:26 → 5.54 min/sim-yr**; output sensible (carbon building, SOM AD burn-down
     then stable, no NaN); `dtlimit=-1` held through the wrap in the accelerated-spinup path.
-    **200+200 (400 yr) ≈ 36–37 hr compute (~1.5 days)** as a resubmit chain. Doubles as the
-    AD start. Surfaced the partial-year wrap discontinuity (see the 2026-08-15 Log entry).
-  - **I6b — AD spinup (200 yr, `CLM_ACCELERATED_SPINUP=on`):** cold-start, RESUBMIT chain.
-  - **I6c — post-AD (200 yr, `=off`):** branch/hybrid from the AD restart; confirm the
-    **AD→post-AD transition** clears the known N-state crash
-    (`SoilBiogeochemNitrogenStateType.F90:874`) and the run is stable.
-  Success = the full AD→post-AD workflow completes clean on the custom dataset — a
-  capability proof, not a converged science run.
-- [ ] **I7. Config recipe for the PI.** Capture — from the working I6 case — every
-  `xmlchange` and `user_nl_*` edit required to drive a case with the custom dataset, as
-  a drop-in checklist: the two NEON streams' `datafiles` / `year_*` / `taxmode` /
-  **`dtlimit=-1`**, `DATM_YR_*`, `MPILIB=openmpi`, cold-start, surfdata coords, the
-  hillslope `user_nl_clm` block, and the accelerated-spinup flags. The engineering
-  hand-off the PI picks up. (Ingestion + the v4-comparability check are already done —
-  2026-08-15 Log, `scripts/neon_forcing/smoke_compare_v4.py`.)
+    Surfaced the partial-year wrap discontinuity (see the 2026-08-15 Log entry).
+  - **I6b — AD spinup — DONE (convergence demonstrated) 2026-08-17.** The 4-tape
+    `osbs.swenson.neon.spinup` (cold-start, accelerated, cycled) reached **~180 continuous
+    sim-years** and converged: 20-yr block-mean drift **TOTECOSYSC 0.15% / TOTSOMC 0.48% /
+    TOTVEGC 0.51%** (last block vs 80 yr earlier), flat since ~yr 60, no NaN. A walltime
+    timeout + restart-bookkeeping mishap on the resubmit chain (2026-08-17 Log) kept it from
+    landing a clean "year 200," but convergence was already established. Clean yr-180 restart
+    preserved at `archive/osbs.swenson.neon.spinup/rest/2197-02-01-00000/`.
+  - **I6c — post-AD (N-state-safe transition) — NOT run on NEON; recipe captured.** The
+    `startup`+`finidat` transition that clears the N-state crash
+    (`SoilBiogeochemNitrogenStateType.F90:874`) is documented in the recipe and empirically
+    proven on the CRUNCEP `osbs.swenson.post-ad` case. Left to the PI.
+- [x] **I7. Config recipe for the PI — DONE 2026-08-17 → `docs/neon-forcing-case-recipe.md`.**
+  The complete drop-in list of forcing-unique case settings: compset
+  (`I1PtClm60Bgc` / `DATM%1PT`), `PTS_LAT/LON` (surfdata coords), `RUN_STARTDATE=2017-02-01`
+  + `DATM_YR_START/END/ALIGN=2017/2025/2017`, the two NEON streams' `datafiles` /
+  `taxmode=cycle` / **`dtlimit=-1` on both**, `MPILIB=openmpi` — plus a `create_clone`
+  shortcut, the operational spinup caveats (generous walltime + single-segment;
+  `st_archive`-before-resume; partial-year wrap vs. clean 2018–2024), and explicit
+  exclusion of the OSBS hillslope inputs + science knobs (the PI's). (Ingestion +
+  v4-comparability already done — 2026-08-15 Log, `scripts/neon_forcing/smoke_compare_v4.py`.)
 - [ ] **I8. PI adoption (PI-gated; science).** Whether to drive the production respin
   with the custom dataset, plus all experiment knobs. Cycle-vs-blend: **PI chose cycle.**
   New sub-choice (2026-08-15 calibration): **clean cycle 2018–2024** (= the v4 range, clean
@@ -967,6 +969,38 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
 - `STATUS.md` — project status; Phase I registered under roadmap track 7.
 
 ## Log
+
+### 2026-08-17 — I6/I7 closed: AD converged, redo deemed unnecessary, recipe delivered
+
+**Decision (PI):** the custom forcing is validated mechanically + scientifically — hand it
+to the PI to play with; the formal 200+200 spinup is unnecessary. I7 recipe is the deliverable.
+
+**200+200 AD attempt + the goof.** After I6a, launched the AD spinup
+(`osbs.swenson.neon.spinup` — 4-tape forcing-assessment hist, cold-start, cycled full record).
+Chunk 1 (yr 1→100) completed clean (13:18); the auto-chained chunk 2 hit the **15-hr walltime**
+at ~yr 195 (the 4-tape monthly output runs ~7.4–9.5 min/yr → a 100-yr chunk needs ~13–16 hr;
+node-speed variance pushed it over). The timed-out chunk **never archived**, and the resubmit
+then silently resumed from the last *short-term-archived* restart (**yr 100**, from chunk 1)
+instead of yr 180 — CIME `CONTINUE_RUN` keys off the archive, not the newest restart file in the
+run dir — re-running yr 100→120. No corruption (deterministic); ~2.5 hr wasted. **Lessons →
+recipe:** after a mid-segment timeout, run `./case.st_archive` *before* resubmitting; and prefer
+generous walltime (`gerber` allows 31 days) + single-segment (`RESUBMIT=0`, `STOP_N=<full>`) so no
+handoff exists. (`dtlimit=-1` on both streams already locked from the 2026-08-15 smoke.)
+
+**Convergence — why the redo is unnecessary.** Built the full TOTECOSYSC/TOTSOMC/TOTVEGC series
+over the **~195 continuous sim-years** (chunk1 1→100 + chunk2 100→195; the resume's 100→120 re-run
+is the same deterministic trajectory). 20-yr **block means are flat from ~yr 60**: TOTECOSYSC drift
+**0.15%** (last block vs 80 yr earlier), TOTSOMC **0.48%**, TOTVEGC **0.51%** — all far under the 3%
+criterion. TOTSOMC (the AD target) flat at ~680 gC/m² since ~yr 60. A real **~90-yr, ±6% limit
+cycle** rides on the mean (constant amplitude, *not* damping — an AD-acceleration feature; post-AD
+should damp it; worth the PI's awareness), but the envelope and mean are stationary → **converged by
+every appropriate metric** by ~yr 80. Physics sane (TBOT ~294 K, PBOT ~101 kPa), no NaN. Analysis
+scripts + plot local (scratchpad).
+
+**I7 recipe delivered → `docs/neon-forcing-case-recipe.md`** (see the I7 task for the settings list).
+**I6** satisfied via the 2026-08-15 ingestion smoke + this AD convergence; formal 200+200/post-AD
+descoped to the PI. Clean yr-180 restart preserved at
+`archive/osbs.swenson.neon.spinup/rest/2197-02-01-00000/` if a post-AD is ever wanted.
 
 ### 2026-08-15 — I6a calibration done + partial-year wrap discontinuity
 

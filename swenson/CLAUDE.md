@@ -95,6 +95,7 @@ swenson/
 │   ├── lake-column-ctsm-audit.md       # Canonical lake-column params + CTSM source investigation
 │   ├── data-acquisition-dates.md       # NEON LIDAR, NWI, Lee 2023 vintage notes
 │   ├── neon-data-products.md           # NEON DP catalog: atmospheric forcing (primary) + vegetation/soil/AOP (secondary)
+│   ├── neon-forcing-case-recipe.md     # Phase I I7: drop-in forcing-unique case settings (compset, PTS, streams, dtlimit=-1) — PI hand-off
 │   ├── neon-forcing-pipeline-hipergator.md  # Phase I: on-HPG NEON→DATM pipeline plan (conda env + raw download + flow.api.clm.R edits)
 │   └── pysheds-utm-walkthrough.md      # UTM CRS support walkthrough (historical)
 │   (Superseded docs — hillslope-binning-rationale.md, ns-aspect-bug.md,
