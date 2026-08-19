@@ -1,6 +1,6 @@
 # STATUS — Swenson Hillslope for OSBS
 
-**Updated:** 2026-08-17
+**Updated:** 2026-08-19
 
 ## Project context
 
@@ -61,28 +61,24 @@ consultation.
 
 ## Open questions
 
-### Phase H (routing-on) — contingent, may not be pursued
+### Phase H (routing-on) — not pursued; the PI has the routing/drainage handled
 
-The 2026-05-19 routing-gate audit removed the original motivation
-for routing-on. Inter-column lateral flow already runs under
-`use_hillslope=.true.` (Phase F is delivering it). Routing-on's
-remaining value is narrow: stream-coupling boundary condition at
-the chain bottom, internal `stream_water_volume` ledger, and the
-`VOLUMETRIC_STREAMFLOW` diagnostic. Whether that's worth the PI
-consultation cost and 600-yr respin depends on what Phase F shows.
+Tracks B and C are no longer relevant (2026-08-19). The PI has the
+hillslope routing/drainage situation handled — the bridge-zone
+drainage anomaly is resolved on the PI's side (the specific fix is
+not documented here; see the Phase F note below). Track A (the
+mesh-mode workaround for CTSM Issue #1432) remains complete and
+available if ever needed.
 
-The four PI-consultation items previously listed here (B1
-gridcell area, B2 Darcy gradient sanity, B3 validation framing,
-B4 stream geometry + lake overflow) are frozen pending Phase F
-evidence. Full task descriptions live in
-`phases/H-lateral-flow.md` Section "Scientific decisions — PI
-consultation required" but are flagged as a frozen record there,
-not an active to-do list.
-
-A separate, vague idea — the PI floated a regional Darcy drain
-on the lake column via SourceMod to prevent unbounded
-accumulation — is also contingent on Phase F. No design exists.
-Logged as Section 7.7 Option 5 in `phases/H-lateral-flow.md`.
+Background on why the routing-on question was narrow to begin with:
+the 2026-05-19 routing-gate audit showed inter-column lateral flow
+already runs under `use_hillslope=.true.`, so routing-on only ever
+added the stream-coupling boundary condition, an internal
+`stream_water_volume` ledger, and the `VOLUMETRIC_STREAMFLOW`
+diagnostic. The B1–B4 PI-consultation items and the Section 7.7
+Option 5 Darcy-drain idea retire with the track — recorded in
+`phases/H-lateral-flow.md` as a frozen historical record, not a
+to-do list.
 
 ### Awaiting external clarification
 
@@ -98,7 +94,8 @@ Logged as Section 7.7 Option 5 in `phases/H-lateral-flow.md`.
   spinup - should occur only when nstep = 1"). Recovered by 2026-05-20;
   two 100-yr runs completed successfully (jobs 32805477 + 32890432,
   2026-05-20 → 2026-05-21). Currently idle. Not prioritized while PI
-  investigates the AD-spinup TAI / bridge-zone questions.
+  investigates the AD-spinup TAI question (the bridge-zone anomaly is
+  resolved — see below).
 
 ### Open scientific questions surfaced by Phase F analysis (2026-05-19)
 
@@ -115,12 +112,11 @@ Phase H prerequisites.
   600-year array.** The TAI carbon-side signature (suppressed aerobic
   decomposition in saturated columns) is not visible in this output.
   Headline issue for the project's central scientific question.
-- **Bridge-zone anomaly** at chain indices 3-6 (HAND -3 to -1.5 m).
-  These columns have the deepest water tables (1.3-1.4 m) of any
-  lower-hillslope column, despite being closest to the lake. Caused
-  by steep Darcy gradients (Δh/L ≈ 0.4-0.6 m/m) over short distances.
-  Connects to B2 (hydraulic conductivity / bin spacing) — now de facto
-  a Phase F follow-up rather than a Phase H prerequisite.
+- **Bridge-zone anomaly — RESOLVED 2026-08-19.** The PI fixed it; the
+  hillslope drains properly now. The specific fix is **not known to us**
+  (not documented on our side). (Originally: chain indices 3-6, HAND -3
+  to -1.5 m, had the deepest water tables of any lower-hillslope column
+  despite being closest to the lake.)
 
 Plots backing these findings: `output/2026-05-19_osbs.swenson.spinup_timeseries/`
 (8 PNGs + h0a/h1a annual NetCDFs). The narrative analysis report
@@ -139,9 +135,9 @@ are the canonical record.
 | E | Parameter set | Complete | 16-bin hybrid (superseded by E.5) |
 | E.5 | Bin redesign + lake column | Complete | 24-bin TAI scheme + lake at chain index 1 |
 | E.6 | NWI mask hole-fill | Complete | binary_fill_holes; 400K hole pixels fixed |
-| F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19. Convergence PASS; TAI signal ABSENT; lake stable. PI investigating TAI / bridge-zone. Plots at `output/2026-05-19_osbs.swenson.spinup_timeseries/` |
+| F | Validate and deploy | **Complete (routing-off, AD only)** | 600-yr spinup analyzed 2026-05-19. Convergence PASS; TAI signal ABSENT; lake stable. PI investigating TAI; **bridge-zone anomaly resolved by the PI** (specific fix unknown to us). Plots at `output/2026-05-19_osbs.swenson.spinup_timeseries/` |
 | G | Submerged lake column | Complete | Stage 1 done; Stage 2 moved to Phase H |
-| H | Stream-side coupling (routing-on) | **Track A complete; B/C on hold** | May not be pursued at all — original motivation collapsed when 2026-05-19 audit showed lateral flow already runs under `use_hillslope=.true.` |
+| H | Stream-side coupling (routing-on) | **Track A complete; B/C not pursued (2026-08-19)** | Closed — no longer relevant; the PI has the routing/drainage handled (bridge-zone resolved on the PI's side). Motivation was already narrow: the 2026-05-19 audit showed lateral flow runs under `use_hillslope=.true.`. Track A (mesh-mode workaround) stays available. |
 | I | NEON atmospheric forcing | **Engineering COMPLETE — dataset (I1–I5) + ingestion smoke PASSED (2026-08-15) + AD spinup CONVERGED (2026-08-17) + config recipe delivered (I7, `docs/neon-forcing-case-recipe.md`); validated mechanically + scientifically and handed to the PI. I8 adoption + all knobs are the PI's** | **Full custom forcing produced: 101 monthly NetCDFs, 2017-02 → 2025-06, QC-clean, CTSM-ready — a strict superset of pre-built v4** (v4's 2018–2024 span + 11 mo earlier + 6 later, RELEASE-2026 throughout). Reproduces v4 to machine precision (I4 PASS). The one data gap — 2017 primary weighing-gauge precip outage — recovered from the secondary tipping bucket (`splice_2017_precip.py`, fqc=5, no source edit). **2026-08-15: full-dataset CTSM ingestion smoke PASSED** (`osbs.swenson.neon-custom-smoke`) — custom stream drives CTSM end-to-end over the whole record, v4-comparable (forcing-driven fields ≤0.03%). Surfaced a production requirement: **`dtlimit=-1` on both NEON streams** (cycled spinup wraps the finite window → stock CDEPS bug without it). **2026-08-17: cold-start AD spinup CONVERGED** (`osbs.swenson.neon.spinup`, ~180 continuous yr; 20-yr block-mean drift TOTECOSYSC 0.15% / TOTSOMC 0.48% / TOTVEGC 0.51%, flat since ~yr 60 — a ~90-yr ±6% AD limit cycle rides the mean but the envelope is stationary). Both sniff tests pass → **formal 200+200/post-AD deemed unnecessary; handed to the PI.** The `st_archive`-before-resume + generous-walltime lessons (from a resubmit-chain goof) are captured in the recipe. Input-quality upgrade, independent of routing on/off. |
 
 ## Roadmap
@@ -150,8 +146,8 @@ are the canonical record.
 1. Methodology validation        MERIT regression  ─ frozen (proven on published data)
 2. Pipeline foundations          A, B, C, D        ─ Complete
 3. Parameter set                 E, E.5, E.6       ─ Complete
-4. Long spinup with lateral flow F + G Stage 1     ─ IN PROGRESS (lateral flow active under use_hillslope=.true.)
-5. Stream-coupling (routing-on)  H                 ─ Track A done; Tracks B/C on hold; may not be pursued
+4. Long spinup with lateral flow F + G Stage 1     ─ Complete (routing-off AD spinup done; bridge-zone resolved by PI; TAI/O_SCALAR question PI-owned)
+5. Stream-coupling (routing-on)  H                 ─ Track A done; Tracks B/C not pursued (PI has routing/drainage handled)
 6. Post-AD continuation          (optional)        ─ Future
 7. Site-specific inputs (NEON)   I                 ─ ENGINEERING COMPLETE (I1–I7 done: dataset + ingestion smoke + AD convergence + config recipe; validated mechanically + scientifically, handed to PI. I8 adoption + knobs are the PI's; NEON soil/PFT future siblings)
 ```
@@ -160,12 +156,12 @@ Phases run sequentially within each track. F + G Stage 1 share the
 osbs.swenson.spinup case as a single validation vehicle (originally
 sequential per design; the 2026-04-25 PI direction folded the lake
 column into the pipeline output, dissolving the F → G ordering).
-Phase H Track A (mesh-mode workaround) is complete and ready if
-needed, but Tracks B/C are on hold — the original scientific
-motivation (activate lateral flow) collapsed when the 2026-05-19
-audit showed lateral flow already runs under `use_hillslope=.true.`
-**We are not assuming routing-on will be pursued.** Whether to do so
-depends on what Phase F shows.
+Phase H Track A (mesh-mode workaround) is complete and available if
+needed, but Tracks B/C are not pursued (2026-08-19) — no longer
+relevant; the PI has the routing/drainage situation handled. The
+original scientific motivation (activate lateral flow) had already
+collapsed when the 2026-05-19 audit showed lateral flow runs under
+`use_hillslope=.true.`
 
 ## What's running now
 
@@ -186,8 +182,9 @@ AD spinup completed 2026-05-14 and was analyzed 2026-05-19 (plots at
 `output/2026-05-19_osbs.swenson.spinup_timeseries/`). `osbs.swenson.post-ad`
 hit an N-state crash on first attempt 2026-05-19, recovered by
 2026-05-20, ran 200 yr successfully through 2026-05-21, and has been
-idle since. PI is investigating the AD-spinup TAI absence and
-bridge-zone anomaly; the production hillslope file is no longer frozen
+idle since. PI is investigating the AD-spinup TAI absence (the
+bridge-zone anomaly is resolved — the PI fixed it, the specific fix
+unknown to us); the production hillslope file is no longer frozen
 (2026-07-15) — PI proceeding via soil-value adjustments.
 
 ## Methodology validation summary
@@ -271,6 +268,7 @@ through the UTM code path.
 
 ## Change log
 
+- **2026-08-19** — Phase F/H doc reconciliation (PI updates relayed by the user). **Bridge-zone anomaly RESOLVED by the PI** — the hillslope drains properly now; the specific fix is **not known to us** (not documented on our side), so it is deliberately left unstated rather than guessed. **Phase H Tracks B/C retired** — no longer relevant; the PI has the routing/drainage situation handled. Track A (mesh-mode workaround for CTSM Issue #1432) stays complete/available; the B1–B4 PI-consultation items + the Section 7.7 Option 5 Darcy-drain idea retire with the track (kept as a frozen historical record in `phases/H-lateral-flow.md`). Also reconciled the **stale Phase F freeze annotation** — the production hillslope file has been un-frozen since 2026-07-15, but the Phase F doc still read "frozen." The **O_SCALAR / TAI-absence** question remains the one open Phase F science thread, PI-owned. Docs touched: `STATUS.md`, `phases/F-validate-deploy.md`, `phases/H-lateral-flow.md`.
 - **2026-08-17** — Phase I **engineering COMPLETE — I6/I7 closed; forcing handed to the PI** (PI direction: mechanical + scientific sniff tests passing is enough, no formal 200+200 needed). **I7 recipe delivered** → `docs/neon-forcing-case-recipe.md`: the drop-in list of forcing-unique case settings (compset `I1PtClm60Bgc`/`DATM%1PT`, `PTS_LAT/LON`, `RUN_STARTDATE`+`DATM_YR_*`, the two NEON streams' `datafiles`/`taxmode=cycle`/**`dtlimit=-1`**, `MPILIB=openmpi`), a `create_clone` shortcut, the spinup operational caveats, and explicit exclusion of the hillslope inputs + science knobs. **I6 satisfied** via the 2026-08-15 ingestion smoke + a **converged** cold-start AD spinup (`osbs.swenson.neon.spinup`, ~180 continuous sim-yr; 20-yr block-mean drift TOTECOSYSC 0.15% / TOTSOMC 0.48% / TOTVEGC 0.51%, flat since ~yr 60; a real ~90-yr ±6% AD limit cycle rides the stationary mean — an AD-acceleration feature, post-AD should damp it). The 200-yr AD run hit a **walltime timeout + restart-bookkeeping goof** (chunk 2 timed out un-archived → resubmit rewound to the last *archived* restart at yr 100 and re-ran yr 100→120; deterministic, no corruption, ~2.5 hr wasted). **Lessons → recipe:** `./case.st_archive` before resubmitting a timed-out chunk; prefer generous walltime (`gerber` 31-day cap) + single-segment (`RESUBMIT=0`). Formal 200+200/post-AD descoped to the PI; clean yr-180 restart preserved at `archive/osbs.swenson.neon.spinup/rest/2197-02-01-00000/`. See `phases/I-neon-forcing.md` `2026-08-17`.
 - **2026-08-15** — Phase I **I6a calibration done; partial-year wrap discontinuity noted**. 10-yr AD calibration (`osbs.swenson.neon-custom-spinup`, cloned `--keepexe`, accelerated, lean annual output, cycled) completed clean at **5.54 min/sim-yr → 200+200 ≈ 36–37 hr compute (~1.5 days)**. Output sensible (TOTECOSYSC 1318→3195 and TOTVEGC building, TOTSOMC AD burn-down then stable, TWS filling, no NaN). **Discontinuity:** cycling the *partial-year* record (2017-02 → 2025-06) wraps **Jun→Feb** → an ~8-month seasonal jolt each cycle (~24 over a 200-yr spinup); benign, and `dtlimit=-1` held through the wrap. **Clean-cycle alternative = the v4 range:** the custom record's complete calendar years are exactly **2018–2024** (= v4's `2018-01→2024-12`, 84 mo), so a clean Dec→Jan wrap discards precisely the partial years (2017 spliced precip + 2025 H1) that are the custom set's value-add — over 2018–2024 the custom data is measured-bit-identical to v4 (I4), so a clean-boundary spinup is **effectively v4-equivalent**. New I8 sub-choice: clean cycle 2018–2024 vs full-record cycle 2017-2025 (calibration validated the full-record path). See `phases/I-neon-forcing.md` `2026-08-15 — I6a calibration`.
 - **2026-08-15** — Phase I remaining work **re-scoped to engineering only** (PI direction): **I6** = mechanical AD→post-AD spinup (**200 + 200**, cycled) proving the custom dataset drives a full spinup; **I7** = a config recipe (every `xmlchange` + `user_nl_*` edit) for the PI. Experiment knobs (CO₂/aero/N-dep/use-case, MOSART-vs-SROF, present-day-vs-1850) + adoption (**I8**) are the PI's — we neither set nor reason about them. Cycle-vs-blend resolved: **PI chose cycle**. 200+200 (down from 600+200) is adequate — textbook CTSM-BGC is ~200+200 and OSBS converges faster than the arctic worst case. A **~1-hr calibration smoke** (first ~10 yr, lean monthly hist) sizes the 200+200 wall-clock before committing the multi-day resubmit chain. I6/I7/I8 rewritten. See `phases/I-neon-forcing.md` `2026-08-15 — Remaining work re-scoped`.

@@ -4,13 +4,15 @@ Status: **Routing-off AD-spinup track complete 2026-05-19.** osbs.swenson.spinup
 600-yr accelerated AD spinup converged (drift_50yr = 0.48%) and was analyzed;
 verdicts inlined below and in `STATUS.md`'s 2026-05-19 change-log entry; plots
 at `output/2026-05-19_osbs.swenson.spinup_timeseries/`. PI is investigating
-the TAI absence and bridge-zone anomaly; production hillslope file frozen
-during the investigation. Post-AD continuation (`osbs.swenson.post-ad`) hit an
+the TAI absence; the bridge-zone anomaly is resolved (2026-08-19 — the PI fixed
+it, the hillslope drains properly now; the specific fix is not known to us). The
+production hillslope file is no longer frozen (2026-07-15) — the PI is proceeding
+via soil-value adjustments. Post-AD continuation (`osbs.swenson.post-ad`) hit an
 N-state crash on first attempt 2026-05-19, recovered by 2026-05-20, ran 200 yr
 successfully through 2026-05-21, idle since.
 Depends on: Phase E (parameter pipeline), Phase E.5 (bin scheme + lake column)
-Blocks: nothing — Phase H Tracks B/C are on hold and may not be pursued (see
-`phases/H-lateral-flow.md`)
+Blocks: nothing — Phase H Tracks B/C are not pursued (2026-08-19; PI has
+routing/drainage handled — see `phases/H-lateral-flow.md`)
 Runs in parallel with: Phase G Stage 1 (lake column construction + CTSM ingestion, complete)
 
 ## Scope (refined 2026-05-06)
@@ -140,6 +142,19 @@ Validated hillslope file ready for production runs. Comparison document showing 
 
 ## Log
 
+### 2026-08-19 — Bridge-zone resolved by PI; freeze annotation reconciled
+
+Two doc updates relayed via the user from the PI:
+- **Bridge-zone anomaly RESOLVED.** The PI fixed it — the hillslope
+  drains properly now. The **specific fix is not known to us** (not
+  documented on our side), so it is deliberately left unstated rather
+  than guessed. Open question #2 (bridge-zone) is closed; open question
+  #1 (O_SCALAR / TAI-absence) remains open and PI-owned.
+- **Freeze annotation reconciled.** This doc still read "production
+  hillslope file frozen during the investigation." That freeze was
+  lifted 2026-07-15 (PI proceeding via soil-value adjustments; STATUS.md
+  had already recorded it). Status header + body corrected.
+
 ### 2026-05-19 — Phase F analysis pass complete
 
 600-yr accelerated AD spinup analyzed. The narrative deliverable
@@ -183,19 +198,17 @@ Phase F routing-off track is closed out. Post-AD continuation
 (`osbs.swenson.post-ad`) crashed at first run on 2026-05-19 with
 the N-state error in `SoilBiogeochemNitrogenStateType.F90:874`,
 recovered by 2026-05-20, and completed 200 yr (two 100-yr submits)
-by 2026-05-21. Idle since. Not prioritized while PI investigates
-the AD-spinup TAI / bridge-zone questions; production hillslope
-file frozen during the investigation.
+by 2026-05-21. Idle since. Not prioritized while the PI investigates
+the AD-spinup TAI question. (The bridge-zone anomaly is resolved — see
+below. The production hillslope file is no longer frozen as of 2026-07-15.)
 
-Two real open scientific questions surfaced by the analysis (for
-PI conversation):
+Scientific questions surfaced by the analysis:
 1. O_SCALAR not triggering despite saturated soil columns — is the
    TAI carbon signature really missing, or is it a top-layer
-   diagnostic artifact?
-2. The bridge-zone dry pattern (cols 3-6) — feature, artifact, or
-   bug? Connects to B2 (hydraulic conductivity / bin spacing) which
-   is now de facto a Phase F follow-up rather than a Phase H
-   prerequisite.
+   diagnostic artifact? **Still open — PI-owned.**
+2. The bridge-zone dry pattern (cols 3-6). **RESOLVED 2026-08-19 — the
+   PI fixed it; the hillslope drains properly now. The specific fix is
+   not known to us (not documented on our side).**
 
 ### 2026-05-19 — Reframe: lateral flow is active in Phase F (routing-off does NOT gate it)
 

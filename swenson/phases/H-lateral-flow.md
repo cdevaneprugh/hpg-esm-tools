@@ -1,15 +1,18 @@
 # Phase H: Enable Lateral Subsurface Flow
 
-Status: Track A complete. **Tracks B and C on hold; there is a good
-chance routing-on is not pursued at all** now that the 2026-05-19
-routing-gate audit (Section 8) showed inter-column lateral flow
-already runs under `use_hillslope=.true.` The remaining tasks
-(A5–A6, B1–B4, C1–C4) are all contingent on a decision to run
-routing-on production, which is itself contingent on what Phase F
-shows.
-Depends on: Phase F (long spinup provides the evidence to decide
-whether routing-on is worth pursuing)
-Blocks: nothing within current project scope
+Status: Track A complete. **Tracks B and C not pursued (2026-08-19) —
+no longer relevant; the PI has the routing/drainage situation handled.**
+The routing-on motivation was already narrow: the 2026-05-19 routing-gate
+audit (Section 8) showed inter-column lateral flow already runs under
+`use_hillslope=.true.`, so routing-on only added the stream-coupling
+boundary condition, the internal `stream_water_volume` ledger, and the
+`VOLUMETRIC_STREAMFLOW` diagnostic. The remaining tasks (A5–A6, B1–B4,
+C1–C4) and the Section 7.7 Option 5 Darcy-drain idea retire with the
+track and are kept below only as a frozen historical record. Track A
+(the mesh-mode workaround for CTSM Issue #1432) stays complete and
+available if ever needed.
+Depends on: nothing (track closed)
+Blocks: nothing
 
 ## Problem
 
@@ -1502,6 +1505,18 @@ decision not to pursue further with explicit scientific rationale.
 - `components/cmeps/cime_config/config_component.xml` — LND_DOMAIN_MESH variable definition
 
 ## Log
+
+### 2026-08-19 — Tracks B/C retired (routing-on not pursued)
+
+Per PI direction (relayed by the user): **Tracks B and C are no longer
+relevant** — the PI has the hillslope routing/drainage situation handled
+(the Phase F bridge-zone drainage anomaly is resolved on the PI's side;
+the specific fix is not known to us and is deliberately left unstated).
+Routing-on is not being pursued. Track A (the mesh-mode workaround for
+CTSM Issue #1432) stays complete and available if ever needed. The
+A5–A6 / B1–B4 / C1–C4 tasks and the Section 7.7 Option 5 Darcy-drain
+idea are retired with the track and kept below only as a frozen
+historical record. Status header updated accordingly.
 
 ### 2026-05-19 — Phase H reframed as contingent; PI floated Darcy drain idea
 
