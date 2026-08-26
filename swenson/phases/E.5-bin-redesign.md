@@ -837,11 +837,11 @@ without reading them out of pipeline logs.
 
 ### FZ bin redesign
 
-- [ ] Decide FZ count: 9 (50%) or 12 (⅔). Defer slightly until baseline
+- [~] (superseded — 24-bin scheme, 2026-05-04) Decide FZ count: 9 (50%) or 12 (⅔). Defer slightly until baseline
       is in hand and we can see the FZ-pixel distribution.
-- [ ] Design FZ bin edges with increasing-area-going-uphill constraint.
-- [ ] Decide True B1 fate (keep separate, fold into FZ, fold into upland).
-- [ ] Run pipeline with new scheme; compare to baseline.
+- [~] (superseded — 24-bin scheme) Design FZ bin edges with increasing-area-going-uphill constraint.
+- [~] (superseded — True B1 kept separate, 2026-05-04) Decide True B1 fate (keep separate, fold into FZ, fold into upland).
+- [~] (superseded — run in the 2026-05 production) Run pipeline with new scheme; compare to baseline.
 
 ### Lake column update
 
@@ -867,7 +867,7 @@ without reading them out of pipeline logs.
 
 ### Iteration
 
-- [ ] Run permutations as PI requests; record each in the log section
+- [~] (abandoned — not relevant; pipeline delivered, PI iterating via soil-value adjustments) Run permutations as PI requests; record each in the log section
       below with the parameters used and resulting column structure.
 
 ## Parallel Tasks (not blocking)
@@ -889,7 +889,7 @@ Findings live in `docs/data-acquisition-dates.md`.
       by spatial intersection of project metadata against the production
       domain — earlier 1983-84 CIR quads do not overlap our domain.
       Polygons match Google Earth recent imagery (visual confirmation).
-- [ ] **Lee 2023 LIDAR**: ambiguous. Paper cites NCALM for all four sites
+- [~] (abandoned — not relevant; comparison-reference vintage, not pursued) **Lee 2023 LIDAR**: ambiguous. Paper cites NCALM for all four sites
       but doesn't specify which dataset for OSBS. Three candidates: 2010
       NCALM Optech Gemini (peak wet season), 2018 USGS Florida Peninsular
       Putnam (dry-conditions design), or a custom mission. Resolution path:

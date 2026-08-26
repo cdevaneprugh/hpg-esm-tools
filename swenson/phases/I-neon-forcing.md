@@ -935,7 +935,7 @@ Per-product OSBS availability (verify each via NEON API, RELEASE-2026):
 - [x] NCAR-NEON install — repo/`flow.api.clm.R`/`renv.lock`/Dockerfile real;
   **195** packages (doc corrected from "~50–100"). renv-vs-script mismatch,
   Apptainer framing, and dedicated-conda-env decision recorded in Research §3.
-- [ ] Lee-2023 OSBS LIDAR vintage — still awaiting Cohen; non-blocking, tracked
+- [~] (abandoned — not relevant; twin of E.5 Lee-2023) Lee-2023 OSBS LIDAR vintage — still awaiting Cohen; non-blocking, tracked
   in `docs/data-acquisition-dates.md`.
 
 ## Deliverable

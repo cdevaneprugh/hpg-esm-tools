@@ -216,8 +216,8 @@ The `water-masking-and-lake-representation.md` document retains value as referen
 
 ## Pipeline tasks
 
-- [ ] Add `SPILLHEIGHT` constant to `run_pipeline.py`. Initial value 0.2m to match PI's SourceMod hardcoded default. Document the coupling in a comment pointing to `HillslopeHydrologyMod.F90` line 55 — if the PI changes the SourceMod value, pipeline must be updated in lockstep.
-- [ ] Add lake column computation step (between Step 5 hillslope params and Step 6 NetCDF write):
+- [~] (retired 2026-04-30 — spillheight=0.0 namelist override, SourceMod inert) Add `SPILLHEIGHT` constant to `run_pipeline.py`. Initial value 0.2m to match PI's SourceMod hardcoded default. Document the coupling in a comment pointing to `HillslopeHydrologyMod.F90` line 55 — if the PI changes the SourceMod value, pipeline must be updated in lockstep.
+- [x] (done — `run_pipeline.py` Step 5d) Add lake column computation step (between Step 5 hillslope params and Step 6 NetCDF write):
   - Compute `lake_dtnd = float(np.mean(dtnd[water_mask > 0]))`
   - Compute `lake_area = float(np.sum(water_mask)) * PIXEL_SIZE**2`
   - `hill_elev = -SPILLHEIGHT` (pre-SourceMod value)
@@ -225,15 +225,15 @@ The `water-masking-and-lake-representation.md` document retains value as referen
   - `hill_slope = 0`, `hill_aspect = 0`
   - `hill_bedrock_depth = 0`
   - Append to `params["elements"]`
-- [ ] Update NetCDF writer to handle `nmaxhillcol = N_HAND_BINS + 1`
-- [ ] Update `pct_hillslope` with area-weighted fractions (lake column gets `lake_area / total_gridcell_area`; HAND bins fill the rest proportionally)
-- [ ] Update `nhillcolumns` metadata to reflect the extra column
-- [ ] Set `downhill_column_index` so the lake is the terminal sink (lowest HAND bin → lake column → -9999 stream sentinel). Verify via water mass balance in the validation run.
-- [ ] Set `hillslope_index` for the lake column. Default: reuse `1` (same hillslope as the HAND bins, just a submerged member). Flag if the PI's SourceMod expects a separate index.
-- [ ] Expand to 16 HAND bins with focus on 0-50cm zone (PI confirmed). Revert to Q1/Q99 percentile endpoints — the "standing water is a feature" framing means small gradients and near-zero-height bins are acceptable. See `docs/hillslope-binning-rationale.md` for background. `nmaxhillcol` becomes 17 (16 bins + 1 lake column).
-- [ ] Review PI's `SoilHydrologyMod.F90` modifications before finalizing lake column `hill_distance` and `hill_width`. The SourceMod analysis flagged 147 KB of changes not yet fully traced.
-- [ ] Production run, verify NetCDF structure with `ncdump -h`
-- [ ] CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod. Include PI's `SurfaceWaterMod.F90` and `SoilHydrologyMod.F90` SourceMods (not just `HillslopeHydrologyMod.F90`) — all three are needed for the intended behavior.
+- [x] (done — `nmaxhillcol`=25) Update NetCDF writer to handle `nmaxhillcol = N_HAND_BINS + 1`
+- [x] (done — lake weight carried by `hillslope_area`/wtlunit=12.3%, not `pct_hillslope`) Update `pct_hillslope` with area-weighted fractions (lake column gets `lake_area / total_gridcell_area`; HAND bins fill the rest proportionally)
+- [x] (done — `nhillcolumns`=25) Update `nhillcolumns` metadata to reflect the extra column
+- [x] (done — `run_pipeline.py` Step 5d) Set `downhill_column_index` so the lake is the terminal sink (lowest HAND bin → lake column → -9999 stream sentinel). Verify via water mass balance in the validation run.
+- [x] (done — `hillslope_index`=1) Set `hillslope_index` for the lake column. Default: reuse `1` (same hillslope as the HAND bins, just a submerged member). Flag if the PI's SourceMod expects a separate index.
+- [~] (superseded — 24-bin TAI scheme, `nmaxhillcol`=25) Expand to 16 HAND bins with focus on 0-50cm zone (PI confirmed). Revert to Q1/Q99 percentile endpoints — the "standing water is a feature" framing means small gradients and near-zero-height bins are acceptable. See `docs/hillslope-binning-rationale.md` for background. `nmaxhillcol` becomes 17 (16 bins + 1 lake column).
+- [x] (done — `SoilHydrologyMod` fully traced in Phase H §8) Review PI's `SoilHydrologyMod.F90` modifications before finalizing lake column `hill_distance` and `hill_width`. The SourceMod analysis flagged 147 KB of changes not yet fully traced.
+- [x] (done — production NetCDF `c260505` verified) Production run, verify NetCDF structure with `ncdump -h`
+- [x] (done — Phase F `osbs5.swenson.spinup`, fresh startup) CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod. Include PI's `SurfaceWaterMod.F90` and `SoilHydrologyMod.F90` SourceMods (not just `HillslopeHydrologyMod.F90`) — all three are needed for the intended behavior.
 
 ## Open questions (TBD — need PI clarification)
 

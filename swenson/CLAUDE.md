@@ -29,6 +29,17 @@ a phase reaches a milestone, add a log entry there first, then update
 STATUS.md's scientific-decisions table or change log if a downstream-
 affecting decision was made.
 
+**Checkbox markers.** Task checkboxes use three markers so live work is
+distinguishable from settled work at a glance; the reason for a
+non-open marker is noted inline in parentheses:
+- `[x]` — **done** (if delivered by a different route than the box text
+  describes, a `(done — …)` note says where).
+- `[ ]` — **open** — a genuinely-live item still to be actioned; the box
+  text says by whom (e.g. a PI-gated item like Phase I's I8).
+- `[~]` — **superseded / retired / abandoned** — intentionally not done:
+  a later decision replaced, dropped, or closed it, or it is
+  optional / out-of-scope.
+
 ## Key Resources
 
 | Resource | Location |

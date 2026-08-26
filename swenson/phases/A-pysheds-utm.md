@@ -189,7 +189,7 @@ Branch: `feature/utm-crs-support` (from `uf-development`)
 - Initial accumulation threshold too low (`NCOLS//4 = 50`) caused half the grid to be classified as channels. Fixed to `NROWS = 200` — only the center channel column (acc ~19800) exceeds this.
 
 **Remaining follow-up tasks (not in this scope):**
-- [ ] Create multi-basin synthetic DEM to validate flow-path DTND vs EDT
+- [~] (optional — out of scope; phase Complete) Create multi-basin synthetic DEM to validate flow-path DTND vs EDT
 - [x] MERIT validation regression (stages 1-9 reproduce existing correlations)
 - [x] OSBS smoke test on tile R6C10
 

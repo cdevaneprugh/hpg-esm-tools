@@ -1280,14 +1280,14 @@ and reported on without PI input.
     run. The "too generous" stream concern is real but invisible
     here because nothing accumulates enough to overflow.
 
-- [ ] **A5.** Document the cookbook of xmlchange commands needed to
+- [~] (deferred — recipe exists in §5; extraction gated on the unpursued routing-on spinup) **A5.** Document the cookbook of xmlchange commands needed to
   migrate a PTS_MODE case to mesh-mode. Production-ready recipe
   exists in `phases/H-lateral-flow.md` Section 5 and was validated
   by the A3/A4 work above. Optional refinement: extract into a
   standalone shell script. Decision deferred until ready for the
   production spinup.
 
-- [ ] **A6.** Record the working configuration as the canonical
+- [~] (deferred — config already recorded; extraction gated on the unpursued spinup) **A6.** Record the working configuration as the canonical
   reference for single-point routing-on (since no community precedent
   exists — see research notes Section 6). **A3/A4 are now the
   canonical working example.** The user_nl_clm + xmlchange recipe
@@ -1303,7 +1303,7 @@ These determine what the model represents physically. Software work
 above is unblocked by these but **a long routing-on spinup is not
 meaningful without resolving them.**
 
-- [ ] **B1. Gridcell area choice.** Updated with research findings
+- [~] (retired with Tracks B/C — routing-on not pursued; PI has drainage handled) **B1. Gridcell area choice.** Updated with research findings
   (2026-05-12, revised 2026-05-13). The research notes Section 4
   above contains the full scale analysis and pipeline-consistency
   check.
@@ -1355,7 +1355,7 @@ meaningful without resolving them.**
     intercomparison, or are we doing site-specific science where we
     can choose differently?
 
-- [ ] **B2. Hydraulic conductivity sanity check.** Implicit lateral
+- [~] (retired with Tracks B/C) **B2. Hydraulic conductivity sanity check.** Implicit lateral
   flow rates between bins depend on CTSM soil-property fields
   (`HKSAT`, `WATSAT`) and our column geometry (`hill_distance`,
   `hill_elev` differences). At our 24-bin TAI-focused scheme,
@@ -1370,7 +1370,7 @@ meaningful without resolving them.**
   the lateral flow rates emerging from the model match expectations
   for the site.
 
-- [ ] **B3. Validation framing.** No published single-point routing-on
+- [~] (retired with Tracks B/C) **B3. Validation framing.** No published single-point routing-on
   case exists. How do we judge whether observed behavior is "correct"?
   Options to discuss:
   - Compare to a gridded routing-on run at coarse resolution (would
@@ -1384,7 +1384,7 @@ meaningful without resolving them.**
   Without a clear validation framing agreed up front, any output is
   hard to interpret or publish.
 
-- [ ] **B4. Stream-channel geometry and lake column overflow
+- [~] (retired with Tracks B/C — incl. the Option 5 Darcy-drain idea) **B4. Stream-channel geometry and lake column overflow
   threshold.** New (2026-05-12). Stream depth (1.52 m) and width
   (59.23 m) come from Swenson's MERIT-global power laws and are
   ~5–10× too generous for OSBS Florida coastal plain. The lake
@@ -1436,20 +1436,20 @@ meaningful without resolving them.**
 
 Once software (A) is in place and scientific decisions (B) are made:
 
-- [ ] **C1.** Build the production routing-on case with the chosen
+- [~] (retired with Tracks B/C) **C1.** Build the production routing-on case with the chosen
   gridcell area and a regenerated mesh of that area. Run for 10–20
   model years.
 
-- [ ] **C2.** Inspect water-budget closure under routing-on. CTSM has
+- [~] (retired with Tracks B/C) **C2.** Inspect water-budget closure under routing-on. CTSM has
   internal balance checks; verify no warnings emerge that didn't
   appear under routing-off.
 
-- [ ] **C3.** Compare column-level ZWT trajectories to routing-off
+- [~] (retired with Tracks B/C) **C3.** Compare column-level ZWT trajectories to routing-off
   Phase F baseline. Look for TAI signatures: water table rising in
   low-HAND bins during wet periods, finundated > 0 in those bins,
   o_scalar dropping in saturated columns.
 
-- [ ] **C4.** Long-spinup decision. If short-run validation looks
+- [~] (retired with Tracks B/C) **C4.** Long-spinup decision. If short-run validation looks
   reasonable, configure a 600-yr routing-on case (either fresh start
   or extension from a Phase F routing-off restart with namelist
   switch). Otherwise iterate on B1/B2 with the PI.
