@@ -375,7 +375,7 @@ Scale comparison across our data and external references:
 | Reference | Area | Relation to our 90 km² gridcell |
 |---|---|---|
 | Single representative hillslope | ~0.17 km² | 533 tile-copies fill the gridcell |
-| Lake area (NWI total in LIDAR domain) | ~10.68 km² | ~11.8% of gridcell area |
+| Lake area (NWI total in LIDAR domain) | ~11.08 km² | ~12.3% of gridcell area (c260505, post-E.6) |
 | NEON tower flux footprint | ~3 km² | Subset of gridcell; eddy-covariance representative volume |
 | NEON terrestrial sampling boundary | 36.81 km² | ~41% of gridcell; NEON's "site" extent |
 | NEON total property | 38.5 km² | ~43% of gridcell |

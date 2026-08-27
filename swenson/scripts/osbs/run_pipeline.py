@@ -93,8 +93,8 @@ SMALLEST_DTND_M = 1.0  # Swenson rh:699-700 — minimum DTND clamp
 # Land bins: 1 aspect x 24 raw-HAND bins, hand-tuned TAI-focused scheme
 # (12 FZ + 12 upland, 0.25 m floor in TAI core, smooth 2x width
 # progression outward). Outermost edges set dynamically to Q01/Q99 of
-# the cleaned land population per run; expected ~-6.34 m / +17.46 m on
-# the production domain.
+# the cleaned land population per run; expected ~-6.35 m / +17.02 m on
+# the production domain (values from file c260505, post-E.6).
 #
 # Lake column: prepended at chain index 1 with hill_elev = -6.0 m
 # (chain-bookkeeping value, see audit Section 5.2.1). Land columns
@@ -1231,7 +1231,7 @@ def main():
 
     # DTND tail-index outlier removal (Swenson convention via expon fit;
     # tail_index() in hillslope_params.py). Exclude water pixels first
-    # (HAND=0, DTND=0) so the 10.7M zero-DTND lake pixels don't skew the
+    # (HAND=0, DTND=0) so the ~11.08M zero-DTND lake pixels don't skew the
     # exponential fit.
     land_finite_for_tail = np.isfinite(hand_flat) & (water_flat == 0)
     tail_ind = tail_index(
@@ -1258,8 +1258,9 @@ def main():
 
     # Phase E.5 outlier strategy (locked 2026-05-02): true-discard Q01/Q99
     # trim on raw HAND. Cutoffs computed dynamically from the cleaned land
-    # population each run; expected ~-6.34 m / +17.46 m on the production
-    # domain. The Q01/Q99 values double as the outermost edges of the 24-bin
+    # population each run; expected ~-6.35 m / +17.02 m on the production
+    # domain (values from file c260505, post-E.6). The Q01/Q99 values
+    # double as the outermost edges of the 24-bin
     # TAI-focused scheme. See phases/E.5-bin-redesign.md 2026-05-02 log
     # entry for the formal defense.
     q01 = float(np.percentile(raw_hand_flat[valid_pre_trim], 1))

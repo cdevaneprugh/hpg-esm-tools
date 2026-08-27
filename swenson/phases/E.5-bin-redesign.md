@@ -681,8 +681,10 @@ earlier 23-bin draft.
       tails are real terrain (negligible singleton mass), so cutoff =
       "log-tail endpoint with sentinel bin past it," not discard.
 - [x] Choose outlier cutoffs (one for upland tail, one for FZ tail).
-      **Decision locked (2026-05-01): Q01 deep = -6.34 m / Q99 upland =
-      +17.46 m. True discard (not sentinel-binned).** Total ~1.53 M
+      **Decision locked (2026-05-01): Q01 deep / Q99 upland raw-HAND
+      cutoffs, true discard (not sentinel-binned). Production (c260505,
+      post-E.6): Q01 = -6.35 m / Q99 = +17.02 m** (2026-05-01 diagnostic
+      read -6.34 / +17.46 m; E.6 hole-fill moved the upland tail). Total ~1.53 M
       pixels (~2% of land) discarded. Defense uses two converging
       methods (Q01 ≈ classical 2σ clip on raw HAND distribution) with
       Lee 2023 spill-depth data as a physical sanity check. See
@@ -804,9 +806,11 @@ This makes the cutoff values reproducible and verifiable per run
 without reading them out of pipeline logs.
 
 **Verification.** After the pipeline change:
-- Confirm Q01/Q99 reported by the run match the diagnostic
-  (`output/osbs/2026-05-01_outlier_strategy/summary.json`): -6.34 m
-  and +17.46 m within 0.01 m on the same input data.
+- Confirm Q01/Q99 reported by the run match the production file
+  (`c260505`, post-E.6): -6.35 m and +17.02 m. These supersede the
+  2026-05-01 diagnostic's -6.34 / +17.46 m — E.6's NWI hole-fill
+  changed the input mask, moving Q99 by 0.44 m; the earlier
+  "within 0.01 m" check only holds against the same post-E.6 input.
 - `n_pixels_post_trim` should be ~75 M (≈ 76.6 M land minus ~2 % trim).
 - Compare a per-bin "Mean HAND" for the deepest FZ bin against the
   hypothetical-setup output (`output/osbs/2026-05-01_bin_schemes/
@@ -1116,6 +1120,8 @@ makes 3σ (rather than 2σ) the matching multiplier — a direct
 consequence of the distribution's skewness.
 
 **Defense statement (for the PI / paper):**
+
+*(Annotation 2026-08-26: the template below quotes the pre-E.6 snapshot Q01 = -6.34 m / Q99 = +17.46 m and its sigma-clip figures. Current production values — file `c260505`, post-E.6 hole-fill — are **Q01 = -6.35 m / Q99 = +17.02 m**; substitute these and re-derive the sigma-clip numbers before any reuse.)*
 
 > Outlier removal: pixels with raw HAND < Q01 = −6.34 m or > Q99 =
 > +17.46 m are discarded prior to binning (1.0% of land pixels removed

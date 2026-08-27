@@ -173,9 +173,9 @@ def compute_hand_bins_tai_focused(
     Parameters
     ----------
     raw_hand_min : float
-        Lower outer edge (typically Q01 of raw HAND, e.g., -6.34 m).
+        Lower outer edge (typically Q01 of raw HAND, e.g., -6.35 m).
     raw_hand_max : float
-        Upper outer edge (typically Q99 of raw HAND, e.g., +17.46 m).
+        Upper outer edge (typically Q99 of raw HAND, e.g., +17.02 m).
 
     Returns
     -------

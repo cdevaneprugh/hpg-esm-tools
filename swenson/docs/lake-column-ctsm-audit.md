@@ -179,7 +179,7 @@ topo_col(c) += col%hill_elev(c) - mean_hillslope_elevation(l)
 Uses `hill_elev` and `hill_area`, not `hill_distance`. A lake column with large
 area and deeply negative `hill_elev` pulls down the area-weighted mean elevation,
 slightly raising the topo offset of all other columns. Effect is small (~0.05m
-shift for a -0.4m lake at 11.9% area fraction).
+shift for a -0.4m lake at 12.3% area fraction).
 
 ### 1.5 Stream Channel Length (routing on only)
 
@@ -284,12 +284,12 @@ col%wtlunit(c) = (col%hill_area(c) / hillslope_area(nh)) * (pct_hillslope(l,nh) 
 
 With `pct_hillslope = 100%`, each column's weight is its fraction of total area.
 
-**Current (16 columns):** Total area = land area only (~79.3 km²)
-**With lake (17 columns):** Total area = land + lake (~79.3 + 10.7 = 90.0 km²)
+**Current (16 columns):** Total area = land area only (~78.9 km²)
+**With lake (17 columns):** Total area = land + lake (~78.9 + 11.08 = 90.0 km², c260505 post-E.6)
 
-Each existing column's weight decreases by `10.7 / 90.0 = 11.9%`. The lake
-column gets `10.7 / 90.0 = 11.9%` weight. This is physically correct — the lake
-IS 11.9% of the production domain.
+Each existing column's weight decreases by `11.08 / 90.0 = 12.3%`. The lake
+column gets `11.08 / 90.0 = 12.3%` weight. This is physically correct — the lake
+IS 12.3% of the production domain.
 
 The `AREA` variable in the NetCDF (total gridcell area) should reflect the full
 domain.
@@ -436,7 +436,7 @@ NetCDF, easier for manual inspection.
 | `hillslope_index` | 1 | Same hillslope as all others |
 | `hill_distance` | **0.5 × Bin 1's distance** (computed dynamically) | Locked 2026-05-04, supersedes the earlier static "~stream width / ~5 m" recommendation. The col-col Darcy denominator `d(Bin1) - d(Lake)` must stay positive (audit Section 1.1); under raw-HAND binning Bin 1's trap-fit DTND can be small (~3 m on production), making a static 5 m unsafe. Dynamic computation guarantees the constraint by construction. See Section 4.4 (revised 2026-05-04). |
 | `hill_elev` | **-6.0 m** | Locked 2026-05-04. Set deeper than the deepest land bin's mean (-5.13 m, bin 1 of 24-bin scheme covering -6.35 to -4.0 m raw HAND) by ~0.87 m to ensure chain monotonicity. Conceptually a chain-bookkeeping value, not a physical lake-bottom elevation. Empirical context: mean NWI lake-surface raw HAND in the production domain is -2.53 m; mean basin-bottom-to-rim spill depth is 2.64-3.33 m (Lee 2023 / our pipeline). Supersedes earlier `-SPILLHEIGHT` convention (now retired with SPILLHEIGHT=0 per Phase E.5 PI reframe 2026-04-30). See Section 5.2.1 below for derivation. |
-| `hill_area` | Sum(water_mask * pixel_area) | ~10.68 km² |
+| `hill_area` | Sum(water_mask * pixel_area) | ~11.08 km² (c260505, post-E.6) |
 | `hill_width` | 1/2 NWI total perimeter | PI direction (2026-04-25); see Section 5.3 |
 | `hill_slope` | 0.0 | PI direction (2026-04-25); "lake bottom" framing — water surface is horizontal. See Section 5.5. |
 | `hill_aspect` | 0.0 (or `hill_aspect(col2)`) | Aggregate lake has no preferred direction; either value is inconsequential |
@@ -460,7 +460,8 @@ lake `hill_elev` < -5.13 m is required.
 
 **Constraint 2 — Empirical lake geometry doesn't reach -5 m.** The
 mean raw HAND of NWI water pixels in the production domain is **-2.53
-m** (10.68 M pixels, computed via the full pipeline filter). Lee 2023
+m** (pre-E.6 value, computed via the full pipeline filter; the post-E.6
+mask has 11,082,394 water pixels). Lee 2023
 reports OSBS mean spill depth = 2.64 m ± 0.95 m (n=14 field-surveyed);
 our pipeline measures 3.33 m mean for non-NWI basins ≥ 1 ha (n=107).
 None of these reach -5 m. The deepest 5% of NWI water raw HAND values
@@ -554,13 +555,16 @@ defensible value works.
 2. Compute total exterior-ring length across dissolved polygons
 3. `hill_width(lake) = total_perimeter / 2`
 
-**Computed value (2026-04-25):** Using a boundary-pixel approximation on
+**Computed value (production c260505, post-E.6):** Using a boundary-pixel approximation on
 the NWI raster mask (rather than the polygon shapefile), the total perimeter
-is approximately **102,810 m** (102,810 boundary pixels × 1 m per pixel).
-Half of that gives **`hill_width(lake) ≈ 51,405 m`**. This is consistent
-with the expected scale: 103 NWI features over 10.68 km² with subcircular
-geometry would give roughly ~117 km of total perimeter for compact circles;
-our 103 km is in the right range for slightly-irregular wetland polygons.
+is approximately **96,540 m** (96,540 boundary pixels × 1 m per pixel).
+Half of that gives **`hill_width(lake) ≈ 48,270 m`**. This is consistent
+with the expected scale: 103 NWI features over 11.08 km² with subcircular
+geometry would give roughly ~120 km of total perimeter for compact circles;
+our 96.5 km is in the right range for slightly-irregular wetland polygons
+(the boundary-pixel approximation undercounts diagonals by ~5-10%). The
+earlier 2026-04-25 computation gave 102,810 m / 51,405 m over 10.68 km²,
+pre-E.6 hole-fill.
 
 The boundary-pixel approximation uses scipy's `binary_erosion`: boundary
 pixels are mask pixels whose erosion removes them (i.e., they have at least
