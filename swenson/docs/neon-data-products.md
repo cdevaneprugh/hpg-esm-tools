@@ -141,7 +141,7 @@ Years: 2014–present (varies by sensor commissioning).
 ## NCAR-NEON pipeline — stitching into continuous CTSM forcing
 
 Repo: https://github.com/NEONScience/NCAR-NEON
-Paper: Wieder et al. 2023, *Geosci. Model Dev.* 16, 5979–6000.
+Paper: Lombardozzi et al. 2023, *Geosci. Model Dev.* 16, 5979–6000.
 DOI: https://doi.org/10.5194/gmd-16-5979-2023
 
 What it does:
@@ -203,7 +203,7 @@ Isolated env, but renv inside conda can be finicky around system libs
 HiPerGator doesn't run Docker but Apptainer can build from a Dockerfile.
 Most reproducible — bit-identical to upstream — but most setup effort
 (non-root build, writable overlays, bind mounts for `$BLUE`). Only
-worth it if exact reproducibility against the Wieder 2023 GMD paper is
+worth it if exact reproducibility against the Lombardozzi et al. 2023 GMD paper is
 required.
 
 **Not viable:** there is no conda/PyPI/CRAN package for NCAR-NEON

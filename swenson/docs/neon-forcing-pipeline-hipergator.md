@@ -333,7 +333,7 @@ laptop-Docker path avoided.
 - Pre-built v4 (Run 1 reference): `swenson/data/datm/neon_OSBS/v4/OSBS/`.
 - NCAR-NEON pipeline: https://github.com/NEONScience/NCAR-NEON
   (`TowerTools_ForcingData/flow.api.clm.R`, `renv.lock`, `gapFilling/pack/NEON.gf`,
-  Wieder et al. 2023, *GMD* 16, 5979–6000).
+  Lombardozzi et al. 2023, *GMD* 16, 5979–6000).
 - eddy4R: https://github.com/NEONScience/eddy4R (`pack/eddy4R.base`,
   `pack/eddy4R.qaqc`).
 - HiPerGator: conda envs — `docs.rc.ufl.edu/software/conda_creation`; bulk transfer

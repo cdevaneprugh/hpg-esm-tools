@@ -959,7 +959,7 @@ NEON-forced CTSM case that keeps our hillslope surfdata and demonstrably runs
   usermods `cime_config/usermods_dirs/clm/NEON/OSBS/`.
 - Current-case config:
   `$CASES/osbs.swenson.spinup/{env_run.xml,CaseDocs/datm.streams.xml}`.
-- NCAR-NEON project: https://github.com/NEONScience/NCAR-NEON — Wieder et al.
+- NCAR-NEON project: https://github.com/NEONScience/NCAR-NEON — Lombardozzi et al.
   2023, *Geosci. Model Dev.* 16, 5979–6000, DOI 10.5194/gmd-16-5979-2023.
 - NCAR-NEON repo internals (inspected 2026-07-15):
   `TowerTools_ForcingData/flow.api.clm.R` (the generator that produced v4),
