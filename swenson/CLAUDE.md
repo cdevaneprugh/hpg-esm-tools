@@ -134,8 +134,6 @@ swenson/
 │   ├── plots/                 # Comparison plots
 │   └── YYYY-MM-DD_*_timeseries/  # Spinup analysis plot sets (Phases F, I)
 │
-├── logs/                      # SLURM logs from Phase I NEON forcing generation (gitignored)
-│
 └── scripts/
     ├── osbs/                     # OSBS production pipeline (self-contained)
     │   ├── run_pipeline.py       # Main hillslope pipeline (24-bin TAI-focused, raw-HAND Q01/Q99 trim, lake column, water-masked)
