@@ -108,7 +108,7 @@ Job 25530167, node c0706a-s5. Full results: `output/osbs/phase_b/scalability_64g
 - HAND: mean 3.74m, max 27.31m, P95 13.32m
 - DTND: mean 189.70m, max 1989.09m, P95 471.37m
 
-**Implication for Phase B:** 1m is feasible at 64GB for the contiguous sub-region (90M pixels). `resolve_flats` cost is driven by total flat area from two sources: real water bodies (lakes, wetlands — present in any domain) and artificial flats from nodata fill (only in domains with tile gaps). The original 189M-pixel OOM had both; this test had only the former. Synthetic lake bottoms (see `docs/synthetic_lake_bottoms.md`) would reduce `resolve_flats` cost on any domain by replacing flat water surfaces with sloped bathymetry before conditioning. For the contiguous domain, 128GB/256GB runs are unnecessary. The remaining question is whether 1m produces meaningfully better hillslope parameters than 2m or 4m (Script 2).
+**Implication for Phase B:** 1m is feasible at 64GB for the contiguous sub-region (90M pixels). `resolve_flats` cost is driven by total flat area from two sources: real water bodies (lakes, wetlands — present in any domain) and artificial flats from nodata fill (only in domains with tile gaps). The original 189M-pixel OOM had both; this test had only the former. Synthetic lake bottoms (see `audit/260627-cleanup/docs/synthetic_lake_bottoms.md`) would reduce `resolve_flats` cost on any domain by replacing flat water surfaces with sloped bathymetry before conditioning. For the contiguous domain, 128GB/256GB runs are unnecessary. The remaining question is whether 1m produces meaningfully better hillslope parameters than 2m or 4m (Script 2).
 
 ### 2026-02-23: Resolution comparison — 1m is the clear choice
 

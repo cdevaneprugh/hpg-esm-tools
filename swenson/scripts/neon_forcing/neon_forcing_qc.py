@@ -5,7 +5,7 @@ neon_forcing_qc.py -- production QC for the custom OSBS NEON->DATM forcing (Phas
 Spot-checks + sniff-tests the generated atm NetCDFs over the whole record, with no
 external reference (so it covers the non-v4 months 2017 + 2025 too):
 
-  1. Structural  -- per file: expected ntime (days*48), the 8 physical vars + <VAR>_fqc
+  1. Structural  -- per file: expected ntime (days*48), the 7 physical vars + <VAR>_fqc
                     present, NaN==0 (gap-fill fills everything), time axis strictly
                     monotonic within the month.
   2. Gap-fill    -- per var x month: fraction of gap-filled (fqc>0) timesteps; FLAG a

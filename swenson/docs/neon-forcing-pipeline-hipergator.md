@@ -1,10 +1,12 @@
 # NEON OSBS Forcing — Building the Pipeline on HiPerGator
 
-**Status: planning-stage.** The architecture and the fidelity approach
-(conda-current versions + a *tolerance* check against v4, validated by the
-fqc-partitioned comparison in Stage 5) are settled; the exact `r-base`/package
-versions fall out of the conda solve. No `environment.yml` is committed yet — that
-is the next step.
+**Status: historical — the pipeline described here was built and is
+engineering-complete (Phase I, closed 2026-08-17).** The conda env is committed at
+`scripts/neon_forcing/setup/environment.yml`; the operative run path is
+`scripts/neon_forcing/` (`run_download.sh` → `run_forcing.sh`). This doc records
+the original design; `phases/I-neon-forcing.md` is the authoritative record of
+what was actually built, and `docs/neon-forcing-case-recipe.md` is the PI hand-off
+for using the output.
 
 **Goal:** produce CTSM/CLM DATM atmospheric forcing for NEON **OSBS** by running
 NEON's own generator (`flow.api.clm.R`) **on HiPerGator** — so the pipeline lives
@@ -18,9 +20,10 @@ data pull.
 > end-to-end). The Section 1 claim that "an API token does not help" is
 > **refuted** — the raw download now runs **on an HPG compute node**. See
 > `phases/I-neon-forcing.md` Research §12 for the evidence + the compute-node test
-> ladder. Sections 1, 2, and 4 below still describe the off-HPG/Globus path and are
-> pending a rewrite; the environment/pipeline content (Sections 3, 5+) is
-> unaffected.
+> ladder. Sections 1, 2, and 4 below still describe the off-HPG/Globus path; they
+> are retained as historical record only (that path was never used — no rewrite
+> planned, since the whole doc is now historical). The environment/pipeline
+> content (Sections 3, 5+) matches what was built.
 
 ---
 

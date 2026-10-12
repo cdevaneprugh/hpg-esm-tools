@@ -985,7 +985,8 @@ If Lee used the 2010 NCALM Optech Gemini (a peak-wet-season flight), their
 measurement may underestimate true depths in inundated wetlands; if Lee
 used the 2018 USGS Florida Peninsular Putnam dataset (dry-conditions
 design), the comparison is direct. See `docs/data-acquisition-dates.md`
-for full provenance and the action item to resolve via Cohen.
+for full provenance; the resolve-via-Cohen action items there were closed
+2026-10-12 (not pursued), so the vintage ambiguity stands as a recorded caveat.
 
 **What was wrong with the earlier framing.** A prior revision (2026-04-25)
 claimed "NWI-interior mean fill = 2.97m matches Lee's 2.64m." That
@@ -1473,12 +1474,17 @@ polygon rings (treat inner rings as additional water rather than holes).
 This regenerates `water_mask.tif`. After that, a pipeline rerun produces
 correct binning and clean visualizations automatically. The
 `scripts/osbs/generate_water_mask.py` script (or equivalent) is the
-candidate to update.
+candidate to update (since archived → `audit/260512-cleanup/osbs/`).
 
 **Cosmetic-only workaround (not applied):** `scipy.ndimage.binary_fill_holes`
 on the in-memory water_mask before plotting would close the visual holes
 without modifying the underlying data file. Skipped per current direction —
 the proper fix should land before any production pipeline rerun.
+
+> **[Resolved by E.6:** the hole fix landed in-pipeline — `binary_fill_holes`
+> applied to the mask itself, ~400K interior pixels recovered, production
+> `c260505`. This fix-path discussion is historical. See STATUS.md
+> current-state table (E.6) and `phases/E.5-bin-redesign.md`.]
 
 **Action item:** when we next rerun the pipeline (e.g., after PI sign-off
 on the binning approach), regenerate `water_mask.tif` first with corrected
@@ -1487,6 +1493,11 @@ nested-polygon handling. Document the regeneration step in the run log.
 ---
 
 ## 8. Items Requiring PI Clarification
+
+> **Note (2026-10-12):** this section is historical. Rows referencing
+> SPILLHEIGHT = 0.2 m (items #3, #7) are superseded per the 2026-04-30
+> banner at the top of this doc — the locked value is **SPILLHEIGHT = 0.0**
+> (namelist override; SourceMod inert; see STATUS.md "Scientific decisions").
 
 ### Active (need PI input)
 
@@ -1497,6 +1508,10 @@ Open question for follow-up:
   for binning (resolves the 17%-of-domain mis-placement of basin-interior
   pixels). Possible re-architecting into flood-zone bins with finer TAI
   resolution. Pending PI decision; covered in separate planning doc.
+  **[Resolved 2026-05-02/04 — Phase E.5:** raw-HAND binning adopted
+  (24-bin TAI-focused scheme, locked with PI). The planning doc
+  (`hillslope-binning-rationale.md`) is archived at
+  `audit/260627-cleanup/docs/`.]
 
 ### Resolved during audit
 

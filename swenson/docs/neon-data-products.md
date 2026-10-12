@@ -256,6 +256,13 @@ Existing CRUNCEPv7 forcing lives at `/blue/gerber/sgerber/CTSM/subset_input/datm
 
 ### Raw data preservation
 
+> **As built (2026-08):** the raw archive landed at
+> `/blue/gerber/earth_models/neon/raw/OSBS` (shared location, pristine zips
+> preserved as-received), not under `data/neon/met/` — that layout and its
+> planned `README.md` were never created. The gitignore additions below were
+> likewise overtaken by the layout change. See `phases/I-neon-forcing.md`
+> (Research §12, I5).
+
 Keep two layers under each `data/neon/met/DP*/`:
 - **Pristine zips** from NEON API — the source of truth (downloads timestamps drift; preserve as-received)
 - **Extracted/concatenated CSVs** — intermediate, regeneratable from zips; safe to wipe
@@ -283,7 +290,7 @@ Directory-level ignores cover us against unexpected file formats from the NEON A
 ### Per-directory READMEs
 
 Provenance traceability — at minimum:
-- `data/neon/met/README.md`: DPs downloaded, year range, NEON API call snippet used, RELEASE-2026 confirmation per product
+- `data/neon/met/README.md`: DPs downloaded, year range, NEON API call snippet used, RELEASE-2026 confirmation per product *(not created — layout superseded; see the "As built" note above)*
 - `data/datm/neon_OSBS/README.md`: NCAR-NEON pipeline commit hash, ReddyProc version, years with anomalies flagged (e.g. Issue #34 OSBS 2018 TBOT), conversion script path
 
 Without these, six months from now nobody can tell whether the NetCDFs were generated with the buggy 2018 TBOT or with it patched.

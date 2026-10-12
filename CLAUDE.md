@@ -6,24 +6,34 @@ Scripts and utilities for working with CESM/CTSM on HiPerGator.
 
 ```
 hpg-esm-tools/
+├── swenson/                 # Swenson representative-hillslope implementation — the bulk of the repo (own CLAUDE.md + STATUS.md)
 ├── scripts/
-│   ├── case.analyzer/       # Case analysis toolkit (production ready)
-│   ├── hillslope.analysis/  # Hillslope hydrology plotting
-│   ├── inputdata.downloading/  # Input data download utilities
-│   └── porting/             # Module setup and upstream tracking
-├── docs/                    # Technical documentation
+│   ├── case.analyzer/       # Case analysis toolkit
+│   ├── hillslope.analysis/  # OSBS hillslope hydrology plotting
+│   └── inputdata.downloading/  # Input data download utilities (SVN-based, legacy)
+├── docs/                    # Technical documentation + paper summaries
 ├── CLAUDE.md               # This file
-├── claude-todo.md          # Working to-do list for Claude Code sessions
+├── LICENSE
 └── environment.yml         # Conda environment specification
 ```
 
 Environment variables are documented in `$BLUE/CLAUDE.md`.
 
+## swenson/ — The Main Project
+
+The Swenson & Lawrence (2025) representative-hillslope implementation for OSBS
+lives at `swenson/` and is the bulk of this repo by size and activity. It has its
+own documentation set: `swenson/CLAUDE.md` (index), `swenson/STATUS.md`
+(scientific record: locked decisions, open questions, change log), and
+`swenson/phases/` (detailed per-phase records). **Start there for anything
+OSBS / hillslope-pipeline / NEON-forcing related.**
+
 ## Scripts Reference
 
-### case.analyzer/ (v0.7.1 - Production Ready)
+### case.analyzer/
 
-Fast hybrid toolkit for analyzing CTSM case directories.
+Fast hybrid toolkit for analyzing CTSM case directories. Stable; unmaintained
+since its initial import (2026-01).
 
 | Script | Purpose |
 |--------|---------|
@@ -44,29 +54,34 @@ Fast hybrid toolkit for analyzing CTSM case directories.
 
 ### hillslope.analysis/
 
-Scripts for analyzing CTSM hillslope hydrology simulations with column-level (h1 stream) data.
+Scripts for analyzing the OSBS CTSM hillslope hydrology cases with column-level
+(h1 stream) data. OSBS/Swenson-specific (see `swenson/`), not generic.
 
-**Key concepts:**
-- 4 hillslopes per gridcell (N, E, S, W aspects)
-- 4 elevation positions per hillslope (Outlet, Lower, Upper, Ridge)
-- 16 hillslope columns per gridcell (stream is a landunit-level boundary condition, not a column)
+**Key concepts (OSBS single-aspect layout):**
+- 1 aspect per gridcell (OSBS is too flat for meaningful aspect differentiation)
+- N HAND elevation bins (8 or 16) + 1 bareground column; scripts auto-detect the
+  column count
+- The older 4-aspect / 16-column layout survives only in the `archive/` scripts
 
 | Script | Purpose |
 |--------|---------|
-| `bin_temporal.sh` | Temporal binning (N-year averages) |
-| `plot_timeseries_*.py` | Time series plots |
+| `generate_case_plots.sh` | SLURM driver — all plots for the OSBS branch cases |
+| `generate_all_plots.py` | Glue — runs the plot modules over binned data |
+| `bin_temporal.sh` | Temporal binning (NCO N-year averages; generic) |
+| `plot_timeseries_full.py` / `plot_timeseries_last20.py` | Time series plots (generic) |
+| `plot_col_timeseries.py` | Per-column spinup time series (Phase E.5+ column structure) |
 | `plot_zwt_hillslope_profile.py` | Water table vs elevation |
-| `plot_elevation_width_overlay.py` | Hillslope geometry |
-| `plot_col_areas.py` | Column area bar charts |
-| `plot_pft_distribution.py` | PFT distribution |
+| `plot_hillslope_cross_section.py` | Hillslope cross-section |
+| `plot_tai_heatmap.py` | TAI / HAND-zone heatmap |
+| `plot_carbon_water_coupling.py` | Carbon–water coupling |
+| `plot_vr_profile.py` | Vertically-resolved profiles (currently inert — no case emits VR vars) |
+| `get_gridcell.py` | OSBS gridcell locator (one-off utility) |
+| `archive/` | Superseded 4-aspect-era plotters |
 
 ### inputdata.downloading/
 
-Utilities for downloading CTSM input data from NCAR servers.
-
-### porting/
-
-- `module_env_setup.sh` - Load required modules for CTSM builds
+Utilities for downloading CTSM input data from NCAR servers. SVN-based (legacy
+NCAR inputdata server); unused since 2025.
 
 ## Documentation
 
@@ -74,19 +89,11 @@ Utilities for downloading CTSM input data from NCAR servers.
 |------|---------|
 | `CTSM_DEVELOPMENT_GUIDE.md` | Quick reference for CTSM development |
 | `CTSM_RESEARCH_NOTES.md` | Detailed findings from Phase 4.3 research |
-| `SPILLHEIGHT_IMPLEMENTATION.md` | Spillheight mechanism for hillslope hydrology |
-| `NCO_TEMPORAL_ANALYSIS.md` | NCO tools for temporal analysis |
-| `CTSM_Deterministic_Testing_Analysis.md` | Deterministic behavior and hash comparison |
-| `CTSM_CPRNC_Deterministic_Analysis.md` | CPRNC tool usage for NetCDF comparison |
+| `NCO_TEMPORAL_ANALYSIS.md` | NCO tools for temporal analysis (historical) |
+| `CTSM_Deterministic_Testing_Analysis.md` | Deterministic behavior and hash comparison (historical) |
+| `CTSM_CPRNC_Deterministic_Analysis.md` | CPRNC tool usage for NetCDF comparison (historical) |
 | `clm.hist.names/` | CLM history field reference |
-
-### Archive (historical)
-
-| Document | Location |
-|----------|----------|
-| Fork Audit | `docs/archive/FORK_AUDIT_2025-01-11.md` |
-| Modification Analysis | `docs/archive/CTSM_MODIFICATION_ANALYSIS_2025-01-12.md` |
-| Upstream Check | `docs/archive/CTSM_UPSTREAM_CHECK_2025-01-11.md` |
+| `papers/` | Paper PDFs (gitignored) + markdown summaries (DOE grant, Fan 2019, Swenson 2025) |
 
 ### CTSM Fork Documentation
 
@@ -110,6 +117,7 @@ esm    # activates ctsm environment
 Includes:
 - **Python 3.12** (pinned to match HiPerGator module used for CTSM builds)
 - **Data:** xarray, netCDF4, matplotlib, numpy, pandas, NCO tools
+- **Geospatial (swenson pipeline):** gdal, rasterio, geopandas, pyproj, scikit-image, numba
 - **Python linting:** ruff, mypy
 - **Shell linting:** shellcheck
 - **Fortran tools:** fprettify (formatter)
@@ -122,9 +130,13 @@ Each repository has its own `CLAUDE.md` with detailed guidance.
 
 ## Working with Claude Code
 
-See `claude-todo.md` for the current task list and planning document.
+Project tracking lives in `swenson/STATUS.md` and `swenson/phases/` (there is no
+repo-level to-do file).
 
 ### Slash Commands
+
+Defined user-globally in `~/.claude/commands/` — **not part of this repo** (they
+won't exist for anyone else who clones it).
 
 | Command | Purpose |
 |---------|---------|

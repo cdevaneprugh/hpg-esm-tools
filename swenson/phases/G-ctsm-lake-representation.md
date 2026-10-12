@@ -205,7 +205,7 @@ Area-weighted is correct. Verify that the NWI lake area (from the water mask) is
 
 ## Why not weir overflow (historical)
 
-The original Phase G plan (documented in `docs/water-masking-and-lake-representation.md`) proposed replacing Manning's equation in `HillslopeStreamOutflow` with a weir equation and repurposing the `stream_channel_*` fields as lake geometry. After PI consultation with collaborators:
+The original Phase G plan (documented in `audit/260627-cleanup/docs/water-masking-and-lake-representation.md`) proposed replacing Manning's equation in `HillslopeStreamOutflow` with a weir equation and repurposing the `stream_channel_*` fields as lake geometry. After PI consultation with collaborators:
 
 - **Lake bathymetry detail is not strictly necessary.** The submerged-column approach captures the first-order effect (lake area is permanently saturated and draws water from upland) without per-lake depth curves or pour-point analysis.
 - **Fortran modifications add scope and maintenance burden** for a research project that should focus on OSBS first.
@@ -230,7 +230,7 @@ The `water-masking-and-lake-representation.md` document retains value as referen
 - [x] (done — `nhillcolumns`=25) Update `nhillcolumns` metadata to reflect the extra column
 - [x] (done — `run_pipeline.py` Step 5d) Set `downhill_column_index` so the lake is the terminal sink (lowest HAND bin → lake column → -9999 stream sentinel). Verify via water mass balance in the validation run.
 - [x] (done — `hillslope_index`=1) Set `hillslope_index` for the lake column. Default: reuse `1` (same hillslope as the HAND bins, just a submerged member). Flag if the PI's SourceMod expects a separate index.
-- [~] (superseded — 24-bin TAI scheme, `nmaxhillcol`=25) Expand to 16 HAND bins with focus on 0-50cm zone (PI confirmed). Revert to Q1/Q99 percentile endpoints — the "standing water is a feature" framing means small gradients and near-zero-height bins are acceptable. See `docs/hillslope-binning-rationale.md` for background. `nmaxhillcol` becomes 17 (16 bins + 1 lake column).
+- [~] (superseded — 24-bin TAI scheme, `nmaxhillcol`=25) Expand to 16 HAND bins with focus on 0-50cm zone (PI confirmed). Revert to Q1/Q99 percentile endpoints — the "standing water is a feature" framing means small gradients and near-zero-height bins are acceptable. See `audit/260627-cleanup/docs/hillslope-binning-rationale.md` for background. `nmaxhillcol` becomes 17 (16 bins + 1 lake column).
 - [x] (done — `SoilHydrologyMod` fully traced in Phase H §8) Review PI's `SoilHydrologyMod.F90` modifications before finalizing lake column `hill_distance` and `hill_width`. The SourceMod analysis flagged 147 KB of changes not yet fully traced.
 - [x] (done — production NetCDF `c260505` verified) Production run, verify NetCDF structure with `ncdump -h`
 - [x] (done — Phase F `osbs5.swenson.spinup`, fresh startup) CTSM test branch from osbs2 with modified hillslope file + PI's spillheight SourceMod. Include PI's `SurfaceWaterMod.F90` and `SoilHydrologyMod.F90` SourceMods (not just `HillslopeHydrologyMod.F90`) — all three are needed for the intended behavior.
@@ -255,7 +255,7 @@ The `water-masking-and-lake-representation.md` document retains value as referen
    
    The PI's SourceMod may set these or require specific conventions.
 
-5. **HAND binning strategy — DECIDED.** Expand to 16 bins with Q1/Q99 log-spaced endpoints. Current A2 (8 bins, 0.1m floor + Q95) will be replaced. The "standing water is a feature" framing (PI, 2026-04-09) means small gradients and near-zero-height bins in the 0-50cm zone are physically correct for wetland terrain. See `docs/hillslope-binning-rationale.md` for testing infrastructure (comparison script + cached arrays).
+5. **HAND binning strategy — DECIDED.** Expand to 16 bins with Q1/Q99 log-spaced endpoints. Current A2 (8 bins, 0.1m floor + Q95) will be replaced. The "standing water is a feature" framing (PI, 2026-04-09) means small gradients and near-zero-height bins in the 0-50cm zone are physically correct for wetland terrain. See `audit/260627-cleanup/docs/hillslope-binning-rationale.md` for testing infrastructure (comparison script + cached arrays).
 
 ## Deliverable
 
@@ -267,8 +267,8 @@ Pipeline-generated hillslope NetCDF with 17 columns (16 HAND bins + 1 submerged 
 - **PI's SourceMods:** `/blue/gerber/sgerber/CTSM/cases/osbs4-6/SourceMods/src.clm/` — 5 modified files (HillslopeHydrologyMod, SurfaceWaterMod, SoilHydrologyMod, InfiltrationExcessRunoffMod, SaturatedExcessRunoffMod)
 - **PI's CTSM base:** `/blue/gerber/sgerber/CTSM/ctsm5.3.059` (our fork is 5.3.085; hillslope code identical between versions)
 - **PI's hillslope file:** `/blue/gerber/sgerber/CTSM/subset_input/wetland.nc` (16-column custom file, provenance unknown)
-- `docs/water-masking-and-lake-representation.md` — historical; CTSM source investigation still valid, modification options A-E superseded
-- `docs/hillslope-binning-rationale.md` — binning strategy
+- `audit/260627-cleanup/docs/water-masking-and-lake-representation.md` — historical; CTSM source investigation still valid, modification options A-E superseded
+- `audit/260627-cleanup/docs/hillslope-binning-rationale.md` — binning strategy
 - `$TOOLS/docs/SPILLHEIGHT_IMPLEMENTATION.md` — PI's existing spillheight SourceMod writeup (may need updating after the osbs4-6 investigation)
 - `phases/F-validate-deploy.md` — baseline for Phase G comparison
 

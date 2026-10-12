@@ -880,8 +880,9 @@ target. Ingestion is already proven (2026-08-15 smoke); these tasks build on it.
     then stable, no NaN); `dtlimit=-1` held through the wrap in the accelerated-spinup path.
     Surfaced the partial-year wrap discontinuity (see the 2026-08-15 Log entry).
   - **I6b — AD spinup — DONE (convergence demonstrated) 2026-08-17.** The 4-tape
-    `osbs.swenson.neon.spinup` (cold-start, accelerated, cycled) reached **~180 continuous
-    sim-years** and converged: 20-yr block-mean drift **TOTECOSYSC 0.15% / TOTSOMC 0.48% /
+    `osbs.swenson.neon.spinup` (cold-start, accelerated, cycled) converged by **~yr 180**
+    (195 complete annual records archived, 2017→2211): 20-yr block-mean drift
+    **TOTECOSYSC 0.15% / TOTSOMC 0.48% /
     TOTVEGC 0.51%** (last block vs 80 yr earlier), flat since ~yr 60, no NaN. A walltime
     timeout + restart-bookkeeping mishap on the resubmit chain (2026-08-17 Log) kept it from
     landing a clean "year 200," but convergence was already established. Clean yr-180 restart
@@ -935,8 +936,9 @@ Per-product OSBS availability (verify each via NEON API, RELEASE-2026):
 - [x] NCAR-NEON install — repo/`flow.api.clm.R`/`renv.lock`/Dockerfile real;
   **195** packages (doc corrected from "~50–100"). renv-vs-script mismatch,
   Apptainer framing, and dedicated-conda-env decision recorded in Research §3.
-- [~] (abandoned — not relevant; twin of E.5 Lee-2023) Lee-2023 OSBS LIDAR vintage — still awaiting Cohen; non-blocking, tracked
-  in `docs/data-acquisition-dates.md`.
+- [~] (closed 2026-10-12 — not pursued; was a possible to-do, never picked up) Lee-2023
+  OSBS LIDAR vintage. Record: `docs/data-acquisition-dates.md` Action items (marked
+  closed there too).
 
 ## Deliverable
 

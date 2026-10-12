@@ -104,7 +104,8 @@ documents the BICY LIDAR explicitly: *"LiDAR data were collected during the
 regional dry season (late May)"* (Section 2.2). McLaughlin did not study OSBS,
 so OSBS-specific provenance is not in that paper either.
 
-**Resolution path.** UF connection — Cohen (M. J. Cohen, senior author on Lee
+**Resolution path (not pursued — thread closed 2026-10-12, see Action
+items).** UF connection — Cohen (M. J. Cohen, senior author on Lee
 2023) is at the same institution as the user, and per user note the
 collaborating scientists on this project are reachable. **Direct
 conversation is the fastest resolution.** Ask:
@@ -161,16 +162,24 @@ hydrologic conditions:
 
 ## Action items
 
-- [ ] Ask Cohen (or whoever has Lee 2023 internals) what LIDAR dataset and
-      acquisition date the OSBS subset uses. Capture the answer in this doc
-      and update `docs/lake-column-ctsm-audit.md` Section 6.7.3 with the
-      vintage-aware comparison.
-- [ ] If Lee 2023's OSBS LIDAR turns out to be the 2010 wet-season NCALM,
-      flag the comparability caveat in the audit and consider whether our
-      3.33 m number should be the primary reference rather than Lee's 2.64 m.
-- [ ] Optional: pull the May 2023 north Florida rainfall record (NWS
-      Gainesville or SWFWMD) to confirm 2023-05 was a typical or anomalously
-      dry month, strengthening the favorable-timing claim for our DTM.
+_(Thread CLOSED 2026-10-12 — not pursued, per user direction. These were
+possible to-dos that were never picked up. The "Not yet accounted for" caveats
+above remain the factual record; if the Lee 2023 vintage ever surfaces, these
+items say what to do with it.)_
+
+- [~] (closed 2026-10-12 — not pursued) Ask Cohen (or whoever has Lee 2023
+      internals) what LIDAR dataset and acquisition date the OSBS subset uses.
+      Capture the answer in this doc and update
+      `docs/lake-column-ctsm-audit.md` Section 6.7.3 with the vintage-aware
+      comparison.
+- [~] (closed 2026-10-12 — not pursued) If Lee 2023's OSBS LIDAR turns out to
+      be the 2010 wet-season NCALM, flag the comparability caveat in the audit
+      and consider whether our 3.33 m number should be the primary reference
+      rather than Lee's 2.64 m.
+- [~] (closed 2026-10-12 — not pursued; was optional) Pull the May 2023 north
+      Florida rainfall record (NWS Gainesville or SWFWMD) to confirm 2023-05
+      was a typical or anomalously dry month, strengthening the
+      favorable-timing claim for our DTM.
 
 ## References
 

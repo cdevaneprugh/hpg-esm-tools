@@ -24,17 +24,22 @@ pipeline output, dissolving the original "F provides lake-less
 baseline; G adds lake column" sequencing. The pipeline's hillslope
 NetCDF always includes the lake column now.
 
-The osbs5 case validates both Phase F and Phase G Stage 1:
+The validation vehicle was `osbs5.swenson.spinup` (100-yr AD spinup)
+until 2026-05-11, when a CTSM ntapes mismatch forced a fresh start as
+`osbs.swenson.spinup` (4-stream hist config) — the case that ran the
+full 600-yr accelerated AD spinup (completed 2026-05-14, analyzed
+2026-05-19). One case validates both Phase F and Phase G Stage 1:
 
-- **Phase F goal:** Run the case to BGC equilibrium (TOTECOSYSC drift
-  < 3% over last 50 yr per CTSM convention). Currently 100 yr of an
-  expected ~600 yr accelerated spinup. Plots inspect convergence of
+- **Phase F goal — MET 2026-05-19:** Run the case to BGC equilibrium
+  (TOTECOSYSC drift < 3% over last 50 yr per CTSM convention);
+  converged at drift_50yr = 0.48%. Plots inspect convergence of
   carbon pools, water budget, column-level differentiation under
   routing-off configuration.
 - **Phase G Stage 1 goal** (tracked in `phases/G-ctsm-lake-representation.md`):
   Verify CTSM correctly ingests the 25-column hillslope file with
   lake at chain index 1, sensible column weights, no NetCDF read
-  errors. **Already confirmed** by the 100-yr osbs5 run.
+  errors. **Confirmed** — first by the 100-yr osbs5 run, then by the
+  full 600-yr run.
 
 ## Problem
 
@@ -115,7 +120,7 @@ mechanism.
 
 ## Tasks
 
-- [x] Compare custom hillslope file to Swenson reference (`hillslopes_osbs_c240416.nc`) — parameter-by-parameter (`output/osbs/2026-05-04_production/`, `STATUS.md` "Confirmation from Swenson's published OSBS gridcell" table)
+- [x] Compare custom hillslope file to Swenson reference (`hillslopes_osbs_c240416.nc`) — parameter-by-parameter (`output/osbs/2026-05-05_production/` + its `production_summary.txt`; the comparison table once in STATUS.md — "Confirmation from Swenson's published OSBS gridcell" — was dropped in the 2026-05-12 STATUS restructure)
 - [x] Physical plausibility checks (Phase E.5 production summaries):
   - Elevation distribution matches known OSBS topography (range −6.35 → +17.02 m raw HAND)
   - Stream network aligns with known hydrology (`stream_network.png`)

@@ -100,6 +100,7 @@ swenson/
 │   │   └── docs-update-plan-260317.md             # Documentation update plan
 │   ├── 260512-cleanup/                     # Hygiene cleanup batch (one-off scripts, dem_processing, smoke_tests, README)
 │   ├── 260627-cleanup/                     # Audit-driven cleanup: stale diagnostics, superseded docs, duplicate SLURM wrapper
+│   ├── 260826-phase_e_through_i_audit/     # Phase E–I completeness/correctness audit (findings F1–F6; remediated 2026-08-26 + 2026-10-12)
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
@@ -128,8 +129,12 @@ swenson/
 │
 ├── output/
 │   ├── google-earth/          # KML files for Google Earth
+│   ├── mesh/                  # Phase H Track A mesh/SCRIP artifacts
 │   ├── osbs/                  # Pipeline runs (YYYY-MM-DD_<desc>/)
-│   └── plots/                 # Comparison plots
+│   ├── plots/                 # Comparison plots
+│   └── YYYY-MM-DD_*_timeseries/  # Spinup analysis plot sets (Phases F, I)
+│
+├── logs/                      # SLURM logs from Phase I NEON forcing generation (gitignored)
 │
 └── scripts/
     ├── osbs/                     # OSBS production pipeline (self-contained)
@@ -227,17 +232,23 @@ pysheds-env
 python -c "from pysheds.sgrid import sGrid; print('OK')"
 ```
 
-## Test Case Setup (osbs2)
+## Cases
 
-Reference case for validating custom OSBS hillslope data.
-
-### Case Locations
+### Key cases
 
 | Case | Path | Description |
 |------|------|-------------|
 | osbs2 (original) | `/blue/gerber/sgerber/earth_model_output/cime_output_root/osbs2/` | sgerber's reference; 860+ yr spinup with global hillslope file |
-| osbs2.branch.v2 | `$CASES/osbs2.branch.v2` | Earlier branch case for testing (historical) |
-| **osbs.swenson.spinup** | `$CASES/osbs.swenson.spinup` | **Current operative case.** Fresh startup with our 2026-05-05 production NetCDF. 4-stream hist config (h0/h1/h2/h3). 600-yr accelerated AD spinup chain. See `phases/F-validate-deploy.md`. |
+| **osbs.swenson.spinup** | `$CASES/osbs.swenson.spinup` | CRUNCEP-forced 600-yr accelerated AD spinup on the 2026-05-05 production NetCDF; 4-stream hist (h0–h3). Completed 2026-05-14, analyzed 2026-05-19. See `phases/F-validate-deploy.md`. |
+| osbs.swenson.post-ad | `$CASES/osbs.swenson.post-ad` | Post-AD continuation off the 600-yr spinup; 200 yr completed 2026-05-21, idle since (deprioritized pending PI's TAI investigation). |
+| **osbs.swenson.neon.spinup** | `$CASES/osbs.swenson.neon.spinup` | **Phase I AD spinup on the custom NEON forcing — CONVERGED 2026-08-17.** The I7 recipe's `create_clone` source; holds the live `dtlimit=-1` streams config; clean yr-180 restart preserved (`$ESM_OUTPUT/archive/osbs.swenson.neon.spinup/rest/2197-02-01-00000/`). |
+| osbs.swenson.neon-custom-smoke | `$CASES/osbs.swenson.neon-custom-smoke` | Full-record custom-forcing ingestion smoke — PASSED 2026-08-15. |
+| osbs.swenson.neon-v4-smoke | `$CASES/osbs.swenson.neon-v4-smoke` | Pre-built v4 forcing integration smoke (I2.5) — PASSED 2026-07-15. |
+| osbs.routing.test / .control | `$CASES/osbs.routing.{test,control}` | Phase H Track A mesh-mode smoke pair (2026-05-12). |
+
+Historical/retired cases (`osbs2.branch.*`, `osbs4.branch.*`, `osbs5.swenson.spinup`,
+and the `osbs.swenson.neon-custom-spinup` I6a calibration) remain in `$CASES`; see
+the phase files that cite them.
 
 ### Input Data
 
@@ -258,20 +269,18 @@ use_hillslope = .true.
 use_init_interp = .false.
 ```
 
-### Creating a Test Branch
+Note: the `hillslope_file` above is the osbs2-era **global** Swenson file. The
+operative Swenson cases point `hillslope_file` at our production NetCDF instead
+(`output/osbs/2026-05-05_production/hillslopes_osbs_production_c260505.nc`).
 
-```bash
-cd $CIME_SCRIPTS
-./create_newcase --case $CASES/osbs2.test.custom-hillslope \
-    --compset 1850_DATM%CRUv7_CLM60%BGC_SICE_SOCN_MOSART_SGLC_SWAV_SESP \
-    --res CLM_USRDAT --run-unsupported
+### Creating a New Case
 
-cd $CASES/osbs2.test.custom-hillslope
-./xmlchange RUN_TYPE=branch
-./xmlchange RUN_REFCASE=osbs2
-./xmlchange RUN_REFDIR=/blue/gerber/sgerber/earth_model_output/cime_output_root/osbs2/run
-./xmlchange RUN_REFDATE=0861-01-01
-./xmlchange CLM_USRDAT_DIR=/path/to/custom/input
-```
+The osbs2 branch-case pattern is retired. The two operative patterns:
 
-Then modify `user_nl_clm` to point to your custom hillslope file.
+- **CRUNCEP spinup (Phase F pattern):** fresh cold start (`create_newcase` +
+  `RUN_TYPE=startup`) with the production hillslope NetCDF — see
+  `phases/F-validate-deploy.md` for the full setup.
+- **NEON-forced case (Phase I pattern):** `create_clone` from
+  `$CASES/osbs.swenson.neon.spinup` + the forcing-unique settings — follow
+  `docs/neon-forcing-case-recipe.md` (the PI hand-off recipe; includes the
+  required `dtlimit=-1` streams setting and the spinup operational caveats).

@@ -658,7 +658,7 @@ earlier 23-bin draft.
   *Journal of Geophysical Research: Biogeosciences*.
 - Cohen, M. J., et al. DOE Project Proposal: *Water and carbon dynamics
   of coastal plain wetlandscapes* (local copy at
-  `docs/papers/DOE-Project-Grant-Application.pdf`).
+  `../docs/papers/DOE-Project-Grant-Application.pdf`).
 - McLaughlin, D. L., et al. (2019). [Wetland Connectivity Thresholds
   and Flow Dynamics From Stage Measurements](https://doi.org/10.1029/2018WR024652).
   *Water Resources Research*, 55, 6018-6032. (Methodological source for

@@ -17,7 +17,7 @@ Leave interim power-law values as-is. osbs2 runs with `use_hillslope_routing = .
 
 ## Tasks
 
-- [x] Hillslope structure decision: 1 aspect x 8 bins (see `docs/hillslope-binning-rationale.md`). Interim: equal-area bins until water masking is implemented. Log spacing deferred — lowest bins contaminated by unmasked lake pixels (Q1 HAND ~ 4e-6 m).
+- [x] Hillslope structure decision: 1 aspect x 8 bins (see `audit/260627-cleanup/docs/hillslope-binning-rationale.md`). Interim: equal-area bins until water masking is implemented. Log spacing deferred — lowest bins contaminated by unmasked lake pixels (Q1 HAND ~ 4e-6 m).
 - [x] Stream slope from actual network (implemented in run_pipeline.py line 1415)
 - [x] Bedrock depth: zeros matching Swenson reference (commit 11f465e)
 - [x] NEON slope/aspect decision: use NEON DP3.30025.001 products directly (PI approved 2026-03-23). Comparison: slope r=0.91, aspect circ_r=0.84. See `output/osbs/slope_aspect_comparison/`.
@@ -30,8 +30,8 @@ Leave interim power-law values as-is. osbs2 runs with `use_hillslope_routing = .
   - [x] Production run: 23.4 min, all parameters correct, slope differences consistent with pre-smoothing
 - [x] NWI water mask: download, filter, rasterize, visualize (2026-03-24)
 - [x] Integrate water mask into pipeline (2026-03-27, commit 8c727ca). Dual-mask approach: natural streams for catchment delineation, wide mask (streams + NWI lakes) for HAND. Water pixels excluded from HAND binning and DTND tail fitting.
-- [x] Re-evaluate 1x8 HAND bins (2026-04-09). Strategy A2 chosen: 0.1m noise floor + Q95 log-spaced. Tested 6 strategies; A2 gives 4 TAI bins, all adjacent heights separated by >= 0.2m, balanced ridge bin (5%). See `docs/hillslope-binning-rationale.md`.
-- [x] Move to 1x16 hybrid bins (2026-04-14, per PI request for tighter TAI resolution): 5 fixed 10cm bins in 0-0.5m zone + 10 log-spaced to Q99 + 1 sentinel. Tested 13 permutations of fixed-step, fixed-upper, and log-tail count; 5 × 10cm + 10 log chosen. See `docs/hillslope-binning-rationale.md` "2026-04-14 update" section.
+- [x] Re-evaluate 1x8 HAND bins (2026-04-09). Strategy A2 chosen: 0.1m noise floor + Q95 log-spaced. Tested 6 strategies; A2 gives 4 TAI bins, all adjacent heights separated by >= 0.2m, balanced ridge bin (5%). See `audit/260627-cleanup/docs/hillslope-binning-rationale.md`.
+- [x] Move to 1x16 hybrid bins (2026-04-14, per PI request for tighter TAI resolution): 5 fixed 10cm bins in 0-0.5m zone + 10 log-spaced to Q99 + 1 sentinel. Tested 13 permutations of fixed-step, fixed-upper, and log-tail count; 5 × 10cm + 10 log chosen. See `audit/260627-cleanup/docs/hillslope-binning-rationale.md` "2026-04-14 update" section.
 - [x] Stream depth/width: leave interim power-law as-is (2026-03-30). osbs2 uses `use_hillslope_routing = .false.` — params never read. Phase G repurposes as lake geometry.
 - [x] PI consultation — all questions resolved (2026-03-30):
   - DEM conditioning: standard fill for D8, pipeline characterizes macro-scale watershed
@@ -56,7 +56,7 @@ Tier 1 (R6C10) test run completed. All 8 bins populated, heights and distances m
 increasing. Total area matches 4x4 (0.373 vs 0.374 km^2). Comparison plot generated at
 `output/plots/4x4_vs_1x8_r6c10.png`.
 
-Full justification: `docs/hillslope-binning-rationale.md`.
+Full justification: `audit/260627-cleanup/docs/hillslope-binning-rationale.md`.
 
 ### 2026-03-23: NEON slope/aspect adopted
 
@@ -100,8 +100,8 @@ and Google Earth (KML export). Fixed two coordinate issues found during developm
    boundary mismatch at NW corner)
 
 New scripts:
-- `scripts/osbs/generate_water_mask.py` — one-time rasterization
-- `scripts/osbs/overlay_nwi_water.py` — hillshade + mask overlay visualization
+- `scripts/osbs/generate_water_mask.py` — one-time rasterization (since archived → `audit/260512-cleanup/osbs/`)
+- `scripts/osbs/overlay_nwi_water.py` — hillshade + mask overlay visualization (since moved → `scripts/diagnostics/`)
 - `scripts/visualization/export_nwi_water_kml.py` — KML export for Google Earth
 
 Next: integrate mask into pipeline, then re-evaluate log-spaced bins.
@@ -184,7 +184,7 @@ also have micro-gradient HAND values (1e-5 to 1e-2m) from resolve_flats on OSBS'
 flat terrain. Q1 of positive HAND is ~0.00002m regardless of water masking.
 
 The percentile-based endpoint strategy needs replacement. Four candidate approaches documented
-in `docs/hillslope-binning-rationale.md`: (A) log-spaced with a minimum floor, (B) equal-count
+in `audit/260627-cleanup/docs/hillslope-binning-rationale.md`: (A) log-spaced with a minimum floor, (B) equal-count
 on restricted range, (C) fixed boundaries, (D) hybrid TAI/ridge split. Systematic testing next.
 
 ### 2026-04-09: Binning resolved — Strategy A2 adopted, Phase E complete
@@ -199,7 +199,7 @@ gradients between columns. Strategy A2 (0.1m noise floor + Q95 log-spaced) chose
 - Ridge bin balanced at 5% of pixels (vs 1% with Q99)
 
 Implemented inline in `run_pipeline.py` (removed `compute_hand_bins_log` import). Full analysis
-and comparison tables in `docs/hillslope-binning-rationale.md`.
+and comparison tables in `audit/260627-cleanup/docs/hillslope-binning-rationale.md`.
 
 Phase E is complete. All parameters finalized. Phase F (CTSM validation) is next.
 
@@ -225,5 +225,5 @@ Implementation:
 - `compare_hand_binning.py` adds a "Hybrid (5 fixed 10cm + 10 log Q99)" strategy for future
   tuning comparisons.
 
-Added to `docs/hillslope-binning-rationale.md` "2026-04-14 update" section with full per-bin
+Added to `audit/260627-cleanup/docs/hillslope-binning-rationale.md` "2026-04-14 update" section with full per-bin
 statistics.
