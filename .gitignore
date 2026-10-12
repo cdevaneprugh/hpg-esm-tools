@@ -3,6 +3,7 @@
 *.tif
 *.tiff
 scripts/hillslope.analysis/data/
+scripts/hillslope.analysis/plots/
 scripts/case.analyzer/analysis/
 
 # Swenson hillslope implementation (large GeoTIFFs, outputs, logs)

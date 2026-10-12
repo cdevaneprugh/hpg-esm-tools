@@ -7,11 +7,10 @@ Toolkit for analyzing CTSM cases. Extracts xml variables, catalogs output files,
 ## Quick Start
 
 **Install dependencies**
-To install the environment, ensure the conda module is loaded and you are in the same directory as `environment.yml`.
-
-Then run `conda env create -f environment.yml`.
-
-This will setup a conda environment named "ctsm-tools". This can be changed in the yml file if desired.
+Uses the repo-wide `ctsm` conda environment (spec: `environment.yml` at the
+repo root). If not already created: load the conda module, then
+`conda env create -f environment.yml` from the repo root and
+`conda activate ctsm` (bashrc alias: `esm`).
 
 ### Basic Use
 ```bash
