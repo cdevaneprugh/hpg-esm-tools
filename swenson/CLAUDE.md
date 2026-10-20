@@ -9,7 +9,7 @@ Implementation of Swenson & Lawrence (2025) representative hillslope methodology
 
 ## Pipeline Orientation
 
-The pysheds fork now handles both geographic and UTM CRS (Phase A). STATUS.md has the full problem catalog and phase plan — read it before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The MERIT validation pipeline has been consolidated into a single regression script (`scripts/merit_validation/merit_regression.py`) that validates the geographic CRS code path after pysheds fork changes. The original 9 stage scripts are archived in `audit/merit_validation_stages/`.
+The pysheds fork now handles both geographic and UTM CRS (Phase A). STATUS.md has the locked decisions, current state, and open questions, and `phases/` holds the per-phase detail — read STATUS.md before starting work. The main OSBS pipeline is `scripts/osbs/run_pipeline.py`. The MERIT validation pipeline has been consolidated into a single regression script (`scripts/merit_validation/merit_regression.py`) that validates the geographic CRS code path after pysheds fork changes. The original 9 stage scripts are archived in `audit/merit_validation_stages/`.
 
 ## Documentation roles
 
@@ -150,6 +150,7 @@ swenson/
     │   ├── hillslope_params.py   # Co-located copy of osbs/ module (kept manually in sync)
     │   └── output/               # results.json, summary.txt, SLURM logs
     ├── neon_forcing/             # Phase I: NEON atmospheric forcing (offline download→DATM pipeline)
+    │   ├── README.md             # Pipeline overview and run order
     │   ├── setup/                # one-time conda-env build (the neon-forcing env)
     │   │   ├── build_env.sh          # Build the env (R 4.2.3 + source pkgs): conda solve → source-install → smoke test
     │   │   ├── environment.yml       # conda spec for the env
@@ -162,7 +163,8 @@ swenson/
     │   ├── neon_v4_regression.py # I4 reproduce-v4 check (custom vs v4; fqc-partitioned; ctsm env)
     │   ├── neon_forcing_qc.py    # I5 whole-record QC (structural/gap-fill/sanity/climatology; PASS/FAIL; ctsm env)
     │   ├── splice_2017_precip.py # I5 2017 precip splice (secondary tipping bucket → gap months; post-proc, no source edit)
-    │   └── smoke_compare_v4.py   # I6/I7 ingestion-smoke output check (custom vs v4 smoke, 2018-2019 overlap; ctsm env)
+    │   ├── smoke_compare_v4.py   # I6/I7 ingestion-smoke output check (custom vs v4 smoke, 2018-2019 overlap; ctsm env)
+    │   └── output/               # Regression/QC results (contents gitignored)
     ├── diagnostics/              # Diagnostic / re-usable utilities (out of pipeline)
     │   ├── diagnose_water_mask.py        # NWI mask hole detection / repair diagnostics
     │   └── overlay_nwi_water.py          # Hillshade + water mask overlay
@@ -177,7 +179,7 @@ at `scripts/` root. The OSBS copy is the active version; the MERIT
 copy is a co-located byte-identical sibling. There is no automated
 freeze — keep them manually in sync after edits to the OSBS copy.
 `dem_processing.py` was dead code; archived to `audit/260512-cleanup/`.
-See STATUS.md "Shared modules" subsection for the rationale.
+See the 2026-05-12 STATUS.md change-log entry and `audit/260512-cleanup/README.md`.
 
 ## Running the Pipeline
 

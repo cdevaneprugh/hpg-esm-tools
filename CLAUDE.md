@@ -76,6 +76,7 @@ Scripts for analyzing the OSBS CTSM hillslope hydrology cases with column-level
 | `plot_carbon_water_coupling.py` | Carbon–water coupling |
 | `plot_vr_profile.py` | Vertically-resolved profiles (currently inert — no case emits VR vars) |
 | `get_gridcell.py` | OSBS gridcell locator (one-off utility) |
+| `docs/carbon-state-variables.md` | Reference: CTSM carbon state variables |
 | `archive/` | Superseded 4-aspect-era plotters |
 
 ### inputdata.downloading/
