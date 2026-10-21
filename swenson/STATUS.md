@@ -40,8 +40,8 @@ consultation.
 
 | Decision | Value | Date locked | Reference |
 |---|---|---|---|
-| Characteristic length scale | Lc = 356 m (production domain) | 2026-02-11 | Phase C |
-| Accumulation threshold | A_thresh = 63,362 m² (= 0.5 × Lc²) | 2026-02-11 | Phase C |
+| Characteristic length scale | Lc = 355.98 m on the production domain (computed at run time by the FFT; not prescribed) | 2026-02-26 (first full-domain run; method locked 2026-02-11 with ~300 m working value) | Phase C, Phase D |
+| Accumulation threshold | A_thresh = int(0.5 × Lc²) = 63,362 px (follows from Lc) | 2026-02-26 (as above) | Phase C, Phase D |
 | FFT preprocessing | min_wavelength = 20m cutoff | 2026-02-11 | Phase C |
 | Flow routing resolution | 1m (no subsampling) | Phase B | Phase B |
 | Production domain | R4-R12, C5-C14 (90 tiles, 9×10 km, 0 nodata) | 2026-03-30 (PI) | Phase D |
@@ -306,4 +306,4 @@ through the UTM code path.
 - **2026-04-09** — First production NetCDF generated; PI consultation on weir overflow plan → abandoned.
 - **2026-03-30** — Production domain locked (R4-R12, C5-C14).
 - **2026-03-23** — NEON slope/aspect adopted over pgrid Horn 1981.
-- **2026-02-11** — Lc = 356 m locked.
+- **2026-02-11** — Restricted-wavelength FFT (20 m cutoff) accepted by the PI; ~300 m (range 285–356 m) adopted as the working Lc. The pipeline's computed value on the production domain, 355.98 m, dates from the 2026-02-26 Phase D tier runs.
