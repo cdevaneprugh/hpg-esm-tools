@@ -101,6 +101,7 @@ swenson/
 │   ├── 260512-cleanup/                     # Hygiene cleanup batch (one-off scripts, dem_processing, smoke_tests, README)
 │   ├── 260627-cleanup/                     # Audit-driven cleanup: stale diagnostics, superseded docs, duplicate SLURM wrapper
 │   ├── 260826-phase_e_through_i_audit/     # Phase E–I completeness/correctness audit (findings F1–F6; remediated 2026-08-26 + 2026-10-12)
+│   ├── 261020-docs_audit/                  # hpg-esm-docs audits (factual pass + prose/story pass), working TODO.md, Lc-determination history trace
 │   └── merit_validation_stages/            # Archived stage scripts (1-9) and SLURM wrappers
 │
 ├── docs/                     # Technical reference documents
